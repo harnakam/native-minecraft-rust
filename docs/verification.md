@@ -837,3 +837,18 @@ and extra siblings. A regression failed on an empty score object before the fix.
 This is display-parser validation only: protocol ingress rejection, validation
 of other component kinds/styles and vanilla exception/disconnect behavior are
 not yet reproduced.
+
+
+### Component container and selector structure
+
+The shared native display parser now rejects empty/nonarray extra, selected
+nonprimitive selectors, objects without a component kind, nonarray with on
+selected translations, and null child components. Lower-priority unused fields
+remain ignored. A regression failed on empty extra before implementation.
+An isolated Java 8 probe calls compiled MCP919 IChatComponent.Serializer
+jsonToComponent for nine fixtures: seven rejection and two acceptance decisions
+match Rust, including a primitive boolean selector and ignored malformed fields
+on a text component. Exception classes differ and ingress/disconnect handling
+remains incomplete. Text/translate value coercion, styles and empty component
+arrays still require further comparison. Probe files and reference assets are
+ignored and are not published. The full workspace suite passes.

@@ -2691,12 +2691,9 @@ fn parse_chat_component(json: &str) -> Result<serde_json::Value, serde_json::Err
     // Validate syntax and the normal serde nesting bound before recursive raw
     // traversal. Values used for display retain Gson's numeric token spelling.
     let value: serde_json::Value = serde_json::from_str(json)?;
-    fn validate_scores(value: &serde_json::Value) -> Result<(), serde_json::Error> {
-        let error = || {
-            <serde_json::Error as serde::de::Error>::custom(
-                "score component requires primitive name/objective and optional primitive value",
-            )
-        };
+    fn validate_component_structure(value: &serde_json::Value) -> Result<(), serde_json::Error> {
+        let error =
+            || <serde_json::Error as serde::de::Error>::custom("invalid chat component structure");
         let primitive = |value: &serde_json::Value| {
             matches!(
                 value,
@@ -2707,7 +2704,7 @@ fn parse_chat_component(json: &str) -> Result<serde_json::Value, serde_json::Err
         };
         if let Some(array) = value.as_array() {
             for item in array {
-                validate_scores(item)?;
+                validate_component_structure(item)?;
             }
         } else if let Some(object) = value.as_object() {
             if !object.contains_key("text") && !object.contains_key("translate") {
@@ -2721,24 +2718,33 @@ fn parse_chat_component(json: &str) -> Result<serde_json::Value, serde_json::Err
                     if score.get("value").is_some_and(|value| !primitive(value)) {
                         return Err(error());
                     }
+                } else if !object.get("selector").is_some_and(primitive) {
+                    return Err(error());
                 }
             }
             if !object.contains_key("text") && object.contains_key("translate") {
-                if let Some(args) = object.get("with").and_then(|value| value.as_array()) {
+                if let Some(args) = object.get("with") {
+                    let args = args.as_array().ok_or_else(error)?;
                     for item in args {
-                        validate_scores(item)?;
+                        validate_component_structure(item)?;
                     }
                 }
             }
-            if let Some(extra) = object.get("extra").and_then(|value| value.as_array()) {
+            if let Some(extra) = object.get("extra") {
+                let extra = extra.as_array().ok_or_else(error)?;
+                if extra.is_empty() {
+                    return Err(error());
+                }
                 for item in extra {
-                    validate_scores(item)?;
+                    validate_component_structure(item)?;
                 }
             }
+        } else if value.is_null() {
+            return Err(error());
         }
         Ok(())
     }
-    validate_scores(&value)?;
+    validate_component_structure(&value)?;
     fn convert(raw: &serde_json::value::RawValue) -> Result<serde_json::Value, serde_json::Error> {
         let token = raw.get().trim();
         Ok(match token.as_bytes().first().copied() {
@@ -4710,6 +4716,24 @@ mod inventory_layout_tests {
         .unwrap();
         assert_eq!(chat_component_text(&prioritized), "");
         assert_eq!(tab_component_formatted(&prioritized), "");
+    }
+
+    #[test]
+    fn component_structure_rejects_empty_extra_and_invalid_selected_selector() {
+        for invalid in [
+            r#"{"text":"root","extra":[]}"#,
+            r#"{"text":"root","extra":{}}"#,
+            r#"{"selector":null}"#,
+            r#"{"selector":[]}"#,
+            r#"{"color":"red"}"#,
+            r#"{"translate":"key","with":{}}"#,
+            r#"{"text":"root","extra":[null]}"#,
+        ] {
+            assert!(parse_chat_component(invalid).is_err(), "{invalid}");
+        }
+        assert!(parse_chat_component(r#"{"text":"root","selector":null,"with":{}}"#).is_ok());
+        let value = parse_chat_component(r#"{"selector":true,"extra":["!"]}"#).unwrap();
+        assert_eq!(chat_component_text(&value), "true!");
     }
 
     #[test]
