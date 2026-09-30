@@ -659,3 +659,17 @@ row/banner helpers. The workspace suite passes; a final client test rerun covers
 the title call-site adjustment. Full formatted chat/title rendering, translations,
 lenient Gson syntax, component validation, font and manual visual parity remain
 incomplete. No game assets/reference source are published.
+
+
+### Styled native title/subtitle rendering
+
+Title/subtitle JSON now passes through the existing inherited-style formatter
+instead of losing its style in plain-text flattening. The native renderer measures
+styled runs, draws their coverage at the 4x/2x title scales, blends each run's
+color with the existing title fade alpha, and supports bold/italic/underline/strike.
+A framebuffer regression verifies red/bold JSON affects the scaled title pixels;
+the existing title wire/clear test and the complete workspace suite pass.
+This reuses the native 16-pixel font rasterization at integer scale, so Minecraft
+font metrics, shadows, exact glyph geometry, translation styles, obfuscation,
+OpenGL rounding and manual visual parity remain incomplete. No game assets are
+published.

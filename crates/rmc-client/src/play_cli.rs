@@ -3418,27 +3418,77 @@ fn draw_title_overlay(
             continue;
         }
         let text = parse_chat_component(json)
-            .map(|value| chat_component_text(&value))
+            .map(|value| tab_component_formatted(&value))
             .unwrap_or_else(|_| json.clone());
-        let text_width = if let Some(font) = ui_font() {
-            text.chars()
-                .map(|ch| font.metrics(ch, 14.0 * scale as f32).advance_width)
-                .sum::<f32>() as i32
-        } else {
-            text.chars().count() as i32 * 8 * scale
-        };
-        let mut mask = vec![0; width as usize * (20 * scale) as usize * 4];
-        blend_chat_text(
-            frame,
-            width,
-            height,
-            width as i32 / 2 - text_width / 2,
-            y,
-            &text,
-            alpha,
-            scale,
-            &mut mask,
-        );
+        draw_styled_title_line(frame, width, height, &text, y, scale, alpha);
+    }
+}
+
+fn draw_styled_title_line(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    text: &str,
+    y: i32,
+    scale: i32,
+    alpha: u8,
+) {
+    let runs = tab_styled_runs(text, [255; 3], usize::MAX);
+    let run_width = |text: &str, style: TabNameStyle| {
+        text.chars()
+            .map(|ch| native_text_width(&ch.to_string()) + i32::from(style.bold))
+            .sum::<i32>()
+    };
+    let total = runs
+        .iter()
+        .map(|(text, style)| run_width(text, *style))
+        .sum::<i32>();
+    let mut x = width as i32 / 2 - total * scale / 2;
+    for (text, style) in runs {
+        let advance = run_width(&text, style);
+        let mask_width = (advance + 8).max(1) as u32;
+        let mut mask = vec![0; mask_width as usize * 16 * 4];
+        let mut formatted = String::new();
+        for (enabled, code) in [
+            (style.bold, 'l'),
+            (style.italic, 'o'),
+            (style.underline, 'n'),
+            (style.strike, 'm'),
+        ] {
+            if enabled {
+                formatted.push('\u{a7}');
+                formatted.push(code);
+            }
+        }
+        formatted.push_str(&text);
+        draw_tab_name(&mut mask, mask_width, &formatted, [255; 3], usize::MAX);
+        for py in 0..16i32 {
+            for px in 0..mask_width as i32 {
+                let coverage = mask[(py as usize * mask_width as usize + px as usize) * 4] as u32
+                    * alpha as u32
+                    / 255;
+                if coverage == 0 {
+                    continue;
+                }
+                for dy in 0..scale {
+                    for dx in 0..scale {
+                        let tx = x + (px - 4) * scale + dx;
+                        let ty = y + py * scale + dy;
+                        if tx < 0 || ty < 0 || tx >= width as i32 || ty >= height as i32 {
+                            continue;
+                        }
+                        let target = (ty as usize * width as usize + tx as usize) * 4;
+                        for channel in 0..3 {
+                            frame[target + channel] = ((frame[target + channel] as u32
+                                * (255 - coverage)
+                                + style.color[channel] as u32 * coverage)
+                                / 255) as u8;
+                        }
+                    }
+                }
+            }
+        }
+        x += advance * scale;
     }
 }
 
@@ -4294,6 +4344,22 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn title_json_colors_and_bold_reach_scaled_framebuffer() {
+        let mut title = rmc_game::title::TitleState::default();
+        title.title_json = r#"{"text":"Title","color":"red","bold":true}"#.into();
+        title.remaining_ticks = 70;
+        let mut colored = vec![0; 320 * 200 * 4];
+        draw_title_overlay(&mut colored, 320, 200, &title, 0.0);
+        assert!(colored
+            .chunks_exact(4)
+            .any(|pixel| pixel[0] > pixel[1] && pixel[1] == pixel[2]));
+        title.title_json = r#"{"text":"Title"}"#.into();
+        let mut plain = vec![0; 320 * 200 * 4];
+        draw_title_overlay(&mut plain, 320, 200, &title, 0.0);
+        assert_ne!(plain, colored);
     }
 
     #[test]
