@@ -14,13 +14,13 @@ def read(path):
             raise ValueError(f'Duplicate transfer observation: {key}')
         rows[key] = tuple(fields[6:])
     expected = {(kind,str(slot),str(item),str(count),str(pattern))
-                for kind,size in [('chest',27),('hopper',5),('dispenser',9),('dropper',9),('beacon',1)]
-                for slot in range(size+36) for item in [1,339,35,264,265]
+                for kind,size in [('chest',27),('hopper',5),('dispenser',9),('dropper',9),('beacon',1),('furnace',3)]
+                for slot in range(size+36) for item in [1,339,35,264,265,15,17,263]
                 for count in [1,32] for pattern in range(3)}
     if rows.keys() != expected:
         raise ValueError('Missing or unexpected transfer observations')
     for key, values in rows.items():
-        size = {'chest':27,'hopper':5,'dispenser':9,'dropper':9,'beacon':1}[key[0]]
+        size = {'chest':27,'hopper':5,'dispenser':9,'dropper':9,'beacon':1,'furnace':3}[key[0]]
         if len(values) != size+37:
             raise ValueError(f'Missing slot state: {key}')
         for value in values:

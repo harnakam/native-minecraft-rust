@@ -1,6 +1,7 @@
 //! Inventory state, held-item sync, and transaction handling.
 
 mod container;
+pub mod furnace;
 pub mod item_properties;
 mod transfer;
 
@@ -448,6 +449,12 @@ impl InventoryState {
                     if slot_id == 2 =>
                 {
                     false
+                }
+                Some("minecraft:furnace") if slot_id == 1 => {
+                    if item.item_id == 325 {
+                        limit = 1;
+                    }
+                    furnace::fuel_ticks(item.item_id) > 0 || item.item_id == 325
                 }
                 Some("minecraft:enchanting_table") if slot_id == 0 => {
                     limit = 1;

@@ -18,6 +18,21 @@ pub(super) fn destination(
         return Err("Incomplete container inventory");
     }
     match kind {
+        "minecraft:furnace" => {
+            if slot == 2 {
+                Ok((3, 39, true))
+            } else if slot < 2 {
+                Ok((3, 39, false))
+            } else if super::furnace::smelting_result(stack).is_some() {
+                Ok((0, 1, false))
+            } else if super::furnace::fuel_ticks(stack.item_id) > 0 {
+                Ok((1, 2, false))
+            } else if slot < 30 {
+                Ok((30, 39, false))
+            } else {
+                Ok((3, 30, false))
+            }
+        }
         "minecraft:container"
         | "minecraft:chest"
         | "minecraft:hopper"

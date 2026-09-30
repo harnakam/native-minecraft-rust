@@ -91,3 +91,11 @@ Protocol 47 S31PacketWindowProperty (0x31) is implemented with unsigned window I
 Three focused tests cover exact signed wire bytes, truncation rejection, matching window/lifecycle rules and click rollback after newer progress. The opt-in official-server test places a furnace, fills iron ore and coal using short commands, opens it through the native runtime's block interaction path and verifies positive burn/cook values and total cook time 200. It passes alongside existing mining, swaps, throws, death and respawn checks. Native progress visuals have not been manually inspected and are not yet vanilla GUI artwork.
 
 The test's authorized /stop cleanup tolerates only ConnectionAborted/ConnectionReset socket errors caused by server shutdown; other runtime errors still fail.
+
+## Furnace input and transfer reconstruction
+
+`inventory/furnace.rs` stores observed numeric fuel durations and all 26 registered smelting recipes. The `--only furnace_properties` probe compares 337 registered fuel observations and 26 recipes against MCP919, with zero differences. Fuel slot validation now follows SlotFurnaceFuel: fuels and empty buckets are accepted, with an empty bucket limited to one; unrelated items are rejected. Manual input-slot placement remains unrestricted as in ContainerFurnace.
+
+Shift transfer destination selection now follows ContainerFurnace: output goes to player storage in reverse order; other furnace slots go forward; player stacks are routed to smelting input before fuel, otherwise between main/hotbar. Empty buckets are not shift-routed as fuel. The existing container-transfer probe now includes furnace and eight item types, comparing 12,960 scenarios with zero return-stack or slot-state differences. Two new regression tests cover fuel-slot validation and smelt/fuel/ordinary routing, including noncookable fish metadata.
+
+These changes do not implement a local furnace simulation, crafting-result side effects, achievements, or XP entity handling. The earlier official-server test validates furnace progress delivery; the new furnace transfer routes are covered by actual MCP algorithms, not yet by a live-server transfer test.

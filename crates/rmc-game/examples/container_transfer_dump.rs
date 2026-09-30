@@ -14,9 +14,10 @@ fn main() {
         ("dispenser", 9),
         ("dropper", 9),
         ("beacon", 1),
+        ("furnace", 3),
     ] {
         for source in 0..size + 36 {
-            for id in [1, 339, 35, 264, 265] {
+            for id in [1, 339, 35, 264, 265, 15, 17, 263] {
                 for count in [1, 32] {
                     for pattern in 0..3 {
                         let mut state = InventoryState::new();

@@ -194,3 +194,36 @@ fn beacon_only_auto_inserts_single_payment_other_stacks_move_between_player_rang
         assert!(state.open_window().unwrap().slots[1].is_none());
     }
 }
+
+#[test]
+fn furnace_routes_smeltable_before_fuel_and_other_items_between_player_ranges() {
+    for (id, damage, target) in [
+        (15, 0, 0),
+        (17, 0, 0),
+        (263, 0, 1),
+        (325, 0, 30),
+        (1, 0, 30),
+        (349, 2, 30),
+        (349, 0, 0),
+    ] {
+        let mut state = InventoryState::new();
+        state.apply_open_window(&OpenWindowPacket {
+            window_id: 1,
+            inventory_type: "minecraft:furnace".into(),
+            window_title_json: "{}".into(),
+            slot_count: 3,
+            entity_id: None,
+        });
+        let mut slots = vec![None; 39];
+        slots[3] = Some(ItemStack::simple(id, 1, damage));
+        state.apply_window_items(&WindowItemsPacket {
+            window_id: 1,
+            items: slots,
+        });
+        state.queue_transfer_click(1, 3, 0).unwrap();
+        assert_eq!(
+            state.open_window().unwrap().slots[target],
+            Some(ItemStack::simple(id, 1, damage))
+        );
+    }
+}
