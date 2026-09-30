@@ -2692,12 +2692,16 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
         inherited: TabNameStyle,
         inherited_color: bool,
         output: &mut String,
-    ) {
+    ) -> (TabNameStyle, bool) {
         if let Some(array) = value.as_array() {
-            for item in array {
-                visit(item, inherited, inherited_color, output);
+            let Some((first, rest)) = array.split_first() else {
+                return (inherited, inherited_color);
+            };
+            let root = visit(first, inherited, inherited_color, output);
+            for item in rest {
+                visit(item, root.0, root.1, output);
             }
-            return;
+            return root;
         }
         let mut style = inherited;
         let mut has_color = inherited_color;
@@ -2782,6 +2786,7 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
                 visit(item, style, has_color, output);
             }
         }
+        (style, has_color)
     }
     let mut output = String::new();
     visit(
@@ -4237,6 +4242,31 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn tab_json_array_siblings_inherit_first_component_not_previous_sibling() {
+        let value = serde_json::json!([
+            {"text":"A","color":"red","bold":true},
+            {"text":"B","color":"green","bold":false},
+            {"text":"C"}, [{"text":"D","italic":true},{"text":"E"}]
+        ]);
+        let text = tab_component_formatted(&value);
+        let runs = tab_styled_runs(&text, [255; 3], 20);
+        assert_eq!(
+            runs.iter()
+                .map(|(text, _)| text.as_str())
+                .collect::<String>(),
+            "ABCDE"
+        );
+        assert_eq!(runs[0].1.color, [255, 85, 85]);
+        assert!(runs[0].1.bold);
+        assert_eq!(runs[1].1.color, [85, 255, 85]);
+        assert!(!runs[1].1.bold);
+        assert_eq!(runs[2].1.color, [255, 85, 85]);
+        assert!(runs[2].1.bold);
+        assert!(runs[3].1.italic && runs[4].1.italic);
+        assert_eq!(runs[4].1.color, [255, 85, 85]);
     }
 
     #[test]

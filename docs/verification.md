@@ -583,3 +583,18 @@ all ten Tab tests passed after it. Translation arguments still flatten through
 the existing partial translation helper; obfuscation, full component semantics,
 array-root inheritance, click/hover events, Minecraft fonts and manual rendering
 parity remain incomplete. No game assets/reference source are published.
+
+
+### Array-root Tab component style inheritance
+
+MCP919 IChatComponent.Serializer makes the first array element the root and
+appends later elements as siblings; ChatComponentStyle.appendSibling sets each
+sibling's style parent to that root. The native Tab formatter now returns each
+component's resolved root style and applies it to array siblings. A sibling's
+own color/boolean overrides do not leak into the next sibling. Nested arrays
+inherit the outer root and apply their own first-element style to their siblings.
+Regression tests cover red/bold root inheritance, green/nonbold sibling override,
+restoration for a later sibling, and nested italic inheritance. The actual Tab
+path uses this formatter, and whole-workspace tests pass. Empty/invalid component
+validation, translations, obfuscation, events, Minecraft fonts and manual visual
+parity remain incomplete; this does not prove full chat-component compatibility.
