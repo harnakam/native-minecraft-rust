@@ -743,3 +743,17 @@ formats ignore extra arguments and omit missing argument text while preserving
 literal brackets/spaces. Regressions cover both display paths and extra siblings;
 the unknown-key case failed before the fix. Full language asset lookup, arbitrary
 percent formats and translated argument styles remain incomplete.
+
+
+### Translation percent formatting
+
+A shared native formatter now expands sequential %s, indexed %N$s and literal
+%% in translation text, including unknown-key fallback strings. Indexed
+arguments do not advance the sequential counter; absent positive arguments
+emit no text. The two built-in chat formats use the same formatter. Tests cover
+mixed ordering, repeated indices, missing arguments, literal percent and malformed
+formats (unsupported conversion, dangling percent, zero/overflow indices).
+MCP919 ChatComponentTranslation.initializeFromFormat is the reference. Invalid
+formats currently fall back to the key in the native display path rather than
+propagating the Java component exception; language lookup and argument style
+inheritance are still incomplete. No language assets or reference code are shipped.

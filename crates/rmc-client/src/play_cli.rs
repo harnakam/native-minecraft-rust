@@ -3194,6 +3194,38 @@ fn append_chat_input(input: &mut String, text: &str) {
     }
 }
 
+fn format_chat_translation(format: &str, args: &[String]) -> Option<String> {
+    let mut output = String::new();
+    let mut rest = format;
+    let mut sequential = 0usize;
+    while let Some(offset) = rest.find('%') {
+        output.push_str(&rest[..offset]);
+        rest = &rest[offset + 1..];
+        if let Some(tail) = rest.strip_prefix('%') {
+            output.push('%');
+            rest = tail;
+            continue;
+        }
+        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+        let index = if digits > 0 && rest.as_bytes().get(digits) == Some(&b'$') {
+            // Java parses indexed placeholders as signed 32-bit, one-based values.
+            let index = rest[..digits].parse::<i32>().ok()?.checked_sub(1)?;
+            rest = &rest[digits + 1..];
+            usize::try_from(index).ok()?
+        } else {
+            let index = sequential;
+            sequential += 1;
+            index
+        };
+        rest = rest.strip_prefix('s')?;
+        if let Some(argument) = args.get(index) {
+            output.push_str(argument);
+        }
+    }
+    output.push_str(rest);
+    Some(output)
+}
+
 fn chat_component_text(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::String(text) => text.clone(),
@@ -3215,13 +3247,12 @@ fn chat_component_text(value: &serde_json::Value) -> String {
                     .and_then(|v| v.as_array())
                     .map(|values| values.iter().map(chat_component_text).collect())
                     .unwrap_or_default();
-                let name = args.first().map(String::as_str).unwrap_or_default();
-                let message = args.get(1).map(String::as_str).unwrap_or_default();
-                text = match key {
-                    "chat.type.text" => format!("<{name}> {message}"),
-                    "chat.type.announcement" => format!("[{name}] {message}"),
-                    _ => key.to_owned(),
+                let format = match key {
+                    "chat.type.text" => "<%s> %s",
+                    "chat.type.announcement" => "[%s] %s",
+                    _ => key,
                 };
+                text = format_chat_translation(format, &args).unwrap_or_else(|| key.to_owned());
             }
             if !object.contains_key("text") && !object.contains_key("translate") {
                 if let Some(value) = object.get("score").and_then(|score| score.get("value")) {
@@ -4392,6 +4423,25 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn translation_formats_indexed_sequential_and_literal_percent() {
+        let args = vec!["Alex".into(), "hello".into(), "unused".into()];
+        assert_eq!(
+            format_chat_translation("%2$s / %s / %1$s / %s / %%", &args).as_deref(),
+            Some("hello / Alex / Alex / hello / %")
+        );
+        assert_eq!(
+            format_chat_translation("[%4$s] %s", &args).as_deref(),
+            Some("[] Alex")
+        );
+        assert_eq!(format_chat_translation("%%s", &args).as_deref(), Some("%s"));
+        for invalid in ["%d", "%", "%0$s", "%2147483648$s", "%2$%", "%1.2s"] {
+            assert_eq!(format_chat_translation(invalid, &args), None, "{invalid}");
+        }
+        let value = serde_json::json!({"translate":"%2$s / %s / %%","with":["Alex","hello"]});
+        assert_eq!(chat_component_text(&value), "hello / Alex / %");
     }
 
     #[test]
