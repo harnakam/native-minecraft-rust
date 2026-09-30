@@ -953,7 +953,7 @@ impl PlayApp {
                 }
                 draw_hotbar_overlay(frame, width, height, runtime, &self.assets);
                 if self.show_tab_overlay {
-                    draw_tab_overlay(frame, width, height, runtime);
+                    draw_tab_overlay(frame, width, height, runtime, self.assets.icons.as_ref());
                 }
                 if let Some(snapshot) = runtime.usability_snapshot() {
                     if runtime.is_survival_or_adventure() {
@@ -2478,9 +2478,15 @@ fn draw_hotbar_overlay(
     }
 }
 
-fn draw_tab_overlay(frame: &mut [u8], width: u32, height: u32, runtime: &LiveRuntime) {
+fn draw_tab_overlay(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    runtime: &LiveRuntime,
+    icons: Option<&ImageAsset>,
+) {
     if let Some(snapshot) = runtime.usability_snapshot() {
-        draw_tab_snapshot(frame, width, height, snapshot);
+        draw_tab_snapshot(frame, width, height, snapshot, icons);
     }
 }
 
@@ -2504,6 +2510,48 @@ fn native_text_width(text: &str) -> i32 {
     }
 }
 
+fn tab_ping_row(latency: i32) -> i32 {
+    match latency {
+        i32::MIN..=-1 => 5,
+        0..=149 => 0,
+        150..=299 => 1,
+        300..=599 => 2,
+        600..=999 => 3,
+        _ => 4,
+    }
+}
+
+fn draw_tab_ping(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    latency: i32,
+    icons: &ImageAsset,
+) {
+    draw_sprite_region(
+        frame,
+        width,
+        height,
+        icons,
+        UiRect {
+            x,
+            y,
+            width: 10,
+            height: 8,
+        },
+        UiRect {
+            x: 0,
+            y: 176 + tab_ping_row(latency) * 8,
+            width: 10,
+            height: 8,
+        },
+        [255, 255, 255],
+        1.0,
+    );
+}
+
 fn tab_grid(count: usize) -> (usize, usize) {
     let count = count.min(80);
     let mut columns = 1;
@@ -2518,6 +2566,7 @@ fn draw_tab_snapshot(
     width: u32,
     height: u32,
     snapshot: &rmc_game::usability::UsabilitySnapshot,
+    icons: Option<&ImageAsset>,
 ) {
     let entries = snapshot.tab_list.iter().take(80).collect::<Vec<_>>();
     let header = tab_banner_lines(&snapshot.tab_header_json, width);
@@ -2574,7 +2623,11 @@ fn draw_tab_snapshot(
                     16,
                     4,
                     0,
-                    &truncate_text(&name, ((column_width - 64).max(0) / 8) as usize),
+                    &truncate_text(
+                        &name,
+                        ((column_width - if icons.is_some() { 17 } else { 64 }).max(0) / 8)
+                            as usize,
+                    ),
                     if entry.game_mode == 3 {
                         [144, 144, 144]
                     } else {
@@ -2582,16 +2635,28 @@ fn draw_tab_snapshot(
                     },
                     1,
                 );
-                draw_text_scaled(
-                    &mut cell,
-                    column_width as u32,
-                    16,
-                    column_width - 60,
-                    0,
-                    &format!("{}ms", entry.latency),
-                    [172, 214, 255],
-                    1,
-                );
+                if let Some(icons) = icons {
+                    draw_tab_ping(
+                        &mut cell,
+                        column_width as u32,
+                        16,
+                        column_width - 11,
+                        0,
+                        entry.latency,
+                        icons,
+                    );
+                } else {
+                    draw_text_scaled(
+                        &mut cell,
+                        column_width as u32,
+                        16,
+                        column_width - 60,
+                        0,
+                        &format!("{}ms", entry.latency),
+                        [172, 214, 255],
+                        1,
+                    );
+                }
                 for py in 0..16 {
                     if row_y + py < 0 || row_y + py >= height as i32 {
                         continue;
@@ -3796,17 +3861,57 @@ mod inventory_layout_tests {
         ));
         let snapshot = state.snapshot();
         let mut before = vec![0; 960 * 400 * 4];
-        draw_tab_snapshot(&mut before, 960, 400, &snapshot);
+        draw_tab_snapshot(&mut before, 960, 400, &snapshot, None);
         let mut changed = snapshot.clone();
         changed.tab_list[79].display_name_json = Some(r#"{"text":"Visible"}"#.into());
         let mut after = vec![0; 960 * 400 * 4];
-        draw_tab_snapshot(&mut after, 960, 400, &changed);
+        draw_tab_snapshot(&mut after, 960, 400, &changed, None);
         assert_ne!(before, after);
         changed = snapshot;
         changed.tab_list[89].display_name_json = Some(r#"{"text":"Excluded"}"#.into());
         after.fill(0);
-        draw_tab_snapshot(&mut after, 960, 400, &changed);
+        draw_tab_snapshot(&mut after, 960, 400, &changed, None);
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn tab_ping_uses_vanilla_thresholds_and_atlas_rows() {
+        for (latency, row) in [
+            (-1, 5),
+            (0, 0),
+            (149, 0),
+            (150, 1),
+            (299, 1),
+            (300, 2),
+            (599, 2),
+            (600, 3),
+            (999, 3),
+            (1000, 4),
+            (i32::MAX, 4),
+        ] {
+            assert_eq!(tab_ping_row(latency), row);
+        }
+        let path = std::env::temp_dir().join(format!("rmc-ping-test-{}.png", std::process::id()));
+        let mut png = image::RgbaImage::new(256, 256);
+        for row in 0..6u32 {
+            for y in 176 + row * 8..184 + row * 8 {
+                for x in 0..10 {
+                    png.put_pixel(x, y, image::Rgba([(row + 1) as u8 * 30, 0, 0, 255]));
+                }
+            }
+        }
+        png.save(&path).unwrap();
+        let icons = ImageAsset::load(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        for latency in [-1, 0, 150, 300, 600, 1000] {
+            let mut frame = vec![0u8; 20 * 12 * 4];
+            draw_tab_ping(&mut frame, 20, 12, 3, 2, latency, &icons);
+            assert_eq!(
+                frame[(2 * 20 + 3) * 4],
+                (tab_ping_row(latency) + 1) as u8 * 30
+            );
+            assert_eq!(frame[0], 0);
+        }
     }
 
     #[test]
@@ -3856,7 +3961,7 @@ mod inventory_layout_tests {
             assert!(state.apply_play_packet(packet).tab_list_updated);
             let initial = vec![100; 320 * 200 * 4];
             let mut frame = initial.clone();
-            draw_tab_snapshot(&mut frame, 320, 200, &state.snapshot());
+            draw_tab_snapshot(&mut frame, 320, 200, &state.snapshot(), None);
             assert_eq!(frame == initial, header.is_empty());
         }
         assert_eq!(tab_banner_lines(r#"{"text":"a\nb"}"#, 320), vec!["a", "b"]);

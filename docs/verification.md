@@ -452,3 +452,17 @@ is excluded. Minecraft metrics, styled team display names, italics, skin faces,
 ping icons, score/heart columns, and manual/server 80-player display parity remain
 incomplete. The native font uses 16-pixel rows, so geometry is not claimed to be
 identical to the nine-pixel Minecraft font.
+
+
+### Native tab ping atlas rendering
+
+The Tab overlay now receives the already locally imported icons texture and
+renders a 10x8 ping sprite at cell-width minus 11. The MCP919 thresholds are
+negative=atlas row 5, <150=0, <300=1, <600=2, <1000=3, otherwise=4; texture origin
+is (0,176+row*8). Missing local textures retain numeric latency display.
+A generated synthetic PNG regression checks all six atlas rows and framebuffer
+sampling; boundary tests cover the transition values. All Tab regressions and
+the whole workspace suite pass. No Minecraft image is committed or embedded.
+Actual imported-icon visual parity and manual/native window observation remain
+unverified; this does not complete the Tab HUD's remaining font, faces, style,
+and scoreboard behavior.
