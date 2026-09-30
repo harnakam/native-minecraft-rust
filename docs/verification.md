@@ -712,3 +712,13 @@ It requested /stop; the owned server saved players/worlds/chunks and exited
 successfully. Native display parsing/rendering has separate regressions; this
 real-server test verifies delivery to runtime state, not manual visual parity.
 No official binary/world/reference source is published.
+
+
+### Unresolved selector component text
+
+MCP919 ChatComponentSelector.getUnformattedTextForChat returns its literal
+selector pattern. The native plain and formatted component paths now preserve
+that pattern and inherited styles/extra siblings instead of displaying nothing.
+A regression covers a radius selector with red/bold extra text and score-before-
+selector precedence. This does not implement client-side entity selection;
+server command resolution and invalid-component validation remain separate work.

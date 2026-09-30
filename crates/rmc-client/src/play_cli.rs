@@ -2806,6 +2806,8 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
                 .get("value")
                 .and_then(primitive_text)
                 .unwrap_or_default()
+        } else if let Some(selector) = value.get("selector").and_then(primitive_text) {
+            selector
         } else {
             String::new()
         };
@@ -3218,6 +3220,10 @@ fn chat_component_text(value: &serde_json::Value) -> String {
             if !object.contains_key("text") && !object.contains_key("translate") {
                 if let Some(value) = object.get("score").and_then(|score| score.get("value")) {
                     text = chat_component_text(value);
+                } else if !object.contains_key("score") {
+                    if let Some(selector) = object.get("selector") {
+                        text = chat_component_text(selector);
+                    }
                 }
             }
             if let Some(extra) = object.get("extra") {
@@ -4380,6 +4386,31 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn unresolved_selector_components_keep_literal_pattern_and_style() {
+        let value = parse_chat_component(
+            r#"{"selector":"@a[r=10]","color":"red","bold":true,"extra":[{"text":" nearby"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(chat_component_text(&value), "@a[r=10] nearby");
+        let runs = tab_styled_runs(&tab_component_formatted(&value), [255; 3], 100);
+        assert_eq!(
+            runs.iter()
+                .map(|(text, _)| text.as_str())
+                .collect::<String>(),
+            "@a[r=10] nearby"
+        );
+        assert!(runs
+            .iter()
+            .all(|(_, style)| style.bold && style.color == [255, 85, 85]));
+        let prioritized = parse_chat_component(
+            r#"{"score":{"name":"Alex","objective":"points"},"selector":"@a"}"#,
+        )
+        .unwrap();
+        assert_eq!(chat_component_text(&prioritized), "");
+        assert_eq!(tab_component_formatted(&prioritized), "");
     }
 
     #[test]
