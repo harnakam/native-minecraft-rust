@@ -21,5 +21,21 @@ public class RmcBorderOracle {
                 }
             }
         }
+        for (double center : new double[]{-30000000,-10,0,10,30000000}) {
+            for (int size : new int[]{1,29999984}) {
+                for (double diameter : new double[]{0,2,64,60000000}) {
+                    for (double position : new double[]{-30000000,0,30000000}) {
+                        WorldBorder border=new WorldBorder();
+                        border.setCenter(center,center-0.5);
+                        border.setSize(size); border.setTransition(diameter);
+                        System.out.print("bounds "+center+" "+size+" "+diameter+" "+position);
+                        for(double value : new double[]{border.minX(),border.maxX(),border.minZ(),border.maxZ(),border.getClosestDistance(position,position+0.5)}) {
+                            System.out.print(" "+Long.toUnsignedString(Double.doubleToRawLongBits(value)));
+                        }
+                        System.out.println();
+                    }
+                }
+            }
+        }
     }
 }
