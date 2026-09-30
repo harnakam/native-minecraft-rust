@@ -2594,6 +2594,7 @@ fn tab_color_runs(text: &str, color: [u8; 3], limit: usize) -> Vec<(String, [u8;
         .collect()
 }
 
+#[cfg(test)]
 fn obfuscated_native_glyph(character: char, random: u64) -> char {
     if !(' '..='~').contains(&character) {
         return character;
@@ -2617,12 +2618,51 @@ fn obfuscated_native_glyph(character: char, random: u64) -> char {
         .unwrap_or(character)
 }
 
+struct JavaFontRandom {
+    state: u64,
+}
+
+impl JavaFontRandom {
+    fn new(seed: u64) -> Self {
+        Self {
+            state: (seed ^ 0x5deece66d) & ((1u64 << 48) - 1),
+        }
+    }
+    fn next_int(&mut self, bound: i32) -> i32 {
+        assert!(bound > 0);
+        loop {
+            self.state = self.state.wrapping_mul(0x5deece66d).wrapping_add(11) & ((1u64 << 48) - 1);
+            let bits = (self.state >> 17) as i32;
+            if (bound as u32).is_power_of_two() {
+                return ((i64::from(bound) * i64::from(bits)) >> 31) as i32;
+            }
+            let value = bits % bound;
+            if bits.wrapping_sub(value).wrapping_add(bound - 1) >= 0 {
+                return value;
+            }
+        }
+    }
+}
+
 fn next_obfuscated_native_glyph(character: char) -> char {
-    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let mut random = COUNTER.fetch_add(0x9e3779b97f4a7c15, std::sync::atomic::Ordering::Relaxed);
-    random = (random ^ (random >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-    random = (random ^ (random >> 27)).wrapping_mul(0x94d049bb133111eb);
-    obfuscated_native_glyph(character, random ^ (random >> 31))
+    if !(' '..='~').contains(&character) {
+        return character;
+    }
+    thread_local! {
+        static RANDOM: std::cell::RefCell<JavaFontRandom> = std::cell::RefCell::new(JavaFontRandom::new(
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|duration|duration.as_nanos() as u64).unwrap_or_default()
+        ));
+    }
+    let width = native_text_width(&character.to_string());
+    RANDOM.with(|random| {
+        let mut random = random.borrow_mut();
+        loop {
+            let selected = char::from_u32(32 + random.next_int(95) as u32).unwrap();
+            if native_text_width(&selected.to_string()) == width {
+                return selected;
+            }
+        }
+    })
 }
 
 fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_visible: usize) {
@@ -4819,6 +4859,41 @@ mod inventory_layout_tests {
         .unwrap();
         assert_eq!(chat_component_text(&prioritized), "");
         assert_eq!(tab_component_formatted(&prioritized), "");
+    }
+
+    #[test]
+    fn font_random_matches_java_seed_zero_sequences() {
+        for (bound, expected) in [
+            (95, [25, 43, 64, 87, 10, 33, 81, 81]),
+            (2, [1, 1, 0, 1, 1, 0, 1, 0]),
+            (
+                1073741825,
+                [
+                    516548029, 663681053, 251269761, 715581077, 542832677, 827187473, 49567875,
+                    377907320,
+                ],
+            ),
+            (
+                2147483647,
+                [
+                    1569741360, 1785505948, 516548029, 1302116447, 1368843515, 663681053,
+                    1182054491, 251269761,
+                ],
+            ),
+        ] {
+            let mut random = JavaFontRandom::new(0);
+            assert_eq!(
+                std::array::from_fn::<_, 8, _>(|_| random.next_int(bound)),
+                expected
+            );
+        }
+        for ch in ' '..='~' {
+            let selected = next_obfuscated_native_glyph(ch);
+            assert_eq!(
+                native_text_width(&selected.to_string()),
+                native_text_width(&ch.to_string())
+            );
+        }
     }
 
     #[test]

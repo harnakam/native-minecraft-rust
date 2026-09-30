@@ -927,3 +927,16 @@ selection principle, but does not yet match its full 256-character candidate
 table, Java RNG or Minecraft font metrics. Non-ASCII inputs are currently left
 unchanged, and normal chat styled drawing/manual visual parity remain incomplete.
 No game glyph assets or reference code are published.
+
+
+### Java-compatible font random selection
+
+Native obfuscated drawing now uses Java Random's 48-bit state transition, seed
+scrambling and nextInt power-of-two/rejection branches. The thread-local runtime
+seed varies at startup. Glyph selection draws from printable ASCII and retries
+until native width matches, following the FontRenderer selection loop instead
+of modulo-selecting a width bucket. Java 8 seed-zero output for four bounds
+(95, 2, 1073741825, 2147483647) matches all 32 regression values, including
+rejection behavior. Runtime selector width and changing frame tests pass with
+the workspace suite. Minecraft's full glyph table/metrics and default Java seed
+initialization remain different; exact random animation parity is not claimed.
