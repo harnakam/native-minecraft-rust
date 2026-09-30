@@ -1004,3 +1004,16 @@ width bounds and runtime row-count agreement. The full workspace suite passes.
 The implementation follows GuiUtilRenderComponents' width-driven principle;
 Minecraft font metrics, exact component-boundary/space handling, UI scaling and
 manual visual parity remain incomplete.
+
+
+### Production chat row regressions
+
+Removed the obsolete plain fixed-column chat row implementation that survived
+as test-only code after styled/pixel wrapping integration. Numeric token, age
+and wrapping regressions now read the actual formatted runtime rows; the test
+plain-text helper only strips their format codes. Additional production-path
+coverage verifies explicit blank lines, retained red/bold style on both sides,
+age propagation and exclusion of action-bar messages. Narrow row tests check
+rendered advance bounds and text preservation rather than former column counts.
+Workspace tests and formatting checks pass. Minecraft font/space-boundary parity
+remains incomplete.

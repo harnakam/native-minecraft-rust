@@ -3542,33 +3542,15 @@ fn wrap_chat_text(text: &str, columns: usize) -> Vec<String> {
 
 #[cfg(test)]
 fn chat_display_lines(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec<String> {
-    chat_display_rows(lines, width)
+    chat_formatted_rows(lines, width)
         .into_iter()
-        .map(|(text, _)| text)
-        .collect()
-}
-
-#[cfg(test)]
-fn chat_display_rows(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec<(String, u64)> {
-    let columns = (width.saturating_sub(24).min(470) / 6).max(1) as usize;
-    let mut rows = Vec::new();
-    for line in lines {
-        if line.position == 2 {
-            continue;
-        }
-        let text = parse_chat_component(&line.message_json)
-            .map(|value| chat_component_text(&value))
-            .unwrap_or_else(|_| line.message_json.clone());
-        rows.extend(
-            wrap_chat_text(&text, columns)
+        .map(|(text, _)| {
+            tab_styled_runs(&text, [255; 3], usize::MAX)
                 .into_iter()
-                .map(|text| (text, line.age_ticks)),
-        );
-    }
-    if rows.len() > 100 {
-        rows.drain(..rows.len() - 100);
-    }
-    rows
+                .map(|(text, _)| text)
+                .collect()
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -5128,6 +5110,31 @@ mod inventory_layout_tests {
     }
 
     #[test]
+    fn production_chat_rows_preserve_blanks_age_and_exclude_action_bar() {
+        let lines = vec![
+            rmc_game::usability::ChatLine {
+                age_ticks: 17,
+                position: 0,
+                message_json: r#"{"text":"A\n\nB","color":"red","bold":true}"#.into(),
+            },
+            rmc_game::usability::ChatLine {
+                age_ticks: 1,
+                position: 2,
+                message_json: r#"{"text":"action"}"#.into(),
+            },
+        ];
+        let rows = chat_formatted_rows(&lines, 320);
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|(_, age)| *age == 17));
+        assert_eq!(chat_display_lines(&lines, 320), vec!["A", "", "B"]);
+        for index in [0, 2] {
+            assert!(tab_styled_runs(&rows[index].0, [255; 3], 100)
+                .iter()
+                .all(|(_, style)| style.bold && style.color == [255, 85, 85]));
+        }
+    }
+
+    #[test]
     fn formatted_chat_pixel_wrap_uses_glyph_and_bold_advance() {
         let limit = native_text_width("i") * 4;
         let rows = wrap_formatted_chat_pixels("iiiiWWWW", limit);
@@ -5851,7 +5858,7 @@ mod inventory_layout_tests {
             message_json: "{\"text\":\"abc def\"}".into(),
             position: 0,
         }];
-        assert!(chat_display_rows(&lines, 42)
+        assert!(chat_formatted_rows(&lines, 42)
             .iter()
             .all(|(_, age)| *age == 190));
         let initial = vec![100; 160 * 100 * 4];
@@ -5880,7 +5887,15 @@ mod inventory_layout_tests {
             message_json: "{\"text\":\"abcdefghi\"}".into(),
             position: 0,
         }];
-        assert_eq!(chat_display_lines(&lines, 42), vec!["abc", "def", "ghi"]);
+        let rows = chat_display_lines(&lines, 42);
+        assert!(rows.len() > 1);
+        assert_eq!(rows.concat(), "abcdefghi");
+        assert!(rows.iter().all(|row| row
+            .chars()
+            .map(|ch| native_text_width(&ch.to_string()))
+            .sum::<i32>()
+            <= 18
+            || row.chars().count() == 1));
     }
 
     #[test]
