@@ -1695,6 +1695,40 @@ mod tests {
             "official server furnace properties did not reach the runtime"
         );
         runtime.close_open_window().unwrap();
+        for command in [
+            "/xp -10000L VanillaProbe",
+            "/xp 7L VanillaProbe",
+            "/gamerule doDaylightCycle false",
+            "/time set 6000",
+            "/weather rain 600",
+        ] {
+            runtime.send_chat_message(command).unwrap();
+        }
+        let mut synchronized = false;
+        for _ in 0..100 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            synchronized = runtime.usability.snapshot().experience.level == 7
+                && runtime.world.time().world_time == 6000
+                && !runtime.world.time().daylight_cycle
+                && runtime.world.weather().raining
+                && runtime.world.weather().rain_strength > 0.0;
+            if synchronized {
+                break;
+            }
+        }
+        assert!(
+            synchronized,
+            "official server experience/time/weather updates did not reach runtime: xp={:?} time={:?} weather={:?}",
+            runtime.usability.snapshot().experience,
+            runtime.world.time(),
+            runtime.world.weather()
+        );
+        let total_time = runtime.world.time().total_world_time;
+        for _ in 0..3 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+        }
+        assert_eq!(runtime.world.time().world_time, 6000);
+        assert!(runtime.world.time().total_world_time > total_time);
         runtime.send_chat_message("/kill").unwrap();
         for _ in 0..100 {
             advance(&mut runtime, &RuntimeActionInput::default());
@@ -1716,7 +1750,7 @@ mod tests {
             "official server did not initialize the respawn position"
         );
         assert!(runtime.summary.disconnect_reason_json.is_none());
-        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, furnace progress, server-confirmed stone mining, death and respawn passed");
+        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, furnace progress, experience/time/weather synchronization, server-confirmed stone mining, death and respawn passed");
         if std::env::var("RMC_STOP_TEST_SERVER").as_deref() == Ok("1") {
             runtime.send_chat_message("/stop").unwrap();
             for _ in 0..100 {

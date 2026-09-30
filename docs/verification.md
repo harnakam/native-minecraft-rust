@@ -112,7 +112,7 @@ The equipment codec test checks golden prefix bytes, null/item roundtrip and tru
 
 S03PacketTimeUpdate is decoded and encoded as two signed big-endian longs and registered for live delivery. WorldSnapshot owns time state in world/time.rs. Negative world time stops daylight cycling and is negated using Java long wrapping semantics; -1 represents the server frozen-zero sentinel and becomes frozen time 1, matching WorldClient. Positive updates resume cycling. Main-thread runtime and CLI ticks increment total world age regardless of the cycle flag and advance day time only while cycling. New worlds reset time state.
 
-One codec test verifies golden bytes and truncated input; two world tests cover frozen/running transitions, sentinel behavior and long overflow. Full workspace tests pass. Sky rendering, daylight brightness and live-server time assertions remain incomplete; the new state does not establish visual day/night parity.
+One codec test verifies golden bytes and truncated input; two world tests cover frozen/running transitions, sentinel behavior and long overflow. Full workspace tests pass. The official-server probe below verifies frozen day time and advancing world age. This state does not establish visual day/night parity.
 
 ## Celestial angle and daylight rendering handoff
 
@@ -120,13 +120,13 @@ WorldTime exposes the local MCP919 overworld celestial-angle and moon-phase calc
 
 render/daylight.rs computes World-style sun brightness and sky subtraction using the existing MathHelper cosine table and source float operation order. A focused test checks noon/midnight values. The native frontend now uses live world time and render interpolation to scale its existing sky background and subtract daylight darkness from mesh sky-light values, leaving block light unchanged. Dimension configurations without sky light retain the previous rendering path.
 
-The whole workspace passes. Visual output has not been manually inspected. Current background and terrain lighting remain simplified; celestial geometry, fog, biome sky colors, vanilla lightmap, weather packet integration and Nether/End visuals are not complete. Only celestial-angle bit equality is proven by the new exhaustive oracle.
+The whole workspace passes. Visual output has not been manually inspected. Current background and terrain lighting remain simplified; celestial geometry, fog, biome sky colors, vanilla lightmap and Nether/End visuals are not complete. Received weather now feeds daylight calculation. Only celestial-angle bit equality is proven by the new exhaustive oracle.
 
 ## Received rain and thunder state
 
 WorldSnapshot now owns Weather in world/weather.rs and consumes S2B reasons 1/2/7/8. Rain-start sets the raining flag and strength zero; rain-stop clears the flag and sets strength one. Explicit strength updates replace the received value; nonfinite strengths are ignored. These states are not locally advanced because MCP919 WorldClient.updateWeather is empty. Thunder strength supplied to brightness is raw thunder multiplied by rain, matching World.getThunderStrength. New-world initialization clears weather.
 
-Live daylight calculation now reads weather instead of fixed zeros. The native terrain sky-light subtraction consequently responds to server weather. Tests cover reason transitions, persistence across client ticks, thunder/rain multiplication, noon brightness reduction, and S2B delivery over the local TCP runtime path. Full workspace tests and the focused TCP test pass. Rain geometry, clouds, lightning, sky-color weather desaturation, sound and official-server weather assertions remain incomplete.
+Live daylight calculation now reads weather instead of fixed zeros. The native terrain sky-light subtraction consequently responds to server weather. Tests cover reason transitions, persistence across client ticks, thunder/rain multiplication, noon brightness reduction, and S2B delivery over the local TCP runtime path. Full workspace tests and the focused TCP test pass. The official-server probe below also verifies received rain state and positive strength. Rain geometry, clouds, lightning, sky-color weather desaturation and sound remain incomplete.
 
 ## Player DataWatcher metadata
 
@@ -147,3 +147,9 @@ A focused regression covers absent teams, same/different team, enabling/disablin
 S1FPacketSetExperience (0x1F) is implemented with float progress, VarInt level and VarInt total, matching the inspected MCP919 codec and setXPStats handler order. The protocol registry and session route it to UsabilityState. Snapshots expose all three values; native rendering draws the received progress bar and level. LiveRuntime resets experience when creating the respawned player, awaiting the server update.
 
 A golden wire test checks field order and roundtrip. A state test verifies snapshot values and reset. Workspace tests pass, followed by the new focused state test. Real-server experience acquisition, GUI visual inspection, creative/spectator HUD visibility rules, XP orbs and enchantment interactions remain unverified or incomplete.
+
+## Official-server experience, time and weather synchronization
+
+The opt-in `official_server_confirms_mining_and_respawn` test now resets XP levels, grants seven levels, freezes daylight cycling, sets day time to 6000 and starts rain through commands on the isolated official 1.8.9 server. It waits for the native runtime to receive level 7, frozen day time 6000, the raining flag and positive rain strength, then verifies that total world age advances while day time stays fixed. These assertions passed alongside the existing inventory, furnace, mining, death and respawn checks. The owned test server saved its world and exited after the test requested `/stop`.
+
+This verifies received live state, not XP orb pickup, complete weather transitions, thunder or visual HUD/sky parity. The server logged an internal StackOverflowError during player disconnect after `/stop`; the state assertions had already passed, and the process exited successfully. That shutdown log remains a limitation of the test run.
