@@ -342,7 +342,24 @@ Regression tests cover message age, wrapped-row age, the alpha boundaries, and
 actual framebuffer changes for fresh/faded/open/expired lines.
 
 Remaining differences include native font metrics, row geometry, configurable
-opacity/scale/height, formatting and interactions, action-bar rendering, and
+opacity/scale/height, formatting and interactions, and
 scroll anchoring for incoming messages. A scheduled frame may apply a batch of
 ticks to a newly received message; per-tick packet dispatch timing is not yet
 matched. No manual window or official-client visual comparison was performed.
+
+
+### Native S02 action-bar notifications
+
+MCP919 NetHandlerPlayClient routes S02 position 2 to GuiIngame's overlay message
+rather than GuiNewChat. UsabilityState now stores a separate latest message,
+replaces it on receipt, and expires it after 60 scheduled ticks. These packets no
+longer consume chat-history capacity. Native drawing uses centered unformatted
+component text at the source HUD offset and the source linear alpha formula,
+including the existing render interpolation fraction; ordinary chat visibility
+does not suppress this separate overlay. It shares the actual text blending path
+with chat history. Tests verify replacement, expiry, exclusion from chat history,
+partial-tick alpha, and framebuffer effects without a background rectangle.
+The whole workspace test suite passes. Official-server position-2 delivery and
+manual visual parity have not been verified. Native fonts, complete translation,
+record-playing color cycling, mounting messages, and exact per-tick network
+dispatch remain incomplete.

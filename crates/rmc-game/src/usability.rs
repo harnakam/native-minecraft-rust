@@ -20,6 +20,12 @@ pub struct ChatLine {
     pub position: i8,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ActionBarMessage {
+    pub message_json: String,
+    pub remaining_ticks: u8,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct AudioCueSnapshot {
     pub sound_name: String,
@@ -115,6 +121,7 @@ pub struct Experience {
 pub struct UsabilitySnapshot {
     pub experience: Experience,
     pub chat_lines: Vec<ChatLine>,
+    pub action_bar: Option<ActionBarMessage>,
     pub sidebar: Option<SidebarSnapshot>,
     pub tab_list: Vec<TabListEntrySnapshot>,
     pub window: Option<WindowSnapshot>,
@@ -164,6 +171,7 @@ pub struct UsabilityState {
     inventory: InventoryState,
     settings: ClientSettingsState,
     chat_lines: Vec<ChatLine>,
+    action_bar: Option<ActionBarMessage>,
     tab_list: BTreeMap<[u8; 16], TabListEntryState>,
     objectives: BTreeMap<String, ObjectiveState>,
     display_slots: BTreeMap<u8, String>,
@@ -181,6 +189,12 @@ impl Default for UsabilityState {
 
 impl UsabilityState {
     pub fn advance_chat_ticks(&mut self, ticks: usize) {
+        if let Some(message) = &mut self.action_bar {
+            message.remaining_ticks = message.remaining_ticks.saturating_sub(ticks.min(255) as u8);
+            if message.remaining_ticks == 0 {
+                self.action_bar = None;
+            }
+        }
         for line in &mut self.chat_lines {
             line.age_ticks = line.age_ticks.saturating_add(ticks as u64);
         }
@@ -210,6 +224,7 @@ impl UsabilityState {
             inventory: InventoryState::new(),
             settings: ClientSettingsState::default(),
             chat_lines: Vec::new(),
+            action_bar: None,
             tab_list: BTreeMap::new(),
             objectives: BTreeMap::new(),
             display_slots: BTreeMap::new(),
@@ -337,6 +352,7 @@ impl UsabilityState {
         UsabilitySnapshot {
             experience: self.experience,
             chat_lines: self.chat_lines.clone(),
+            action_bar: self.action_bar.clone(),
             sidebar: self.sidebar_snapshot(),
             tab_list,
             window,
@@ -346,6 +362,13 @@ impl UsabilityState {
     }
 
     fn push_chat(&mut self, packet: &ChatMessagePacket) {
+        if packet.position == 2 {
+            self.action_bar = Some(ActionBarMessage {
+                message_json: packet.message_json.clone(),
+                remaining_ticks: 60,
+            });
+            return;
+        }
         self.chat_lines.push(ChatLine {
             age_ticks: 0,
             message_json: packet.message_json.clone(),
@@ -617,6 +640,47 @@ mod tests {
         ScoreboardObjectivePacket, SoundEffectPacket, TeamAction, TeamsPacket, UpdateScoreAction,
         UpdateScorePacket,
     };
+
+    #[test]
+    fn action_bar_replaces_previous_message_expires_and_never_enters_chat_history() {
+        let mut state = UsabilityState::new();
+        for text in ["first", "second"] {
+            state.apply_play_packet(&PlayClientboundPacket::ChatMessage(ChatMessagePacket {
+                message_json: format!("{{\"text\":\"{text}\"}}"),
+                position: 2,
+            }));
+            assert!(state.snapshot().chat_lines.is_empty());
+            assert_eq!(
+                state
+                    .snapshot()
+                    .action_bar
+                    .as_ref()
+                    .unwrap()
+                    .remaining_ticks,
+                60
+            );
+            state.advance_chat_ticks(10);
+        }
+        assert!(state
+            .snapshot()
+            .action_bar
+            .as_ref()
+            .unwrap()
+            .message_json
+            .contains("second"));
+        state.advance_chat_ticks(49);
+        assert_eq!(
+            state
+                .snapshot()
+                .action_bar
+                .as_ref()
+                .unwrap()
+                .remaining_ticks,
+            1
+        );
+        state.advance_chat_ticks(1);
+        assert!(state.snapshot().action_bar.is_none());
+    }
 
     #[test]
     fn chat_age_uses_simulation_ticks_and_new_messages_start_at_zero() {

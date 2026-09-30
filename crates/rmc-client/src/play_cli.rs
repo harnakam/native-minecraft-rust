@@ -983,6 +983,12 @@ impl PlayApp {
                     }
                 }
                 if let Some(snapshot) = runtime.usability_snapshot() {
+                    if let Some(message) = &snapshot.action_bar {
+                        let partial_ticks = runtime
+                            .output()
+                            .map_or(0.0, |output| output.render.interpolation_alpha);
+                        draw_action_bar(frame, width, height, message, partial_ticks);
+                    }
                     if snapshot.settings.chat_visibility != 2 {
                         draw_chat_history(
                             frame,
@@ -2768,28 +2774,79 @@ fn draw_chat_history(
                 }
             }
         }
-        text_mask.fill(0);
-        draw_text_scaled(&mut text_mask, width, 20, 12, 0, text, [255, 255, 255], 1);
-        for py in 0..20 {
-            let target_y = y + py;
-            if target_y < 0 || target_y >= height as i32 {
+        blend_chat_text(frame, width, height, 12, y, text, alpha, &mut text_mask);
+    }
+}
+
+fn blend_chat_text(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    text: &str,
+    alpha: u8,
+    text_mask: &mut [u8],
+) {
+    text_mask.fill(0);
+    draw_text_scaled(text_mask, width, 20, x, 0, text, [255, 255, 255], 1);
+    for py in 0..20 {
+        let target_y = y + py;
+        if target_y < 0 || target_y >= height as i32 {
+            continue;
+        }
+        for px in 0..width as usize {
+            let source = (py as usize * width as usize + px) * 4;
+            let coverage = text_mask[source] as u32 * alpha as u32 / 255;
+            if coverage == 0 {
                 continue;
             }
-            for px in 0..width as usize {
-                let source = (py as usize * width as usize + px) * 4;
-                let coverage = text_mask[source] as u32 * alpha as u32 / 255;
-                if coverage == 0 {
-                    continue;
-                }
-                let target = (target_y as usize * width as usize + px) * 4;
-                for channel in 0..3 {
-                    frame[target + channel] = ((frame[target + channel] as u32 * (255 - coverage)
-                        + 255 * coverage)
-                        / 255) as u8;
-                }
+            let target = (target_y as usize * width as usize + px) * 4;
+            for channel in 0..3 {
+                frame[target + channel] = ((frame[target + channel] as u32 * (255 - coverage)
+                    + 255 * coverage)
+                    / 255) as u8;
             }
         }
     }
+}
+
+fn action_bar_alpha(remaining_ticks: u8, partial_ticks: f32) -> u8 {
+    (((remaining_ticks as f32 - partial_ticks) * 255.0 / 20.0) as i32).clamp(0, 255) as u8
+}
+
+fn draw_action_bar(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    message: &rmc_game::usability::ActionBarMessage,
+    partial_ticks: f32,
+) {
+    let alpha = action_bar_alpha(message.remaining_ticks, partial_ticks);
+    if alpha <= 8 {
+        return;
+    }
+    let text = serde_json::from_str(&message.message_json)
+        .map(|value| chat_component_text(&value))
+        .unwrap_or_else(|_| message.message_json.clone());
+    let text_width = if let Some(font) = ui_font() {
+        text.chars()
+            .map(|character| font.metrics(character, 14.0).advance_width)
+            .sum::<f32>() as i32
+    } else {
+        text.chars().count() as i32 * 8
+    };
+    let mut mask = vec![0u8; width as usize * 20 * 4];
+    blend_chat_text(
+        frame,
+        width,
+        height,
+        width as i32 / 2 - text_width / 2,
+        height as i32 - 72,
+        &text,
+        alpha,
+        &mut mask,
+    );
 }
 
 fn draw_chat_input_overlay(frame: &mut [u8], width: u32, height: u32, value: &str) {
@@ -3546,6 +3603,30 @@ mod inventory_layout_tests {
         let rows = wrap_chat_text(&text, 1);
         assert_eq!(rows.len(), 32767);
         assert_eq!(rows.concat(), text);
+    }
+
+    #[test]
+    fn action_bar_fade_uses_partial_ticks_and_blends_only_text_pixels() {
+        assert_eq!(action_bar_alpha(60, 0.5), 255);
+        assert_eq!(action_bar_alpha(20, 0.0), 255);
+        assert_eq!(action_bar_alpha(10, 0.0), 127);
+        assert_eq!(action_bar_alpha(10, 0.5), 121);
+        assert_eq!(action_bar_alpha(0, 0.0), 0);
+        let mut message = rmc_game::usability::ActionBarMessage {
+            message_json: "{\"text\":\"Notice\"}".into(),
+            remaining_ticks: 60,
+        };
+        let initial = vec![100u8; 200 * 100 * 4];
+        let mut frame = initial.clone();
+        draw_action_bar(&mut frame, 200, 100, &message, 0.0);
+        assert_ne!(frame, initial);
+        assert!(frame
+            .chunks_exact(4)
+            .all(|pixel| pixel[0] >= 100 && pixel[3] == 100));
+        message.remaining_ticks = 0;
+        frame.copy_from_slice(&initial);
+        draw_action_bar(&mut frame, 200, 100, &message, 0.0);
+        assert_eq!(frame, initial);
     }
 
     #[test]
