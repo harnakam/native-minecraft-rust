@@ -871,6 +871,18 @@ impl PlayApp {
                 if let Some(snapshot) = runtime.usability_snapshot() {
                     if let Some(window) = snapshot.window.as_ref() {
                         draw_window_overlay(frame, width, height, window);
+                        if let Some(item) = window.carried_item.as_ref() {
+                            draw_text_scaled(
+                                frame,
+                                width,
+                                height,
+                                self.mouse_position.x as i32 + 8,
+                                self.mouse_position.y as i32 + 8,
+                                &format!("{} x{}", item.item_id, item.count),
+                                [255, 255, 255],
+                                1,
+                            );
+                        }
                     }
                 }
                 if self.chat_open {
@@ -933,6 +945,9 @@ impl PlayApp {
                                 self.status_line = error;
                             }
                         }
+                        return;
+                    }
+                    if self.window_is_open() {
                         return;
                     }
                 }
@@ -1123,6 +1138,15 @@ impl PlayApp {
             if matches!(key, VirtualKeyCode::E | VirtualKeyCode::Escape) && self.window_is_open() {
                 if let Some(runtime) = &mut self.runtime {
                     if let Err(error) = runtime.close_open_window() {
+                        self.status_line = error;
+                    }
+                }
+                self.apply_cursor_capture(window, true);
+                return;
+            }
+            if key == VirtualKeyCode::E {
+                if let Some(runtime) = &mut self.runtime {
+                    if let Err(error) = runtime.open_player_inventory() {
                         self.status_line = error;
                     }
                 }
@@ -1588,11 +1612,13 @@ impl PlayApp {
             self.options.height as i32,
         );
 
+        let outside = !layout.panel.contains(mouse_x, mouse_y);
         layout
             .slots
             .into_iter()
             .find(|(rect, _)| rect.contains(mouse_x, mouse_y))
             .map(|(_, slot_id)| (window.window_id, slot_id))
+            .or_else(|| outside.then_some((window.window_id, -999)))
     }
 
     fn send_chat_input(&mut self) {
@@ -2120,6 +2146,41 @@ fn layout_window_snapshot(
     screen_width: i32,
     screen_height: i32,
 ) -> WindowLayout {
+    if window.window_id == 0 && window.inventory_type == "minecraft:inventory" {
+        let panel = UiRect {
+            x: screen_width / 2 - 88,
+            y: screen_height / 2 - 83,
+            width: 176,
+            height: 166,
+        };
+        let slots = (0..window.slots.len().min(45))
+            .map(|slot| {
+                let (x, y) = match slot {
+                    0 => (144, 36),
+                    1..=4 => (
+                        88 + ((slot - 1) % 2) as i32 * 18,
+                        26 + ((slot - 1) / 2) as i32 * 18,
+                    ),
+                    5..=8 => (8, 8 + (slot - 5) as i32 * 18),
+                    9..=35 => (
+                        8 + ((slot - 9) % 9) as i32 * 18,
+                        84 + ((slot - 9) / 9) as i32 * 18,
+                    ),
+                    _ => (8 + (slot - 36) as i32 * 18, 142),
+                };
+                (
+                    UiRect {
+                        x: panel.x + x,
+                        y: panel.y + y,
+                        width: 16,
+                        height: 16,
+                    },
+                    slot as i16,
+                )
+            })
+            .collect();
+        return WindowLayout { panel, slots };
+    }
     let total_slots = window.slots.len().min(90);
     let columns = 9usize;
     let top_rows = usize::from(window.slot_count).div_ceil(columns).max(1);
@@ -2127,7 +2188,8 @@ fn layout_window_snapshot(
         .saturating_sub(usize::from(window.slot_count))
         .div_ceil(columns);
     let panel_width = columns as i32 * 20 + 20;
-    let panel_height = (top_rows as i32 + player_rows as i32) * 20 + 36;
+    let panel_height =
+        (top_rows as i32 + player_rows as i32) * 20 + 36 + if player_rows > 0 { 20 } else { 0 };
     let panel = UiRect {
         x: screen_width / 2 - panel_width / 2,
         y: screen_height / 2 - panel_height / 2,
@@ -2139,7 +2201,11 @@ fn layout_window_snapshot(
     for slot_id in 0..total_slots {
         let slot_id_i16 = slot_id as i16;
         let row = slot_id / columns;
-        let column = slot_id % columns;
+        let column = if slot_id < window.slot_count {
+            slot_id % columns
+        } else {
+            (slot_id - window.slot_count) % columns
+        };
         let y_offset = if slot_id < usize::from(window.slot_count) {
             row as i32
         } else {
@@ -2739,5 +2805,50 @@ fn normalize(vector: [f32; 3]) -> [f32; 3] {
         [0.0, 0.0, 0.0]
     } else {
         [vector[0] / length, vector[1] / length, vector[2] / length]
+    }
+}
+
+#[cfg(test)]
+mod inventory_layout_tests {
+    use super::*;
+
+    #[test]
+    fn every_slot_is_unique_and_inside_the_clickable_panel() {
+        for (id, kind, count, total) in [
+            (0, "minecraft:inventory", 9, 45),
+            (4, "minecraft:chest", 27, 63),
+            (5, "minecraft:chest", 54, 90),
+            (6, "minecraft:furnace", 3, 39),
+        ] {
+            let window = WindowSnapshot {
+                window_id: id,
+                inventory_type: kind.into(),
+                title_json: "{}".into(),
+                slot_count: count,
+                slots: vec![None; total],
+                carried_item: None,
+            };
+            let layout = layout_window_snapshot(&window, 640, 480);
+            assert_eq!(layout.slots.len(), total);
+            for (index, (rect, slot)) in layout.slots.iter().enumerate() {
+                assert_eq!(*slot as usize, index);
+                assert!(layout.panel.contains(rect.x as f32, rect.y as f32));
+                assert!(layout.panel.contains(
+                    (rect.x + rect.width - 1) as f32,
+                    (rect.y + rect.height - 1) as f32
+                ));
+                assert_eq!(
+                    layout
+                        .slots
+                        .iter()
+                        .filter(|(other, _)| other.contains(
+                            (rect.x + rect.width / 2) as f32,
+                            (rect.y + rect.height / 2) as f32
+                        ))
+                        .count(),
+                    1
+                );
+            }
+        }
     }
 }

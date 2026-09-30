@@ -639,6 +639,11 @@ impl WorldSnapshot {
             | PlayClientboundPacket::UpdateScore(_)
             | PlayClientboundPacket::DisplayScoreboard(_)
             | PlayClientboundPacket::Teams(_)
+            | PlayClientboundPacket::PlayerAbilities(_)
+            | PlayClientboundPacket::HeldItemChange(_)
+            | PlayClientboundPacket::EntityEffect(_)
+            | PlayClientboundPacket::RemoveEntityEffect(_)
+            | PlayClientboundPacket::EntityProperties(_)
             | PlayClientboundPacket::Disconnect(_) => None,
         };
 
@@ -877,3 +882,5 @@ mod tests {
         );
     }
 }
+
+pub mod environment;

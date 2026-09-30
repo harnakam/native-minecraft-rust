@@ -58,6 +58,25 @@ pub struct ClientShell {
     packet_emitter: rmc_game::player::WalkingPacketEmitter,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmc_net::codec::play::{HeldItemChangeClientboundPacket, PlayClientboundPacket};
+
+    #[test]
+    fn server_hotbar_change_survives_subsequent_input_frames() {
+        let mut shell = ClientShell::new(ClientShellConfig::vanilla());
+        shell.apply_player_packet(
+            &PlayClientboundPacket::HeldItemChange(HeldItemChangeClientboundPacket { slot: 7 }),
+            None,
+        );
+        for _ in 0..3 {
+            let output = shell.advance(Duration::from_millis(50), &InputFrame::default());
+            assert_eq!(output.simulation.player.selected_hotbar_slot, 7);
+        }
+    }
+}
+
 impl ClientShell {
     pub fn new(config: ClientShellConfig) -> Self {
         Self {
@@ -70,6 +89,19 @@ impl ClientShell {
             simulation: LocalSimulationLayer::new(config.simulation),
             packet_emitter: rmc_game::player::WalkingPacketEmitter::default(),
         }
+    }
+
+    pub fn apply_player_packet(
+        &mut self,
+        packet: &rmc_net::codec::play::PlayClientboundPacket,
+        entity_id: Option<i32>,
+    ) {
+        if let rmc_net::codec::play::PlayClientboundPacket::HeldItemChange(packet) = packet {
+            if (0..=8).contains(&packet.slot) {
+                self.input.selected_hotbar_slot = packet.slot as u8;
+            }
+        }
+        self.simulation.apply_player_packet(packet, entity_id);
     }
 
     pub fn set_mouse_captured(&mut self, captured: bool) {

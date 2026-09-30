@@ -41,6 +41,60 @@ pub struct UpdateHealthPacket {
     pub saturation: f32,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlayerAbilitiesPacket {
+    pub flags: u8,
+    pub flying_speed: f32,
+    pub walking_speed: f32,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HeldItemChangeClientboundPacket {
+    pub slot: i8,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EntityEffectPacket {
+    pub entity_id: i32,
+    pub effect_id: u8,
+    pub amplifier: u8,
+    pub duration: i32,
+    pub hide_particles: u8,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemoveEntityEffectPacket {
+    pub entity_id: i32,
+    pub effect_id: u8,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct AttributeModifier {
+    pub uuid: [u8; 16],
+    pub amount: f64,
+    pub operation: u8,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct EntityAttribute {
+    pub name: String,
+    pub base: f64,
+    pub modifiers: Vec<AttributeModifier>,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct EntityPropertiesPacket {
+    pub entity_id: i32,
+    pub attributes: Vec<EntityAttribute>,
+}
+
+fn bounded_count(count: i32, maximum: usize) -> Result<usize, CodecError> {
+    if count < 0 {
+        return Err(CodecError::Buffer(BufferError::NegativeLength(count)));
+    }
+    if count as usize > maximum {
+        return Err(CodecError::Buffer(BufferError::ByteArrayTooLong {
+            max_len: maximum,
+            actual: count as usize,
+        }));
+    }
+    Ok(count as usize)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RespawnPacket {
     pub dimension: i32,
@@ -560,6 +614,11 @@ pub enum PlayClientboundPacket {
     PlayerPositionAndLook(PlayerPositionAndLookPacket),
     SpawnPlayer(SpawnPlayerPacket),
     EntityVelocity(EntityVelocityPacket),
+    PlayerAbilities(PlayerAbilitiesPacket),
+    HeldItemChange(HeldItemChangeClientboundPacket),
+    EntityEffect(EntityEffectPacket),
+    RemoveEntityEffect(RemoveEntityEffectPacket),
+    EntityProperties(EntityPropertiesPacket),
     DestroyEntities(DestroyEntitiesPacket),
     EntityRelativeMove(EntityRelativeMovePacket),
     EntityLook(EntityLookPacket),
@@ -717,6 +776,61 @@ impl PlayClientboundPacket {
             0x19 => Self::EntityHeadLook(EntityHeadLookPacket {
                 entity_id: reader.read_var_i32()?,
                 head_yaw: reader.read_u8()?,
+            }),
+            0x1D => Self::EntityEffect(EntityEffectPacket {
+                entity_id: reader.read_var_i32()?,
+                effect_id: reader.read_u8()?,
+                amplifier: reader.read_u8()?,
+                duration: reader.read_var_i32()?,
+                hide_particles: reader.read_u8()?,
+            }),
+            0x1E => Self::RemoveEntityEffect(RemoveEntityEffectPacket {
+                entity_id: reader.read_var_i32()?,
+                effect_id: reader.read_u8()?,
+            }),
+            0x20 => {
+                let entity_id = reader.read_var_i32()?;
+                let count = bounded_count(reader.read_i32()?, 256)?;
+                let mut attributes = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let name = reader.read_string(64)?;
+                    let base = reader.read_f64()?;
+                    let count = bounded_count(reader.read_var_i32()?, 256)?;
+                    let mut modifiers = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        let uuid = reader.read_uuid_bytes()?;
+                        let amount = reader.read_f64()?;
+                        let operation = reader.read_u8()?;
+                        if operation > 2 {
+                            return Err(CodecError::InvalidEnumValue {
+                                enum_name: "AttributeOperation",
+                                actual: operation.into(),
+                            });
+                        }
+                        modifiers.push(AttributeModifier {
+                            uuid,
+                            amount,
+                            operation,
+                        });
+                    }
+                    attributes.push(EntityAttribute {
+                        name,
+                        base,
+                        modifiers,
+                    });
+                }
+                Self::EntityProperties(EntityPropertiesPacket {
+                    entity_id,
+                    attributes,
+                })
+            }
+            0x09 => Self::HeldItemChange(HeldItemChangeClientboundPacket {
+                slot: reader.read_i8()?,
+            }),
+            0x39 => Self::PlayerAbilities(PlayerAbilitiesPacket {
+                flags: reader.read_u8()?,
+                flying_speed: reader.read_f32()?,
+                walking_speed: reader.read_f32()?,
             }),
             0x21 => Self::ChunkData(ChunkDataPacket {
                 chunk_x: reader.read_i32()?,
@@ -1107,6 +1221,52 @@ impl PlayClientboundPacket {
             Self::KeepAlive(packet) => {
                 writer.write_var_i32(packet.id);
                 0x00
+            }
+            Self::HeldItemChange(packet) => {
+                writer.write_i8(packet.slot);
+                0x09
+            }
+            Self::PlayerAbilities(packet) => {
+                writer.write_u8(packet.flags);
+                writer.write_f32(packet.flying_speed);
+                writer.write_f32(packet.walking_speed);
+                0x39
+            }
+            Self::EntityEffect(packet) => {
+                writer.write_var_i32(packet.entity_id);
+                writer.write_u8(packet.effect_id);
+                writer.write_u8(packet.amplifier);
+                writer.write_var_i32(packet.duration);
+                writer.write_u8(packet.hide_particles);
+                0x1D
+            }
+            Self::RemoveEntityEffect(packet) => {
+                writer.write_var_i32(packet.entity_id);
+                writer.write_u8(packet.effect_id);
+                0x1E
+            }
+            Self::EntityProperties(packet) => {
+                writer.write_var_i32(packet.entity_id);
+                bounded_count(packet.attributes.len() as i32, 256)?;
+                writer.write_i32(packet.attributes.len() as i32);
+                for attribute in &packet.attributes {
+                    writer.write_string(&attribute.name, 64)?;
+                    writer.write_f64(attribute.base);
+                    bounded_count(attribute.modifiers.len() as i32, 256)?;
+                    writer.write_var_i32(attribute.modifiers.len() as i32);
+                    for modifier in &attribute.modifiers {
+                        if modifier.operation > 2 {
+                            return Err(CodecError::InvalidEnumValue {
+                                enum_name: "AttributeOperation",
+                                actual: modifier.operation.into(),
+                            });
+                        }
+                        writer.write_uuid_bytes(&modifier.uuid);
+                        writer.write_f64(modifier.amount);
+                        writer.write_u8(modifier.operation);
+                    }
+                }
+                0x20
             }
             Self::JoinGame(packet) => {
                 writer.write_i32(packet.entity_id);
@@ -1701,6 +1861,7 @@ pub enum PlayServerboundPacket {
     CloseWindow(CloseWindowServerboundPacket),
     ClickWindow(ClickWindowPacket),
     ConfirmTransaction(ConfirmTransactionServerboundPacket),
+    ClientStatus(i32),
     ClientSettings(ClientSettingsPacket),
     CustomPayload(CustomPayloadPacket),
 }
@@ -1715,6 +1876,16 @@ impl PlayServerboundPacket {
         let mut reader = PacketReader::new(body);
 
         let packet = match packet_id {
+            0x16 => {
+                let action = reader.read_var_i32()?;
+                if !(0..=2).contains(&action) {
+                    return Err(CodecError::InvalidEnumValue {
+                        enum_name: "ClientStatus",
+                        actual: action,
+                    });
+                }
+                Self::ClientStatus(action)
+            }
             0x00 => Self::KeepAlive(KeepAlivePacket {
                 id: reader.read_var_i32()?,
             }),
@@ -1818,6 +1989,16 @@ impl PlayServerboundPacket {
         let mut writer = PacketWriter::new();
 
         let packet_id = match self {
+            Self::ClientStatus(action) => {
+                if !(0..=2).contains(action) {
+                    return Err(CodecError::InvalidEnumValue {
+                        enum_name: "ClientStatus",
+                        actual: *action,
+                    });
+                }
+                writer.write_var_i32(*action);
+                0x16
+            }
             Self::KeepAlive(packet) => {
                 writer.write_var_i32(packet.id);
                 0x00

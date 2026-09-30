@@ -24,6 +24,19 @@ pub struct ContainerSnapshot {
 }
 
 impl ContainerSnapshot {
+    pub fn player_inventory_offset(&self) -> usize {
+        let Some(metadata) = self.metadata.as_ref() else {
+            return 9;
+        };
+        match metadata.inventory_type.as_str() {
+            "minecraft:crafting_table" => 10,
+            "minecraft:furnace" | "minecraft:anvil" | "minecraft:villager" => 3,
+            "minecraft:brewing_stand" => 4,
+            "minecraft:enchanting_table" => 2,
+            "minecraft:beacon" => 1,
+            _ => metadata.slot_count as usize,
+        }
+    }
     pub fn slot(&self, slot_id: i16) -> Option<&Slot> {
         let slot_id = usize::try_from(slot_id).ok()?;
         self.slots.get(slot_id)
@@ -80,6 +93,7 @@ pub struct InventoryState {
     selected_hotbar_slot: u8,
     inventory_window: ContainerSnapshot,
     open_window: Option<ContainerSnapshot>,
+    player_inventory_open: bool,
     carried_item: Slot,
     pending_transactions: Vec<PendingTransaction>,
     next_action_numbers: BTreeMap<u8, i16>,
@@ -98,10 +112,11 @@ impl InventoryState {
             selected_hotbar_slot: 0,
             inventory_window: ContainerSnapshot {
                 window_id: 0,
-                slots: vec![None; 46],
+                slots: vec![None; 45],
                 metadata: None,
             },
             open_window: None,
+            player_inventory_open: false,
             carried_item: None,
             pending_transactions: Vec::new(),
             next_action_numbers: BTreeMap::new(),
@@ -123,7 +138,15 @@ impl InventoryState {
     }
 
     pub fn open_window(&self) -> Option<&ContainerSnapshot> {
-        self.open_window.as_ref()
+        if self.player_inventory_open {
+            Some(&self.inventory_window)
+        } else {
+            self.open_window.as_ref()
+        }
+    }
+    pub fn open_player_inventory(&mut self) -> PlayServerboundPacket {
+        self.player_inventory_open = true;
+        PlayServerboundPacket::ClientStatus(2)
     }
 
     pub fn carried_item(&self) -> &Slot {
@@ -148,6 +171,12 @@ impl InventoryState {
     }
 
     pub fn close_open_window(&mut self) -> Option<PlayServerboundPacket> {
+        if self.player_inventory_open {
+            self.player_inventory_open = false;
+            return Some(PlayServerboundPacket::CloseWindow(
+                CloseWindowServerboundPacket { window_id: 0 },
+            ));
+        }
         let window_id = self.open_window.as_ref()?.window_id;
         self.drop_open_window(window_id);
         Some(PlayServerboundPacket::CloseWindow(
@@ -201,10 +230,26 @@ impl InventoryState {
         let previous_cursor = self.carried_item.clone();
         let packet = self.queue_click(window_id, slot_id, button, 0, clicked_item.clone());
         if let (Some(before), PlayServerboundPacket::ClickWindow(click)) = (before, &packet) {
+            if slot_id == -999 && matches!(button, 0 | 1) {
+                self.pickup_predictions
+                    .insert((window_id, click.action_number), (before, previous_cursor));
+                if button == 0 {
+                    self.carried_item = None;
+                } else if let Some(item) = self.carried_item.as_mut() {
+                    item.count = item.count.saturating_sub(1);
+                    if item.count == 0 {
+                        self.carried_item = None;
+                    }
+                }
+                return packet;
+            }
             if matches!(button, 0 | 1) && slot_id >= 0 && before.slot(slot_id).is_some() {
                 self.pickup_predictions
                     .insert((window_id, click.action_number), (before, previous_cursor));
-                let (slot, cursor) = predict_pickup(clicked_item, self.carried_item.take(), button);
+                let (valid, limit) =
+                    self.slot_rules(window_id, slot_id, self.carried_item.as_ref());
+                let (slot, cursor) =
+                    predict_pickup(clicked_item, self.carried_item.take(), button, valid, limit);
                 self.carried_item = cursor;
                 if window_id == 0 {
                     self.inventory_window.set_slot(slot_id, slot);
@@ -213,10 +258,16 @@ impl InventoryState {
                 }
             }
         }
+        if window_id == 0 {
+            self.sync_player_inventory_to_open();
+        } else {
+            self.sync_open_player_inventory();
+        }
         packet
     }
 
     pub fn apply_open_window(&mut self, packet: &OpenWindowPacket) -> InventoryUpdate {
+        self.player_inventory_open = false;
         self.open_window = Some(ContainerSnapshot {
             window_id: packet.window_id,
             slots: vec![None; packet.slot_count as usize],
@@ -252,20 +303,32 @@ impl InventoryState {
                 }
             }
             -2 => {
-                self.inventory_window
-                    .set_slot(packet.slot_id, packet.item.clone());
+                let slot = match packet.slot_id {
+                    0..=8 => packet.slot_id + 36,
+                    9..=35 => packet.slot_id,
+                    36..=39 => 44 - packet.slot_id,
+                    _ => return update,
+                };
+                self.inventory_window.set_slot(slot, packet.item.clone());
+                self.sync_player_inventory_to_open();
                 update.touch_window(0);
             }
             0 => {
                 self.inventory_window
                     .set_slot(packet.slot_id, packet.item.clone());
+                self.sync_player_inventory_to_open();
                 update.touch_window(0);
             }
             positive if positive > 0 => {
                 let window_id = positive as u8;
+                let previous_player_slots = self.inventory_window.slots.clone();
                 self.ensure_open_window(window_id)
                     .set_slot(packet.slot_id, packet.item.clone());
+                self.sync_open_player_inventory();
                 update.touch_window(window_id);
+                if self.inventory_window.slots != previous_player_slots {
+                    update.touch_window(0);
+                }
             }
             _ => {}
         }
@@ -276,6 +339,7 @@ impl InventoryState {
     pub fn apply_window_items(&mut self, packet: &WindowItemsPacket) -> InventoryUpdate {
         if packet.window_id == 0 {
             self.inventory_window.slots = packet.items.clone();
+            self.sync_player_inventory_to_open();
         } else {
             let metadata = self
                 .open_window
@@ -290,8 +354,14 @@ impl InventoryState {
             });
         }
 
+        if packet.window_id != 0 {
+            self.sync_open_player_inventory();
+        }
         let mut update = InventoryUpdate::default();
         update.touch_window(packet.window_id);
+        if packet.window_id != 0 {
+            update.touch_window(0);
+        }
         update
     }
 
@@ -317,12 +387,14 @@ impl InventoryState {
             if let Some((window, cursor)) = prediction {
                 if packet.window_id == 0 {
                     self.inventory_window = window;
+                    self.sync_player_inventory_to_open();
                 } else if self
                     .open_window
                     .as_ref()
                     .is_some_and(|open| open.window_id == packet.window_id)
                 {
                     self.open_window = Some(window);
+                    self.sync_open_player_inventory();
                 }
                 self.carried_item = cursor;
                 self.pickup_predictions
@@ -349,6 +421,12 @@ impl InventoryState {
 
     pub fn apply_play_packet(&mut self, packet: &PlayClientboundPacket) -> InventoryUpdate {
         match packet {
+            PlayClientboundPacket::HeldItemChange(packet) => {
+                if (0..=8).contains(&packet.slot) {
+                    self.selected_hotbar_slot = packet.slot as u8;
+                }
+                InventoryUpdate::default()
+            }
             PlayClientboundPacket::OpenWindow(packet) => self.apply_open_window(packet),
             PlayClientboundPacket::CloseWindow(packet) => self.apply_close_window(packet),
             PlayClientboundPacket::SetSlot(packet) => self.apply_set_slot(packet),
@@ -357,6 +435,106 @@ impl InventoryState {
                 self.apply_confirm_transaction(packet)
             }
             _ => InventoryUpdate::default(),
+        }
+    }
+
+    fn slot_rules(
+        &self,
+        window_id: u8,
+        slot_id: i16,
+        item: Option<&rmc_net::codec::play::ItemStack>,
+    ) -> (bool, u8) {
+        let Some(item) = item else {
+            return (true, 64);
+        };
+        let mut limit = item_stack_limit(item.item_id);
+        let valid = if window_id == 0 {
+            match slot_id {
+                0 => false,
+                5..=8 => {
+                    limit = 1;
+                    ((298..=317).contains(&item.item_id) && (item.item_id - 298) % 4 == slot_id - 5)
+                        || (slot_id == 5 && matches!(item.item_id, 86 | 397))
+                }
+                _ => true,
+            }
+        } else {
+            match self
+                .open_window
+                .as_ref()
+                .and_then(|w| w.metadata.as_ref())
+                .map(|m| m.inventory_type.as_str())
+            {
+                Some("minecraft:crafting_table") if slot_id == 0 => false,
+                Some("minecraft:furnace" | "minecraft:anvil" | "minecraft:villager")
+                    if slot_id == 2 =>
+                {
+                    false
+                }
+                Some("minecraft:enchanting_table") if slot_id == 0 => {
+                    limit = 1;
+                    true
+                }
+                Some("minecraft:enchanting_table") if slot_id == 1 => {
+                    item.item_id == 351 && item.damage == 4
+                }
+                Some("minecraft:brewing_stand") if (0..=2).contains(&slot_id) => {
+                    limit = 1;
+                    matches!(item.item_id, 373 | 374)
+                }
+                Some("minecraft:beacon") if slot_id == 0 => {
+                    limit = 1;
+                    matches!(item.item_id, 264 | 265 | 266 | 388)
+                }
+                Some("EntityHorse") if slot_id == 0 => {
+                    limit = 1;
+                    item.item_id == 329
+                }
+                Some("EntityHorse") if slot_id == 1 => {
+                    limit = 1;
+                    (417..=419).contains(&item.item_id)
+                }
+                _ => true,
+            }
+        };
+        (valid, limit)
+    }
+
+    fn sync_open_player_inventory(&mut self) {
+        let Some(window) = self.open_window.as_ref() else {
+            return;
+        };
+        if window.metadata.is_none() {
+            return;
+        }
+        let offset = window.player_inventory_offset();
+        if window.slots.len() < offset + 36 {
+            return;
+        }
+        for index in 0..36 {
+            self.inventory_window
+                .set_slot((index + 9) as i16, window.slots[offset + index].clone());
+        }
+    }
+
+    fn sync_player_inventory_to_open(&mut self) {
+        let Some(window) = self.open_window.as_mut() else {
+            return;
+        };
+        if window.metadata.is_none() {
+            return;
+        }
+        let offset = window.player_inventory_offset();
+        if window.slots.len() < offset + 36 {
+            return;
+        }
+        for index in 0..36 {
+            window.slots[offset + index] = self
+                .inventory_window
+                .slots
+                .get(index + 9)
+                .cloned()
+                .unwrap_or(None);
         }
     }
 
@@ -374,7 +552,7 @@ impl InventoryState {
     fn next_action_number(&mut self, window_id: u8) -> i16 {
         let next = self.next_action_numbers.entry(window_id).or_insert(1);
         let action_number = *next;
-        *next = next.saturating_add(1);
+        *next = next.wrapping_add(1);
         action_number
     }
 
@@ -412,7 +590,22 @@ impl InventoryState {
     }
 }
 
-fn predict_pickup(slot: Slot, cursor: Slot, button: i8) -> (Slot, Slot) {
+fn predict_pickup(slot: Slot, cursor: Slot, button: i8, valid: bool, limit: u8) -> (Slot, Slot) {
+    if !valid && cursor.is_some() {
+        if let (Some(slot), Some(cursor)) = (&slot, &cursor) {
+            if slot.item_id == cursor.item_id
+                && slot.damage == cursor.damage
+                && slot.nbt == cursor.nbt
+                && u16::from(slot.count) + u16::from(cursor.count)
+                    <= u16::from(item_stack_limit(cursor.item_id))
+            {
+                let mut cursor = cursor.clone();
+                cursor.count += slot.count;
+                return (None, Some(cursor));
+            }
+        }
+        return (slot, cursor);
+    }
     match (slot, cursor) {
         (None, None) => (None, None),
         (Some(mut stack), None) => {
@@ -429,7 +622,7 @@ fn predict_pickup(slot: Slot, cursor: Slot, button: i8) -> (Slot, Slot) {
         (None, Some(mut cursor)) => {
             let mut placed = cursor.clone();
             placed.count = if button == 0 {
-                cursor.count.min(item_stack_limit(cursor.item_id))
+                cursor.count.min(limit)
             } else {
                 1
             };
@@ -441,41 +634,30 @@ fn predict_pickup(slot: Slot, cursor: Slot, button: i8) -> (Slot, Slot) {
                 && slot.damage == cursor.damage
                 && slot.nbt == cursor.nbt =>
         {
-            let capacity = item_stack_limit(slot.item_id).saturating_sub(slot.count);
+            let capacity = limit.saturating_sub(slot.count);
             let transfer = capacity.min(if button == 0 { cursor.count } else { 1 });
             slot.count += transfer;
             cursor.count -= transfer;
             (Some(slot), (cursor.count > 0).then_some(cursor))
         }
-        (slot, cursor) => (cursor, slot),
+        (slot, cursor) => {
+            if cursor.as_ref().is_some_and(|item| item.count > limit) {
+                (slot, cursor)
+            } else {
+                (cursor, slot)
+            }
+        }
     }
 }
 
 fn item_stack_limit(id: i16) -> u8 {
     match id {
-        256..=259
-        | 261
-        | 267..=279
-        | 282..=286
-        | 290..=294
-        | 298..=317
-        | 326..=329
-        | 333
-        | 335
-        | 346
-        | 354
-        | 355
-        | 359
-        | 373
-        | 386
-        | 398
-        | 403
-        | 407
-        | 408
-        | 413
-        | 417..=419
-        | 422
-        | 2256..=2267 => 1,
+        256 | 257 | 258 | 259 | 261 | 267 | 268 | 269 | 270 | 271 | 272 | 273 | 274 | 275 | 276
+        | 277 | 278 | 279 | 282 | 283 | 284 | 285 | 286 | 290 | 291 | 292 | 293 | 294 | 298
+        | 299 | 300 | 301 | 302 | 303 | 304 | 305 | 306 | 307 | 308 | 309 | 310 | 311 | 312
+        | 313 | 314 | 315 | 316 | 317 | 326 | 327 | 328 | 329 | 333 | 335 | 342 | 343 | 346
+        | 354 | 355 | 359 | 373 | 386 | 398 | 403 | 407 | 408 | 413 | 417 | 418 | 419 | 422
+        | 2256 | 2257 | 2258 | 2259 | 2260 | 2261 | 2262 | 2263 | 2264 | 2265 | 2266 | 2267 => 1,
         323 | 325 | 332 | 344 | 368 | 387 | 416 | 425 => 16,
         _ => 64,
     }

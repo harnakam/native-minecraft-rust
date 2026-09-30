@@ -940,7 +940,82 @@ pub const TEAMS: PacketSpec = PacketSpec {
     ],
 };
 
+pub const PLAYER_ABILITIES: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x39,
+    name: "Player Abilities",
+    java_class: "net.minecraft.network.play.server.S39PacketPlayerAbilities",
+    java_handler: "INetHandlerPlayClient.handlePlayerAbilities",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "payload",
+        encoding: "Byte, Float, Float",
+        notes: "Protocol 47; verified against local MCP919 packet readers.",
+    }],
+};
+pub const ENTITY_EFFECT: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x1D,
+    name: "Entity Effect",
+    java_class: "net.minecraft.network.play.server.S1DPacketEntityEffect",
+    java_handler: "INetHandlerPlayClient.handleEntityEffect",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "payload",
+        encoding: "VarInt, Byte, Byte, VarInt, Byte",
+        notes: "Protocol 47; verified against local MCP919 packet readers.",
+    }],
+};
+pub const REMOVE_ENTITY_EFFECT: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x1E,
+    name: "Remove Entity Effect",
+    java_class: "net.minecraft.network.play.server.S1EPacketRemoveEntityEffect",
+    java_handler: "INetHandlerPlayClient.handleRemoveEntityEffect",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "payload",
+        encoding: "VarInt, Byte",
+        notes: "Protocol 47; verified against local MCP919 packet readers.",
+    }],
+};
+pub const ENTITY_PROPERTIES: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x20,
+    name: "Entity Properties",
+    java_class: "net.minecraft.network.play.server.S20PacketEntityProperties",
+    java_handler: "INetHandlerPlayClient.handleEntityProperties",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "payload",
+        encoding: "VarInt, Int, Attribute snapshots",
+        notes: "Protocol 47; verified against local MCP919 packet readers.",
+    }],
+};
+pub const HELD_ITEM_CHANGE: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x09,
+    name: "Held Item Change",
+    java_class: "net.minecraft.network.play.server.S09PacketHeldItemChange",
+    java_handler: "INetHandlerPlayClient.handleHeldItemChange",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "slot",
+        encoding: "Byte",
+        notes: "Hotbar index; only 0 through 8 is applied.",
+    }],
+};
 pub const PACKETS: &[PacketSpec] = &[
+    HELD_ITEM_CHANGE,
+    PLAYER_ABILITIES,
+    ENTITY_EFFECT,
+    REMOVE_ENTITY_EFFECT,
+    ENTITY_PROPERTIES,
     KEEP_ALIVE,
     JOIN_GAME,
     CHAT_MESSAGE,

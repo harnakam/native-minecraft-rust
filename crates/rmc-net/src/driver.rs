@@ -395,6 +395,7 @@ impl HeadlessDriver {
             | PlayServerboundPacket::CloseWindow(_)
             | PlayServerboundPacket::ClickWindow(_)
             | PlayServerboundPacket::ConfirmTransaction(_)
+            | PlayServerboundPacket::ClientStatus(_)
             | PlayServerboundPacket::ClientSettings(_)
             | PlayServerboundPacket::CustomPayload(_) => {}
             PlayServerboundPacket::PlayerPosition(packet) => {
@@ -444,31 +445,9 @@ fn supports_login_clientbound(packet_id: u8) -> bool {
 }
 
 fn supports_play_clientbound(packet_id: u8) -> bool {
-    matches!(
-        packet_id,
-        0x00 | 0x01
-            | 0x02
-            | 0x06
-            | 0x07
-            | 0x08
-            | 0x12
-            | 0x21
-            | 0x22
-            | 0x23
-            | 0x26
-            | 0x29
-            | 0x2D
-            | 0x2E
-            | 0x2F
-            | 0x30
-            | 0x32
-            | 0x38
-            | 0x3B
-            | 0x3C
-            | 0x3D
-            | 0x3E
-            | 0x40
-    )
+    crate::protocol::play_clientbound::PACKETS
+        .iter()
+        .any(|packet| packet.id == packet_id)
 }
 
 fn ignored_event(
@@ -493,6 +472,17 @@ fn record_trace(trace_sink: &mut Option<&mut dyn TraceSink>, event: PacketTraceE
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_implemented_clientbound_contract_reaches_the_runtime() {
+        for packet in crate::protocol::play_clientbound::PACKETS {
+            assert!(
+                super::supports_play_clientbound(packet.id),
+                "{} was silently discarded",
+                packet.name
+            );
+        }
+    }
+
     use super::{DriverEvent, HeadlessDriver, HeadlessDriverConfig};
     use crate::codec::login::{LoginClientboundPacket, LoginSuccess, SetCompression};
     use crate::codec::play::{

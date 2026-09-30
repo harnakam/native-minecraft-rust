@@ -1260,6 +1260,7 @@ fn packet_name(packet: &PlayServerboundPacket) -> &'static str {
         PlayServerboundPacket::CloseWindow(_) => "CloseWindow",
         PlayServerboundPacket::ClickWindow(_) => "ClickWindow",
         PlayServerboundPacket::ConfirmTransaction(_) => "ConfirmTransaction",
+        PlayServerboundPacket::ClientStatus(_) => "ClientStatus",
         PlayServerboundPacket::ClientSettings(_) => "ClientSettings",
         PlayServerboundPacket::CustomPayload(_) => "CustomPayload",
     }
@@ -1468,6 +1469,7 @@ fn render_shell_packet_line(tick_index: u64, packet: &PlayServerboundPacket) -> 
             confirm.action_number,
             confirm.accepted
         ),
+        PlayServerboundPacket::ClientStatus(action) => format!("tick={tick_index} packet=ClientStatus action={action}"),
         PlayServerboundPacket::ClientSettings(settings) => format!(
             "tick={tick_index} packet={} locale={} view_distance={} chat_visibility={} chat_colors={} displayed_skin_parts={}",
             packet_name(packet),

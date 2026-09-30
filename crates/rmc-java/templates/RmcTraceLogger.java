@@ -83,6 +83,10 @@ public final class RmcTraceLogger
         }
     }
 
+    private static int movementTick = 0;
+
+    public static int movementTick() { return movementTick; }
+
     public static void traceMovementState(int tick, double posX, double posY, double posZ, double motionX, double motionY, double motionZ, float yaw, float pitch, boolean onGround, boolean sprinting, boolean sneaking, String packet, boolean moved, boolean rotated)
     {
         if (!ENABLED)
@@ -90,6 +94,7 @@ public final class RmcTraceLogger
             return;
         }
 
+        movementTick = tick;
         writeLine("movement", "movement record=state tick=" + tick + " pos_x=" + formatDouble(posX) + " pos_y=" + formatDouble(posY) + " pos_z=" + formatDouble(posZ) + " vel_x=" + formatDouble(motionX) + " vel_y=" + formatDouble(motionY) + " vel_z=" + formatDouble(motionZ) + " yaw=" + formatFloat(yaw) + " pitch=" + formatFloat(pitch) + " on_ground=" + onGround + " sprinting=" + sprinting + " sneaking=" + sneaking + " packet=" + safe(packet) + " moved=" + moved + " rotated=" + rotated);
     }
 

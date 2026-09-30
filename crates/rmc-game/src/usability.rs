@@ -279,13 +279,13 @@ impl UsabilityState {
                 .metadata
                 .as_ref()
                 .map(|metadata| metadata.inventory_type.clone())
-                .unwrap_or_default(),
+                .unwrap_or_else(|| "minecraft:inventory".into()),
             title_json: window
                 .metadata
                 .as_ref()
                 .map(|metadata| metadata.window_title_json.clone())
-                .unwrap_or_default(),
-            slot_count: window.slots.len(),
+                .unwrap_or_else(|| "{\"text\":\"Inventory\"}".into()),
+            slot_count: window.player_inventory_offset(),
             slots: window.slots.clone(),
             carried_item: self.inventory.carried_item().clone(),
         });

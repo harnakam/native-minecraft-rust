@@ -150,6 +150,16 @@ pub struct LocalSimulationLayer {
     pending_knockback: Option<Vec3>,
     pending_server_state: Option<AuthoritativePlayerState>,
     sprint_reset_ticks: u8,
+    jump_ticks: u8,
+    in_web: bool,
+    fluid_acceleration: Option<f32>,
+    food_level: i32,
+    allow_flying: bool,
+    flying: bool,
+    flying_speed: f32,
+    attribute_speed: f64,
+    air_movement_factor: f32,
+    effects: std::collections::BTreeMap<u8, (u8, i32)>,
 }
 
 impl LocalSimulationLayer {
@@ -173,6 +183,16 @@ impl LocalSimulationLayer {
             pending_knockback: None,
             pending_server_state: None,
             sprint_reset_ticks: 0,
+            jump_ticks: 0,
+            in_web: false,
+            fluid_acceleration: None,
+            food_level: 20,
+            allow_flying: false,
+            flying: false,
+            flying_speed: 0.05,
+            attribute_speed: f64::from(0.1_f32),
+            air_movement_factor: 0.02,
+            effects: std::collections::BTreeMap::new(),
         }
     }
 
@@ -221,6 +241,73 @@ impl LocalSimulationLayer {
         }
     }
 
+    pub fn apply_player_packet(
+        &mut self,
+        packet: &rmc_net::codec::play::PlayClientboundPacket,
+        local_entity: Option<i32>,
+    ) {
+        use rmc_net::codec::play::PlayClientboundPacket as Packet;
+        match packet {
+            Packet::PlayerAbilities(p) => {
+                self.allow_flying = p.flags & 4 != 0;
+                self.flying = p.flags & 2 != 0;
+                if p.flying_speed.is_finite() {
+                    self.flying_speed = p.flying_speed;
+                }
+            }
+            Packet::UpdateHealth(p) => self.food_level = p.food_level,
+            Packet::EntityEffect(p) if Some(p.entity_id) == local_entity => {
+                self.effects.insert(p.effect_id, (p.amplifier, p.duration));
+            }
+            Packet::RemoveEntityEffect(p) if Some(p.entity_id) == local_entity => {
+                self.effects.remove(&p.effect_id);
+            }
+            Packet::EntityProperties(p) if Some(p.entity_id) == local_entity => {
+                for attribute in &p.attributes {
+                    if attribute.name != "generic.movementSpeed" || !attribute.base.is_finite() {
+                        continue;
+                    }
+                    // Local sprint owns this modifier; receiving it must not apply it twice.
+                    let sprint_uuid = [
+                        0x66, 0x2a, 0x6b, 0x8d, 0xda, 0x3e, 0x4c, 0x1c, 0x88, 0x13, 0x96, 0xea,
+                        0x60, 0x97, 0x27, 0x8d,
+                    ];
+                    let modifiers: Vec<_> = attribute
+                        .modifiers
+                        .iter()
+                        .filter(|m| m.uuid != sprint_uuid && m.amount.is_finite())
+                        .collect();
+                    let base = attribute.base
+                        + modifiers
+                            .iter()
+                            .filter(|m| m.operation == 0)
+                            .map(|m| m.amount)
+                            .sum::<f64>();
+                    let mut value = base;
+                    for m in &modifiers {
+                        if m.operation == 1 {
+                            value += base * m.amount;
+                        }
+                    }
+                    for m in &modifiers {
+                        if m.operation == 2 {
+                            value *= 1.0 + m.amount;
+                        }
+                    }
+                    if value.is_finite() {
+                        self.attribute_speed = value.clamp(0.0, 1024.0);
+                    }
+                }
+            }
+            Packet::Respawn(_) => {
+                self.effects.clear();
+                self.jump_ticks = 0;
+                self.in_web = false;
+            }
+            _ => {}
+        }
+    }
+
     pub fn tick(&mut self, movement: MovementInput, camera: CameraState, selected_hotbar_slot: u8) {
         self.tick_internal(movement, camera, selected_hotbar_slot, None);
     }
@@ -242,6 +329,10 @@ impl LocalSimulationLayer {
         selected_hotbar_slot: u8,
         world: Option<&WorldSnapshot>,
     ) {
+        self.effects.retain(|_, effect| {
+            effect.1 -= 1;
+            effect.1 > 0
+        });
         self.interpolation.previous_position = self.player.position;
         self.player.selected_hotbar_slot = selected_hotbar_slot;
         self.apply_pending_server_state();
@@ -264,26 +355,99 @@ impl LocalSimulationLayer {
                 *motion = 0.0;
             }
         }
-        let friction = if self.player.on_ground {
+        let environment = world
+            .map(|w| w.movement_environment(player_bounds(self.player.position)))
+            .unwrap_or_default();
+        self.velocity = self.velocity.add(Vec3::new(
+            environment.water_flow[0],
+            environment.water_flow[1],
+            environment.water_flow[2],
+        ));
+        self.fluid_acceleration = if !self.flying && (environment.water || environment.lava) {
+            Some(0.02)
+        } else {
+            None
+        };
+        let friction = if environment.water && !self.flying {
+            f64::from(0.8_f32)
+        } else if environment.lava && !self.flying {
+            0.5
+        } else if self.player.on_ground {
             self.config.ground_friction
         } else {
             self.config.air_friction
         };
+        self.jump_ticks = self.jump_ticks.saturating_sub(1);
         self.apply_horizontal_input(movement, camera);
-        self.apply_jump(movement, camera);
+        if self.flying {
+            if movement.jump {
+                self.velocity.y += f64::from(self.flying_speed * 3.0_f32);
+            }
+            if movement.sneak {
+                self.velocity.y -= f64::from(self.flying_speed * 3.0_f32);
+            }
+        } else if environment.water || environment.lava {
+            if movement.jump {
+                self.velocity.y += f64::from(0.04_f32);
+            }
+        } else {
+            self.apply_jump(movement, camera);
+        }
+        if environment.ladder && !self.flying {
+            self.velocity.x = self
+                .velocity
+                .x
+                .clamp(-f64::from(0.15_f32), f64::from(0.15_f32));
+            self.velocity.z = self
+                .velocity
+                .z
+                .clamp(-f64::from(0.15_f32), f64::from(0.15_f32));
+            self.velocity.y = self.velocity.y.max(-0.15);
+            if movement.sneak && self.velocity.y < 0.0 {
+                self.velocity.y = 0.0;
+            }
+        }
+        let web_slowed = self.in_web;
+        if web_slowed {
+            self.velocity.x *= 0.25;
+            self.velocity.z *= 0.25;
+            self.velocity.y *= f64::from(0.05_f32);
+        }
+        let motion_before_collision = self.velocity;
         if let Some(world) = world {
             self.resolve_terrain(world);
         } else {
             self.resolve_collisions();
         }
-        self.integrate_vertical_motion();
+        if web_slowed {
+            self.velocity = Vec3::ZERO;
+        }
+        let collided_horizontally = self.velocity.x != motion_before_collision.x
+            || self.velocity.z != motion_before_collision.z;
+        if environment.ladder && !self.flying && collided_horizontally {
+            self.velocity.y = 0.2;
+        }
+        if self.flying {
+            self.velocity.y = motion_before_collision.y * 0.6;
+        } else if environment.water || environment.lava {
+            self.velocity.y = self.velocity.y * friction - 0.02;
+        } else {
+            self.integrate_vertical_motion();
+        }
         if let Some(world) = world {
+            self.in_web = world
+                .movement_environment(player_bounds(self.player.position))
+                .web;
             let pos = BlockPos::new(
                 self.player.position.x.floor() as i32,
                 0,
                 self.player.position.z.floor() as i32,
             );
-            if world.chunk(pos.chunk_pos()).is_none() {
+            if !self.flying
+                && !environment.water
+                && !environment.lava
+                && world.chunk(pos.chunk_pos()).is_none()
+            {
                 self.velocity.y = if self.player.position.y > 0.0 {
                     -0.1 * self.config.vertical_drag
                 } else {
@@ -293,6 +457,11 @@ impl LocalSimulationLayer {
         }
         self.velocity.x *= friction;
         self.velocity.z *= friction;
+        self.air_movement_factor = if self.player.sprinting {
+            (f64::from(0.02_f32) + f64::from(0.02_f32) * 0.3) as f32
+        } else {
+            0.02
+        };
         self.interpolation.current_position = self.player.position;
 
         if self.sprint_reset_ticks > 0 {
@@ -332,13 +501,15 @@ impl LocalSimulationLayer {
 
     fn apply_horizontal_input(&mut self, movement: MovementInput, camera: CameraState) {
         self.player.sneaking = movement.sneak;
-        self.player.sprinting =
-            movement.sprint && movement.forward > 0.0 && self.sprint_reset_ticks == 0;
+        let forward = movement.forward * if movement.sneak { 0.3_f32 } else { 1.0 };
+        let eligible = (self.food_level > 6 || self.allow_flying) && self.sprint_reset_ticks == 0;
+        let start = movement.sprint && !self.effects.contains_key(&15);
+        self.player.sprinting = (self.player.sprinting || start) && forward >= 0.8 && eligible;
 
-        let mut speed = self.config.locomotion.walk_speed_per_tick;
+        let mut speed = self.attribute_speed;
 
         if self.player.sprinting {
-            speed *= self.config.locomotion.sprint_multiplier;
+            speed *= 1.0 + f64::from(0.3_f32);
         }
 
         let mut movement = movement;
@@ -348,33 +519,46 @@ impl LocalSimulationLayer {
             movement.forward *= self.config.locomotion.sneak_multiplier as f32;
             movement.strafe *= self.config.locomotion.sneak_multiplier as f32;
         }
-        let (wish_x, wish_z) = wish_direction(movement, camera);
-
-        if wish_x == 0.0 && wish_z == 0.0 {
-            return;
-        }
-
-        let acceleration = if self.player.on_ground {
+        let acceleration = if let Some(fluid) = self.fluid_acceleration {
+            f64::from(fluid)
+        } else if self.player.on_ground {
             let friction = self.config.ground_friction as f32;
-            speed
-                * f64::from(
-                    self.config.ground_acceleration as f32 / (friction * friction * friction),
-                )
+            f64::from(
+                (speed as f32)
+                    * (self.config.ground_acceleration as f32 / (friction * friction * friction)),
+            )
         } else {
-            self.config.air_acceleration * if self.player.sprinting { 1.3 } else { 1.0 }
+            f64::from(if self.flying {
+                self.flying_speed * if self.player.sprinting { 2.0 } else { 1.0 }
+            } else {
+                self.air_movement_factor
+            })
         };
 
-        self.velocity.x += wish_x * acceleration;
-        self.velocity.z += wish_z * acceleration;
+        let (x, z) = crate::math::move_flying(
+            movement.strafe,
+            movement.forward,
+            acceleration as f32,
+            camera.yaw,
+        );
+        self.velocity.x += x;
+        self.velocity.z += z;
     }
 
     fn apply_jump(&mut self, movement: MovementInput, camera: CameraState) {
-        if movement.jump && self.player.on_ground {
+        if !movement.jump {
+            self.jump_ticks = 0;
+        }
+        if movement.jump && self.player.on_ground && self.jump_ticks == 0 {
+            self.jump_ticks = 10;
             self.velocity.y = self.config.jump_velocity;
+            if let Some((amplifier, _)) = self.effects.get(&8) {
+                self.velocity.y += f64::from((u16::from(*amplifier) + 1) as f32 * 0.1_f32);
+            }
             if self.player.sprinting {
-                let yaw = f64::from(camera.yaw).to_radians();
-                self.velocity.x -= yaw.sin() * f64::from(0.2_f32);
-                self.velocity.z += yaw.cos() * f64::from(0.2_f32);
+                let yaw = camera.yaw * 0.017453292_f32;
+                self.velocity.x -= f64::from(crate::math::sin(yaw) * 0.2_f32);
+                self.velocity.z += f64::from(crate::math::cos(yaw) * 0.2_f32);
             }
         }
     }
@@ -431,10 +615,7 @@ impl LocalSimulationLayer {
 
     fn resolve_terrain(&mut self, world: &WorldSnapshot) {
         let position = self.player.position;
-        let initial = Aabb::new(
-            [position.x - 0.3, position.y, position.z - 0.3],
-            [position.x + 0.3, position.y + 1.8, position.z + 0.3],
-        );
+        let initial = player_bounds(position);
         let mut desired = [self.velocity.x, self.velocity.y, self.velocity.z];
         if self.player.on_ground && self.player.sneaking {
             let reduce = |v: f64| {
@@ -496,8 +677,33 @@ impl LocalSimulationLayer {
         if actual[0] != desired[0] {
             self.velocity.x = 0.0;
         }
+        let supporting = world.block_state_or_air(BlockPos::new(
+            self.player.position.x.floor() as i32,
+            (self.player.position.y - f64::from(0.2_f32)).floor() as i32,
+            self.player.position.z.floor() as i32,
+        )) >> 4;
         if actual[1] != desired[1] {
-            self.velocity.y = 0.0;
+            if supporting == 165 && !self.player.sneaking && self.velocity.y < 0.0 {
+                self.velocity.y = -self.velocity.y;
+            } else {
+                self.velocity.y = 0.0;
+            }
+        }
+        if supporting == 165
+            && self.player.on_ground
+            && !self.player.sneaking
+            && self.velocity.y.abs() < 0.1
+        {
+            let slowdown = 0.4 + self.velocity.y.abs() * 0.2;
+            self.velocity.x *= slowdown;
+            self.velocity.z *= slowdown;
+        }
+        let contacts = world
+            .movement_environment(player_bounds(self.player.position))
+            .soul_sand_contacts;
+        for _ in 0..contacts {
+            self.velocity.x *= 0.4;
+            self.velocity.z *= 0.4;
         }
         if actual[2] != desired[2] {
             self.velocity.z = 0.0;
@@ -506,6 +712,18 @@ impl LocalSimulationLayer {
             self.player.sprinting = false;
         }
     }
+}
+
+fn player_bounds(position: Vec3) -> Aabb {
+    let radius = f64::from(0.6_f32) / 2.0;
+    Aabb::new(
+        [position.x - radius, position.y, position.z - radius],
+        [
+            position.x + radius,
+            position.y + f64::from(1.8_f32),
+            position.z + radius,
+        ],
+    )
 }
 
 fn clip_motion(mut bounds: Aabb, mut motion: [f64; 3], obstacles: &[Aabb]) -> (Aabb, [f64; 3]) {
@@ -520,23 +738,6 @@ fn clip_motion(mut bounds: Aabb, mut motion: [f64; 3], obstacles: &[Aabb]) -> (A
     (bounds, motion)
 }
 
-fn wish_direction(movement: MovementInput, camera: CameraState) -> (f64, f64) {
-    let mut forward = f64::from(movement.forward);
-    let mut strafe = f64::from(movement.strafe);
-    let magnitude = (forward * forward + strafe * strafe).sqrt();
-
-    if magnitude > 1.0 {
-        forward /= magnitude;
-        strafe /= magnitude;
-    }
-
-    let yaw_radians = f64::from(camera.yaw).to_radians();
-    let sin = yaw_radians.sin();
-    let cos = yaw_radians.cos();
-
-    (forward * -sin + strafe * cos, forward * cos + strafe * sin)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -545,6 +746,59 @@ mod tests {
     use crate::camera::CameraState;
     use crate::input::MovementInput;
     use crate::player::Vec3;
+
+    #[test]
+    fn held_jump_waits_ten_ticks_after_forced_early_landing() {
+        let mut simulation = LocalSimulationLayer::new(SimulationConfig::vanilla());
+        let jumping = MovementInput {
+            jump: true,
+            ..MovementInput::default()
+        };
+        simulation.tick(jumping, CameraState::default(), 0);
+        simulation.apply_authoritative_state(AuthoritativePlayerState {
+            position: Vec3::ZERO,
+            velocity: Vec3::ZERO,
+            on_ground: true,
+        });
+        simulation.tick(jumping, CameraState::default(), 0);
+        assert_eq!(simulation.player().position.y, 0.0);
+        simulation.tick(MovementInput::default(), CameraState::default(), 0);
+        simulation.tick(jumping, CameraState::default(), 0);
+        assert!((simulation.player().position.y - f64::from(0.42_f32)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sprint_persists_after_sprint_key_release_while_forward_is_held() {
+        let mut simulation = LocalSimulationLayer::new(SimulationConfig::vanilla());
+        simulation.tick(
+            MovementInput {
+                forward: 1.0,
+                sprint: true,
+                ..MovementInput::default()
+            },
+            CameraState::default(),
+            0,
+        );
+        simulation.tick(
+            MovementInput {
+                forward: 1.0,
+                ..MovementInput::default()
+            },
+            CameraState::default(),
+            0,
+        );
+        assert!(simulation.player().sprinting);
+        simulation.tick(
+            MovementInput {
+                forward: 1.0,
+                sneak: true,
+                ..MovementInput::default()
+            },
+            CameraState::default(),
+            0,
+        );
+        assert!(!simulation.player().sprinting);
+    }
 
     #[test]
     fn vanilla_first_ground_tick_accelerates_before_drag() {

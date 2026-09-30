@@ -1258,6 +1258,15 @@ fn diff_records(
     rust_records: &[NormalizedRecord],
     java_records: &[NormalizedRecord],
 ) -> Vec<TraceDiff> {
+    // TCP preserves order within each direction. Independent send/receive event
+    // interleavings depend on scheduling, so compare both ordered streams in full.
+    let mut rust_records = rust_records.to_vec();
+    let mut java_records = java_records.to_vec();
+    if kind == "packet" {
+        for records in [&mut rust_records, &mut java_records] {
+            records.sort_by_key(|record| record.fields.get("direction").cloned());
+        }
+    }
     let mut diffs = Vec::new();
     let max_len = rust_records.len().max(java_records.len());
 
@@ -1329,6 +1338,13 @@ fn values_match(kind: &str, key: &str, rust_value: &str, java_value: &str) -> bo
         return true;
     }
 
+    if kind == "packet" && key == "state" {
+        let canonical = |state: &str| match state {
+            "Handshake" | "Handshaking" => "handshake".to_owned(),
+            other => other.to_ascii_lowercase(),
+        };
+        return canonical(rust_value) == canonical(java_value);
+    }
     if kind == "packet" && key == "name" {
         return packet_name_matches(rust_value, java_value);
     }
@@ -1358,46 +1374,27 @@ fn packet_name_matches(rust_value: &str, java_value: &str) -> bool {
 }
 
 fn normalize_packet_name(value: &str) -> String {
-    let mut trimmed = value.trim().trim_matches('_');
-
-    if let Some(stripped) = trimmed
-        .strip_prefix('C')
-        .or_else(|| trimmed.strip_prefix('S'))
+    let mut trimmed = value.trim();
+    // Java protocol classes may carry C00/S08 prefixes with or without Packet.
+    let bytes = trimmed.as_bytes();
+    if bytes.len() >= 3
+        && matches!(bytes[0], b'C' | b'S')
+        && bytes[1].is_ascii_hexdigit()
+        && bytes[2].is_ascii_hexdigit()
     {
-        if stripped.contains("Packet") {
-            trimmed = stripped;
-        }
+        trimmed = trimmed[3..].trim_start_matches('_');
     }
-
-    if let Some(packet_index) = trimmed.find("Packet") {
-        let (prefix, suffix) = trimmed.split_at(packet_index);
-        if prefix
-            .chars()
-            .all(|character| character.is_ascii_hexdigit())
-        {
-            trimmed = suffix.trim_start_matches("Packet");
-        }
-    } else {
-        trimmed = trimmed.trim_start_matches("Packet");
+    trimmed = trimmed.trim_start_matches("Packet");
+    let compact: String = trimmed
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    match compact.as_str() {
+        "handshakerequest" => "handshake".to_owned(),
+        "playerpositionandlook" | "playerposlook" => "playerpositionlook".to_owned(),
+        other => other.to_owned(),
     }
-
-    let mut normalized = String::new();
-    for (index, character) in trimmed.chars().enumerate() {
-        if character == '_' || character == ' ' {
-            if !normalized.ends_with('_') {
-                normalized.push('_');
-            }
-            continue;
-        }
-
-        if character.is_ascii_uppercase() && index > 0 && !normalized.ends_with('_') {
-            normalized.push('_');
-        }
-
-        normalized.push(character.to_ascii_lowercase());
-    }
-
-    normalized.trim_matches('_').to_owned()
 }
 
 fn numeric_tolerance(kind: &str, key: &str) -> f64 {
@@ -1551,6 +1548,9 @@ fn render_serverbound_packet_line(
         PlayServerboundPacket::KeepAlive(packet) => {
             parts.push(format!("id={}", packet.id));
         }
+        PlayServerboundPacket::ClientStatus(action) => {
+            parts.push(format!("action={action}"));
+        }
         PlayServerboundPacket::Animation(_)
         | PlayServerboundPacket::ClientSettings(_)
         | PlayServerboundPacket::CustomPayload(_) => {}
@@ -1576,6 +1576,7 @@ fn packet_label(packet: &PlayServerboundPacket) -> &'static str {
         PlayServerboundPacket::CloseWindow(_) => "CloseWindow",
         PlayServerboundPacket::ClickWindow(_) => "ClickWindow",
         PlayServerboundPacket::ConfirmTransaction(_) => "ConfirmTransaction",
+        PlayServerboundPacket::ClientStatus(_) => "ClientStatus",
         PlayServerboundPacket::ClientSettings(_) => "ClientSettings",
         PlayServerboundPacket::CustomPayload(_) => "CustomPayload",
     }
@@ -1737,6 +1738,72 @@ mod tests {
         )
         .unwrap();
         assert!(!report.passed);
+    }
+
+    #[test]
+    fn packet_comparison_preserves_each_tcp_direction_order() {
+        let sent = "packet state=Play direction=Serverbound id=0x03 name=Player len=2 compression=Disabled".to_owned();
+        let received = "packet state=Play direction=Clientbound id=0x00 name=Keep_Alive len=2 compression=Disabled".to_owned();
+        let rust = vec![sent.clone(), received.clone()];
+        let java = vec![received, sent];
+        assert!(
+            build_report(
+                "packet",
+                &rust,
+                Some(&java),
+                VerificationSource::LiveCapture,
+                None,
+                None
+            )
+            .unwrap()
+            .passed
+        );
+        let changed = vec![java[0].clone(), java[1].replace("id=0x03", "id=0x04")];
+        assert!(
+            !build_report(
+                "packet",
+                &rust,
+                Some(&changed),
+                VerificationSource::LiveCapture,
+                None,
+                None
+            )
+            .unwrap()
+            .passed
+        );
+        assert!(
+            !build_report(
+                "packet",
+                &rust,
+                Some(&java[..1]),
+                VerificationSource::LiveCapture,
+                None,
+                None
+            )
+            .unwrap()
+            .passed
+        );
+    }
+
+    #[test]
+    fn known_protocol_aliases_do_not_change_packet_identity() {
+        let rust = vec![
+            "Handshake Serverbound id=0x00 Handshake Request len=15 compression=Disabled"
+                .to_owned(),
+        ];
+        let java = vec!["packet state=Handshaking direction=Serverbound id=0x00 name=C00_Handshake len=15 compression=Disabled".to_owned()];
+        assert!(
+            build_report(
+                "packet",
+                &rust,
+                Some(&java),
+                VerificationSource::LiveCapture,
+                None,
+                None
+            )
+            .unwrap()
+            .passed
+        );
     }
 
     #[test]

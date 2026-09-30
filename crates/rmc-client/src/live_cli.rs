@@ -381,6 +381,8 @@ pub fn run_live_cli(raw_args: Vec<String>) -> Result<(), String> {
         for event in cycle.events {
             match event {
                 DriverEvent::InboundPlayPacket(packet) => {
+                    shell
+                        .apply_player_packet(&packet, driver.session().snapshot().player_entity_id);
                     apply_inbound_play_packet(
                         &packet,
                         driver.local_pose(),
@@ -396,9 +398,15 @@ pub fn run_live_cli(raw_args: Vec<String>) -> Result<(), String> {
                                 packet.dimension,
                             )));
                             mesh_pipeline = ChunkMeshPipeline::with_config(mesh_config);
-                            next_frame_deadline = Some(Instant::now());
+                            next_frame_deadline = None;
+                        }
+                        PlayClientboundPacket::PlayerPositionAndLook(_) => {
+                            if next_frame_deadline.is_none() {
+                                next_frame_deadline = Some(Instant::now());
+                            }
                         }
                         PlayClientboundPacket::Respawn(packet) => {
+                            next_frame_deadline = None;
                             world =
                                 WorldSnapshot::new(world_config_for_dimension(packet.dimension));
                             mesh_pipeline = ChunkMeshPipeline::with_config(mesh_config);
@@ -659,7 +667,7 @@ fn handle_session_action(
         }
         SessionAction::JoinedGame(_) => {
             summary.joined_game = true;
-            *next_frame_deadline = Some(Instant::now());
+            *next_frame_deadline = None;
         }
         SessionAction::Disconnected { reason_json } => {
             summary.disconnect_reason_json = Some(reason_json);

@@ -47,3 +47,56 @@ fn ray_hits_first_wall_and_reports_face() {
         .raycast([0.5, 64.5, 0.5], [0.0, 0.0, 1.0], 1.0)
         .is_none());
 }
+#[test]
+fn doors_trapdoors_panes_and_hoppers_are_not_full_cubes() {
+    let mut world = WorldSnapshot::new(WorldConfig::overworld());
+    set(&mut world, 0, 64, 0, 64 << 4);
+    set(&mut world, 0, 65, 0, (64 << 4) | 8);
+    assert_eq!(
+        world.block_collision_boxes(BlockPos::new(0, 64, 0))[0].max[0],
+        0.1875
+    );
+    set(&mut world, 0, 64, 0, (64 << 4) | 4);
+    assert_eq!(
+        world.block_collision_boxes(BlockPos::new(0, 65, 0))[0].max[2],
+        0.1875
+    );
+    set(&mut world, 2, 64, 0, 96 << 4);
+    assert_eq!(
+        world.block_collision_boxes(BlockPos::new(2, 64, 0))[0].max[1],
+        64.1875
+    );
+    set(&mut world, 4, 64, 0, 102 << 4);
+    assert_eq!(
+        world.block_collision_boxes(BlockPos::new(4, 64, 0)).len(),
+        2
+    );
+    set(&mut world, 6, 64, 0, 154 << 4);
+    assert_eq!(
+        world.block_collision_boxes(BlockPos::new(6, 64, 0)).len(),
+        5
+    );
+}
+
+#[test]
+fn stairs_form_outer_and_inner_corners_from_neighbors() {
+    let mut world = WorldSnapshot::new(WorldConfig::overworld());
+    set(&mut world, 0, 64, 0, 53 << 4); // east
+    set(&mut world, 1, 64, 0, (53 << 4) | 3); // north, outer
+    let boxes = world.block_collision_boxes(BlockPos::new(0, 64, 0));
+    let upper_volume: f64 = boxes
+        .iter()
+        .filter(|b| b.min[1] >= 64.5)
+        .map(|b| (b.max[0] - b.min[0]) * (b.max[2] - b.min[2]))
+        .sum();
+    assert_eq!(upper_volume, 0.25);
+    set(&mut world, 1, 64, 0, 0);
+    set(&mut world, -1, 64, 0, (53 << 4) | 3);
+    let boxes = world.block_collision_boxes(BlockPos::new(0, 64, 0));
+    let upper_volume: f64 = boxes
+        .iter()
+        .filter(|b| b.min[1] >= 64.5)
+        .map(|b| (b.max[0] - b.min[0]) * (b.max[2] - b.min[2]))
+        .sum();
+    assert_eq!(upper_volume, 0.75);
+}

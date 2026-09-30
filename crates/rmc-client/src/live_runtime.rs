@@ -252,6 +252,7 @@ pub struct LiveRuntime {
     trace: RuntimeTrace,
     summary: LiveRuntimeSummary,
     pending_simulation_events: Vec<SimulationEvent>,
+    position_initialized: bool,
     last_output: Option<ShellAdvanceOutput>,
     last_world_render: Option<WorldRenderSnapshot>,
     last_hud: Option<PvPHud>,
@@ -323,6 +324,7 @@ impl LiveRuntime {
             trace: RuntimeTrace::default(),
             summary: LiveRuntimeSummary::default(),
             pending_simulation_events: Vec::new(),
+            position_initialized: false,
             last_output: None,
             last_world_render: None,
             last_hud: None,
@@ -352,7 +354,7 @@ impl LiveRuntime {
             return Ok(());
         }
 
-        if !self.summary.joined_game {
+        if !self.summary.joined_game || !self.position_initialized {
             self.flush_if_pending()?;
             return Ok(());
         }
@@ -554,6 +556,13 @@ impl LiveRuntime {
         self.flush_if_pending()
     }
 
+    pub fn open_player_inventory(&mut self) -> Result<(), String> {
+        let packet = self.usability.inventory_mut().open_player_inventory();
+        self.last_usability_snapshot = Some(self.usability.snapshot());
+        self.queue_play_packet(&packet)?;
+        self.flush_if_pending()
+    }
+
     pub fn close_open_window(&mut self) -> Result<bool, String> {
         let Some(packet) = self.usability.close_open_window() else {
             return Ok(false);
@@ -587,7 +596,12 @@ impl LiveRuntime {
             for event in cycle.events {
                 match event {
                     DriverEvent::InboundPlayPacket(packet) => {
+                        self.shell.apply_player_packet(
+                            &packet,
+                            self.driver.session().snapshot().player_entity_id,
+                        );
                         if let PlayClientboundPacket::PlayerPositionAndLook(correction) = &packet {
+                            self.position_initialized = true;
                             self.trace.movement_corrections.push(format!("movement record=server_correction x={:.6} y={:.6} z={:.6} yaw={:.6} pitch={:.6} flags={}", correction.x, correction.y, correction.z, correction.yaw, correction.pitch, if correction.flags.bits() == 0 { "__".to_owned() } else { correction.flags.bits().to_string() }));
                         }
                         self.entity_tracker.apply_packet(&packet);
@@ -654,6 +668,7 @@ impl LiveRuntime {
             }
             SessionAction::JoinedGame(packet) => {
                 self.summary.joined_game = true;
+                self.position_initialized = false;
                 self.world =
                     WorldSnapshot::new(world_config_for_dimension(i32::from(packet.dimension)));
                 self.entity_tracker.clear();
@@ -663,6 +678,8 @@ impl LiveRuntime {
                 self.summary.disconnect_reason_json = Some(reason_json);
             }
             SessionAction::Respawned(packet) => {
+                self.position_initialized = false;
+                self.pending_simulation_events.clear();
                 self.world = WorldSnapshot::new(world_config_for_dimension(packet.dimension));
                 self.entity_tracker.clear();
                 self.mesh_pipeline = ChunkMeshPipeline::with_config(self.mesh_config);
@@ -891,6 +908,78 @@ fn block_use_packet(
 mod tests {
     use super::*;
     use rmc_net::codec::play::{BlockChangePacket, BlockPosition};
+
+    #[test]
+    fn join_without_initial_position_does_not_emit_movement() {
+        use rmc_net::codec::login::{LoginClientboundPacket, LoginSuccess};
+        use rmc_net::codec::play::JoinGamePacket;
+        use rmc_net::compression::CompressionState;
+        use rmc_net::framing::{encode_frame, FrameLimits};
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut config = LiveRuntimeConfig::offline("ReadyTest");
+        config.server_host = "127.0.0.1".into();
+        config.server_port = port;
+        let mut runtime = LiveRuntime::connect(config).unwrap();
+        let (mut server, _) = listener.accept().unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_millis(20)))
+            .unwrap();
+        let mut bytes = [0; 4096];
+        server.read(&mut bytes).unwrap();
+        let login = LoginClientboundPacket::LoginSuccess(LoginSuccess {
+            uuid_string: "00000000-0000-0000-0000-000000000000".into(),
+            username: "ReadyTest".into(),
+        })
+        .encode_packet()
+        .unwrap()
+        .packet_bytes();
+        let join = PlayClientboundPacket::JoinGame(JoinGamePacket {
+            entity_id: 1,
+            game_mode: 0,
+            hardcore: false,
+            dimension: 0,
+            difficulty: 1,
+            max_players: 20,
+            level_type: "default".into(),
+            reduced_debug_info: false,
+        })
+        .encode_packet()
+        .unwrap()
+        .packet_bytes();
+        for packet in [login, join] {
+            server
+                .write_all(
+                    &encode_frame(
+                        &packet,
+                        CompressionState::Disabled,
+                        None,
+                        FrameLimits::default(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        for _ in 0..20 {
+            runtime
+                .step(
+                    Duration::from_millis(50),
+                    &InputFrame::default(),
+                    &RuntimeActionInput::default(),
+                )
+                .unwrap();
+            if runtime.summary().joined_game {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(runtime.summary().joined_game);
+        assert!(
+            runtime.output().is_none(),
+            "must await first server position before ticking"
+        );
+    }
 
     #[test]
     fn block_interaction_encodes_selected_face_and_local_hit_coordinates() {

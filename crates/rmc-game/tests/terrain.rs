@@ -117,3 +117,42 @@ fn steps_onto_bottom_slab_without_jumping() {
     assert!(simulation.player().position.z > 1.0);
     assert_eq!(simulation.player().position.y, 64.5);
 }
+#[test]
+fn water_and_lava_use_their_own_drag_and_gravity() {
+    for (id, drag) in [(9, f64::from(0.8_f32)), (11, 0.5)] {
+        let mut world = WorldSnapshot::new(WorldConfig::overworld());
+        put(&mut world, 0, 64, 0, id << 4);
+        put(&mut world, 0, 65, 0, id << 4);
+        let mut simulation = player(Vec3::new(0.5, 64.0, 0.5));
+        simulation.apply_authoritative_state(AuthoritativePlayerState {
+            position: Vec3::new(0.5, 64.0, 0.5),
+            velocity: Vec3::new(0.1, -0.1, 0.0),
+            on_ground: false,
+        });
+        simulation.tick_with_world(MovementInput::default(), CameraState::default(), 0, &world);
+        assert!((simulation.velocity().x - 0.1 * drag).abs() < 1e-9);
+        assert!((simulation.velocity().y - (-0.1 * drag - 0.02)).abs() < 1e-9);
+    }
+}
+
+#[test]
+fn ladder_clamps_descent_and_sneak_holds_position() {
+    let mut world = WorldSnapshot::new(WorldConfig::overworld());
+    put(&mut world, 0, 64, 0, (65 << 4) | 2);
+    let mut simulation = player(Vec3::new(0.5, 64.5, 0.5));
+    simulation.apply_authoritative_state(AuthoritativePlayerState {
+        position: Vec3::new(0.5, 64.5, 0.5),
+        velocity: Vec3::new(0.0, -0.6, 0.0),
+        on_ground: false,
+    });
+    simulation.tick_with_world(
+        MovementInput {
+            sneak: true,
+            ..MovementInput::default()
+        },
+        CameraState::default(),
+        0,
+        &world,
+    );
+    assert_eq!(simulation.player().position.y, 64.5);
+}

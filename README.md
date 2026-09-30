@@ -19,9 +19,9 @@ The windowed client receives chunks, renders terrain, simulates movement against
 
 Verified on Windows against a local official 1.8.9 server: compressed login, world join, 49 received chunks, windowed rendering and sustained forward/sprint movement. Unit tests cover protocol framing, partial writes with encryption, movement rules, terrain collision, interaction reach, inventory rollback and comparison integrity.
 
-The strict live Java/Rust comparison currently **fails** for packet and movement traces. Combat and inventory scenarios pass, but these are limited scripted scenarios. Hypixel gameplay has not been verified in this revision; its compatibility gate remains closed. Do not interpret successful login or unit tests as full behavior parity.
+The strict live Java/Rust comparison passes the current packet, movement, combat and inventory scenarios. Local differential probes also match 960 travel ticks across twelve scenarios and 3,039 valid single-block metadata collision shapes. These are limited scenarios: neighboring blocks, all gameplay actions and online PvP are not comprehensively verified. Hypixel gameplay has not been verified. Do not interpret these results as full behavior parity.
 
-Remaining work includes initial-position/tick synchronization, complete block shapes, liquids/ladders and player effects, full inventory slot/crafting rules, entity/item rendering and broader multiplayer interaction tests. See [verification](docs/verification.md) and [roadmap](docs/roadmap.md).
+Remaining work includes mining, neighbor-dependent collision and selection, fluid/enchantment edge cases, full inventory crafting/shift/drag rules, entity/item/model rendering, remaining protocol handlers and broader multiplayer interaction tests. See [verification](docs/verification.md) and [roadmap](docs/roadmap.md).
 
 ## Source layout
 

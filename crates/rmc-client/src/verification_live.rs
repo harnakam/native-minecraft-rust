@@ -117,7 +117,6 @@ fn run_rust_capture(port: u16, paths: &RustTracePaths) -> Result<(), String> {
     let mut movement_lines = Vec::new();
     let mut combat_lines = Vec::new();
     let mut inventory_lines = Vec::new();
-    let mut joined = false;
     let mut client_tick = 0usize;
     let started = Instant::now();
     let mut previous_combat = runtime.combat_snapshot();
@@ -135,21 +134,8 @@ fn run_rust_capture(port: u16, paths: &RustTracePaths) -> Result<(), String> {
             break;
         }
 
-        if !joined {
-            if runtime.summary().joined_game {
-                joined = true;
-                previous_combat = runtime.combat_snapshot();
-                previous_window = runtime
-                    .usability_snapshot()
-                    .and_then(|snapshot| snapshot.window.clone());
-                previous_pending = runtime.inventory_state().pending_transactions().len();
-            }
-
-            if runtime.summary().disconnect_reason_json.is_some() || runtime.summary().ended_by_eof
-            {
-                break;
-            }
-
+        if runtime.output().is_none() {
+            thread::sleep(Duration::from_millis(2));
             continue;
         }
 
@@ -261,7 +247,7 @@ fn run_rust_capture(port: u16, paths: &RustTracePaths) -> Result<(), String> {
             previous_pending = runtime.inventory_state().pending_transactions().len();
         }
 
-        if client_tick >= 40 {
+        if client_tick >= 34 {
             break;
         }
 
@@ -273,6 +259,7 @@ fn run_rust_capture(port: u16, paths: &RustTracePaths) -> Result<(), String> {
     write_lines(&paths.combat, &combat_lines)?;
     write_lines(&paths.inventory, &inventory_lines)?;
 
+    drop(runtime);
     finish_server(server)?;
     Ok(())
 }
@@ -611,7 +598,8 @@ fn run_verification_server(listener: TcpListener) -> Result<(), String> {
 }
 
 struct VerificationServerScenario {
-    started: Instant,
+    movement_ticks: u64,
+    teleport_ack_received: bool,
     join_sent: bool,
     player_list_sent: bool,
     correction_sent: bool,
@@ -627,7 +615,8 @@ struct VerificationServerScenario {
 impl VerificationServerScenario {
     fn new() -> Self {
         Self {
-            started: Instant::now(),
+            movement_ticks: 0,
+            teleport_ack_received: false,
             join_sent: false,
             player_list_sent: false,
             correction_sent: false,
@@ -646,7 +635,7 @@ impl VerificationServerScenario {
         stream: &mut TcpStream,
         limits: FrameLimits,
     ) -> Result<(), String> {
-        let tick = (self.started.elapsed().as_millis() / 50) as u64;
+        let tick = self.movement_ticks;
 
         if !self.join_sent {
             write_play_packet(
@@ -666,7 +655,7 @@ impl VerificationServerScenario {
             self.join_sent = true;
         }
 
-        if tick >= 5 && !self.player_list_sent {
+        if !self.player_list_sent {
             write_play_packet(
                 stream,
                 &PlayClientboundPacket::PlayerListItem(PlayerListItemPacket {
@@ -685,7 +674,7 @@ impl VerificationServerScenario {
             self.player_list_sent = true;
         }
 
-        if tick >= 6 && !self.correction_sent {
+        if !self.correction_sent {
             write_play_packet(
                 stream,
                 &PlayClientboundPacket::PlayerPositionAndLook(PlayerPositionAndLookPacket {
@@ -701,7 +690,7 @@ impl VerificationServerScenario {
             self.correction_sent = true;
         }
 
-        if tick >= 8 && !self.spawn_sent {
+        if !self.spawn_sent {
             write_play_packet(
                 stream,
                 &PlayClientboundPacket::SpawnPlayer(SpawnPlayerPacket {
@@ -837,6 +826,18 @@ fn drain_serverbound_packets(
             PlayServerboundPacket::decode_packet(&frame.packet_bytes).map_err(|error| {
                 format!("verification server failed to decode play packet: {error:?}")
             })?;
+        match &packet {
+            PlayServerboundPacket::PlayerPositionAndLook(_) if !scenario.teleport_ack_received => {
+                scenario.teleport_ack_received = true;
+            }
+            PlayServerboundPacket::Player(_)
+            | PlayServerboundPacket::PlayerPosition(_)
+            | PlayServerboundPacket::PlayerLook(_)
+            | PlayServerboundPacket::PlayerPositionAndLook(_) => {
+                scenario.movement_ticks += 1;
+            }
+            _ => {}
+        }
         if let PlayServerboundPacket::ClickWindow(packet) = packet {
             if !scenario.click_confirm_sent {
                 write_play_packet(

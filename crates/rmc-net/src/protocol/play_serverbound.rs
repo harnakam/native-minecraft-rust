@@ -453,7 +453,22 @@ pub const CUSTOM_PAYLOAD: PacketSpec = PacketSpec {
     ],
 };
 
+pub const CLIENT_STATUS: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Serverbound,
+    id: 0x16,
+    name: "Client Status",
+    java_class: "net.minecraft.network.play.client.C16PacketClientStatus",
+    java_handler: "INetHandlerPlayServer.processClientStatus",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "action",
+        encoding: "VarInt",
+        notes: "0 respawn; 1 statistics; 2 inventory achievement.",
+    }],
+};
 pub const PACKETS: &[PacketSpec] = &[
+    CLIENT_STATUS,
     KEEP_ALIVE,
     CHAT_MESSAGE,
     USE_ENTITY,

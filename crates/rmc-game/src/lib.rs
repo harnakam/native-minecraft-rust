@@ -8,3 +8,5 @@ pub mod player;
 pub mod simulation;
 pub mod tick;
 pub mod usability;
+
+pub mod math;

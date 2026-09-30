@@ -256,7 +256,12 @@ impl HeadlessSession {
                     reason_json: packet.reason_json.clone(),
                 })
             }
-            PlayClientboundPacket::ChunkData(_)
+            PlayClientboundPacket::PlayerAbilities(_)
+            | PlayClientboundPacket::HeldItemChange(_)
+            | PlayClientboundPacket::EntityEffect(_)
+            | PlayClientboundPacket::RemoveEntityEffect(_)
+            | PlayClientboundPacket::EntityProperties(_)
+            | PlayClientboundPacket::ChunkData(_)
             | PlayClientboundPacket::MultiBlockChange(_)
             | PlayClientboundPacket::BlockChange(_)
             | PlayClientboundPacket::MapChunkBulk(_)

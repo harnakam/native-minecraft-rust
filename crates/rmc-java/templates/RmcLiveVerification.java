@@ -30,7 +30,7 @@ public final class RmcLiveVerification
             return;
         }
 
-        ++scenarioTick;
+        scenarioTick = RmcTraceLogger.movementTick();
 
         if (!attackTriggered && scenarioTick >= 14)
         {
@@ -58,6 +58,7 @@ public final class RmcLiveVerification
             return false;
         }
 
+        mc.thePlayer.swingItem();
         mc.playerController.attackEntity(mc.thePlayer, entity);
         return true;
     }
