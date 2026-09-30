@@ -2742,10 +2742,18 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
                 *flag = value;
             }
         }
-        let text = if let Some(text) = value.as_str() {
-            text.to_owned()
-        } else if let Some(text) = value.get("text").and_then(|value| value.as_str()) {
-            text.to_owned()
+        let primitive_text = |value: &serde_json::Value| -> Option<String> {
+            match value {
+                serde_json::Value::String(text) => Some(text.clone()),
+                serde_json::Value::Bool(value) => Some(value.to_string()),
+                serde_json::Value::Number(value) => Some(value.to_string()),
+                _ => None,
+            }
+        };
+        let text = if let Some(text) = primitive_text(value) {
+            text
+        } else if let Some(text) = value.get("text").and_then(primitive_text) {
+            text
         } else if value.get("translate").is_some() {
             let mut own = value.clone();
             own.as_object_mut().unwrap().remove("extra");
@@ -4242,6 +4250,40 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn tab_json_primitive_components_and_text_properties_are_visible() {
+        for (json, expected) in [
+            ("42", "42"),
+            ("-7", "-7"),
+            ("true", "true"),
+            ("false", "false"),
+            (r#"{"text":42,"color":"red"}"#, "42"),
+            (r#"{"text":true}"#, "true"),
+        ] {
+            let value: serde_json::Value = serde_json::from_str(json).unwrap();
+            let formatted = tab_component_formatted(&value);
+            let runs = tab_styled_runs(&formatted, [255; 3], 20);
+            assert_eq!(
+                runs.iter()
+                    .map(|(text, _)| text.as_str())
+                    .collect::<String>(),
+                expected
+            );
+            let mut frame = vec![0; 200 * 16 * 4];
+            draw_tab_name(&mut frame, 200, &formatted, [255; 3], 20);
+            assert!(frame.chunks_exact(4).any(|pixel| pixel[0] > 0));
+        }
+        let value = serde_json::json!({"text":"A","color":"red","extra":[42,true]});
+        let runs = tab_styled_runs(&tab_component_formatted(&value), [255; 3], 20);
+        assert_eq!(
+            runs.iter()
+                .map(|(text, _)| text.as_str())
+                .collect::<String>(),
+            "A42true"
+        );
+        assert!(runs.iter().all(|(_, style)| style.color == [255, 85, 85]));
     }
 
     #[test]

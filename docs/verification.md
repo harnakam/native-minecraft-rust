@@ -598,3 +598,17 @@ restoration for a later sibling, and nested italic inheritance. The actual Tab
 path uses this formatter, and whole-workspace tests pass. Empty/invalid component
 validation, translations, obfuscation, events, Minecraft fonts and manual visual
 parity remain incomplete; this does not prove full chat-component compatibility.
+
+
+### Primitive JSON Tab components
+
+MCP919 IChatComponent.Serializer converts every JSON primitive with getAsString,
+and object text properties likewise accept primitive values. The native Tab
+formatter now renders integer/boolean primitives and primitive text properties
+instead of dropping them, including inherited color for primitive extra children.
+Regression tests verify positive/negative integers, both booleans, text property
+values, child inheritance, and actual framebuffer pixels. Workspace tests pass.
+Numeric lexical fidelity is still incomplete: serde_json's parsed number string
+may normalize exponent/decimal spelling whereas Gson preserves input spelling.
+Invalid/null components, complete translations, obfuscation, Minecraft fonts,
+and manual visual parity remain incomplete. No game assets/source are published.
