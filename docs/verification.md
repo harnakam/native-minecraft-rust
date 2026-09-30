@@ -293,3 +293,9 @@ Full workspace tests pass, and key routing was reviewed against the existing pre
 Native open-chat Up/Down keys now traverse submitted messages following GuiChat.getSentHistory: clamp to history bounds, save the current draft on first leaving the newest position, and restore it on returning. Opening chat resets the cursor. Successful runtime submission records the trimmed message; adjacent equal messages are deduplicated like GuiNewChat.addToSentMessages. Failed submission preserves input and does not record a new entry, and absent runtime now reports unavailable rather than clearing the draft as though sent. History is in-memory for the app session.
 
 A regression checks adjacent deduplication, oldest-bound clamping, traversal and draft restoration. Full workspace tests pass, followed by the focused history test after the absent-runtime guard. Server acceptance is not implied by successful local submission. Interactive keyboard verification, caret/selection editing, completion and complete chat formatting remain incomplete.
+
+## Chat input filtering and Java-length limit
+
+Native typing and clipboard insertion now share a filter based on ChatAllowedCharacters: reject characters below U+0020, DEL and section sign. GuiChat's 100-character input limit is measured in UTF-16 code units, so supplementary characters consume two units rather than one Rust scalar. Insertion stops before exceeding the limit and keeps input valid UTF-8. Launcher text fields retain their existing separate filtering.
+
+A regression checks filtered pasted controls/section sign, exact UTF-16 limits, supplementary-character boundaries and subsequent insertion. Full workspace tests pass. Rust does not retain isolated surrogate halves when a supplementary character would straddle the limit, unlike Java substring behavior; caret/selection-aware insertion, native clipboard interaction and complete Unicode font behavior remain incomplete.

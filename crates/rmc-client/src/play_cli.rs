@@ -1262,7 +1262,7 @@ impl PlayApp {
     }
 
     fn handle_received_character(&mut self, character: char) {
-        if character.is_control() {
+        if self.screen == ScreenState::Menu && character.is_control() {
             return;
         }
 
@@ -1275,7 +1275,7 @@ impl PlayApp {
             },
             ScreenState::Playing => {
                 if self.chat_open {
-                    self.chat_input.push(character);
+                    append_chat_input(&mut self.chat_input, &character.to_string());
                 }
             }
         }
@@ -1985,7 +1985,7 @@ impl PlayApp {
             .as_mut()
             .and_then(|clipboard| clipboard.get_text().ok())
         {
-            Some(text) => self.chat_input.push_str(&text),
+            Some(text) => append_chat_input(&mut self.chat_input, &text),
             None => self.status_line = "Clipboard is unavailable".to_owned(),
         }
     }
@@ -2623,6 +2623,21 @@ fn death_button_rect(width: i32, height: i32, index: i32) -> UiRect {
         y: height / 4 + 72 + index * 28,
         width: 200,
         height: 24,
+    }
+}
+
+fn append_chat_input(input: &mut String, text: &str) {
+    let mut units = input.encode_utf16().count();
+    for character in text.chars() {
+        if character < ' ' || character == '\u{7f}' || character == '\u{a7}' {
+            continue;
+        }
+        let next = units + character.len_utf16();
+        if next > 100 {
+            break;
+        }
+        input.push(character);
+        units = next;
     }
 }
 
@@ -3437,6 +3452,22 @@ fn normalize(vector: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod inventory_layout_tests {
     use super::*;
+    #[test]
+    fn chat_input_filters_java_disallowed_characters_and_counts_utf16() {
+        let mut input = String::new();
+        append_chat_input(&mut input, "a\n\t\u{7f}\u{a7}b");
+        assert_eq!(input, "ab");
+        input = "x".repeat(98);
+        append_chat_input(&mut input, "\u{1f600}z");
+        assert_eq!(input.encode_utf16().count(), 100);
+        assert!(input.ends_with('\u{1f600}'));
+        input = "x".repeat(99);
+        append_chat_input(&mut input, "\u{1f600}z");
+        assert_eq!(input, "x".repeat(99));
+        append_chat_input(&mut input, "y");
+        assert_eq!(input.len(), 100);
+    }
+
     #[test]
     fn sent_history_restores_draft_and_skips_adjacent_duplicates() {
         let mut history = SentChatHistory::default();
