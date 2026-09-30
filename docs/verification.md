@@ -181,3 +181,9 @@ A regression covers all normal IDs and byte values 4/255, exact encode/decode by
 LiveRuntime initializes difficulty from JoinGame when creating the world. On Respawn it follows the inspected NetHandlerPlayClient: same-dimension respawn preserves the existing world difficulty, while cross-dimension world creation uses the new packet's difficulty. WorldSnapshot::with_difficulty supplies this initialization without manufacturing a network update.
 
 The framed local TCP join test asserts initial difficulty. The existing TCP death/respawn test sets difficulty to 3, receives a same-dimension respawn declaring 1 and verifies preservation of 3; its subsequent dimension-change path verifies replacement with 1. Workspace tests pass. These lifecycle assertions have not yet been repeated on an official server, and difficulty-dependent gameplay/UI remain incomplete.
+
+## VarLong packet-buffer support
+
+The inspected S44 WorldBorder packet needs PacketBuffer.readVarLong/writeVarLong for transition milliseconds. The Rust packet buffer now provides signed i64 VarLong operations, preserving Java long bit patterns and unsigned-shift encoding. Decoding is bounded to ten bytes, rejects an unfinished tenth byte, and retains Java's low-bit behavior for an oversized tenth payload. Failed reads do not advance the reader offset.
+
+A regression verifies positive/negative extremes, golden negative-one and 128 encodings, truncation/oversize rejection and reading the next buffer field. Workspace tests pass. This is necessary communication support; S44 action decoding, border state/interpolation, collision and rendering still remain unimplemented. No world-border compatibility is claimed by these primitive tests.

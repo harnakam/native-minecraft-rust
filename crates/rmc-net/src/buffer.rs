@@ -1,6 +1,6 @@
 //! Minimal PacketBuffer-compatible read/write helpers for protocol 47 packets.
 
-use crate::varint::{decode_i32, encode_i32, VarIntError};
+use crate::varint::{decode_i32, decode_i64, encode_i32, encode_i64, VarIntError};
 use std::str;
 
 pub const MAX_MINECRAFT_STRING_BYTES: usize = 32_767;
@@ -129,6 +129,12 @@ impl<'a> PacketReader<'a> {
 
     pub fn read_var_i32(&mut self) -> Result<i32, BufferError> {
         let (value, read) = decode_i32(&self.input[self.offset..])?;
+        self.offset += read;
+        Ok(value)
+    }
+
+    pub fn read_var_i64(&mut self) -> Result<i64, BufferError> {
+        let (value, read) = decode_i64(&self.input[self.offset..])?;
         self.offset += read;
         Ok(value)
     }
@@ -463,6 +469,10 @@ impl PacketWriter {
 
     pub fn write_var_i32(&mut self, value: i32) {
         encode_i32(value, &mut self.output);
+    }
+
+    pub fn write_var_i64(&mut self, value: i64) {
+        encode_i64(value, &mut self.output);
     }
 
     pub fn write_string(&mut self, value: &str, max_chars: usize) -> Result<(), BufferError> {

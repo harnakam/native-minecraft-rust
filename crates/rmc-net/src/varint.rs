@@ -2,6 +2,33 @@
 
 /// A Minecraft VarInt may consume at most 5 bytes.
 pub const MAX_VARINT_BYTES: usize = 5;
+pub const MAX_VARLONG_BYTES: usize = 10;
+
+pub fn encode_i64(value: i64, out: &mut Vec<u8>) {
+    let mut remaining = value as u64;
+    loop {
+        if remaining & !0x7f == 0 {
+            out.push(remaining as u8);
+            return;
+        }
+        out.push(((remaining & 0x7f) | 0x80) as u8);
+        remaining >>= 7;
+    }
+}
+
+pub fn decode_i64(input: &[u8]) -> Result<(i64, usize), VarIntError> {
+    let mut value = 0_u64;
+    for (index, byte) in input.iter().copied().take(MAX_VARLONG_BYTES).enumerate() {
+        value |= u64::from(byte & 0x7f) << (index * 7);
+        if byte & 0x80 == 0 {
+            return Ok((value as i64, index + 1));
+        }
+        if index + 1 == MAX_VARLONG_BYTES {
+            return Err(VarIntError::TooLarge);
+        }
+    }
+    Err(VarIntError::Incomplete)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VarIntError {
