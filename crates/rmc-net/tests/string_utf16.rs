@@ -27,3 +27,17 @@ fn packet_strings_apply_java_utf16_length_not_scalar_count() {
     });
     assert!(too_long.encode_packet().is_err());
 }
+
+#[test]
+fn chat_boundary_matches_java_isolated_surrogate_wire_replacement() {
+    let message = format!("{}\u{1f600}", "x".repeat(99));
+    let packet = ChatMessageServerboundPacket::vanilla(&message);
+    assert_eq!(packet.message, format!("{}?", "x".repeat(99)));
+    let bytes = PlayServerboundPacket::ChatMessage(packet)
+        .encode_packet()
+        .unwrap()
+        .packet_bytes();
+    assert_eq!(bytes.len(), 102);
+    assert_eq!(&bytes[..2], &[1, 100]);
+    assert_eq!(*bytes.last().unwrap(), 63);
+}

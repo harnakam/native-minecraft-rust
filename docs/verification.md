@@ -305,3 +305,9 @@ A regression checks filtered pasted controls/section sign, exact UTF-16 limits, 
 PacketReader and PacketWriter now measure Minecraft string length in UTF-16 code units, matching PacketBuffer's Java String.length, instead of Rust Unicode scalar count. This applies to bounded strings throughout the codec. ChatMessageServerboundPacket::vanilla also truncates by the 100-unit limit, so programmatic/runtime submissions bypassing native input do not send more supplementary characters than Java accepts.
 
 A regression checks exact supplementary-character UTF-8 bytes, one-unit rejection/two-unit acceptance in both directions, 50-emoji chat construction/roundtrip and over-limit direct packet rejection. Full workspace tests pass. Invalid UTF-8 replacement behavior and isolated-surrogate truncation remain outside proven parity; Rust keeps complete valid scalars when truncation would split a surrogate pair. No complete text-protocol/client parity is claimed.
+
+## Java surrogate-boundary chat wire replacement
+
+A local Java 8 probe confirmed that C01-style substring(0,100) of 99 ASCII characters followed by a supplementary character leaves an isolated high surrogate; PacketBuffer.writeString's String.getBytes(UTF_8) encodes it as ASCII question mark (byte 63), yielding 100 message bytes. ChatMessageServerboundPacket::vanilla now produces that same wire replacement rather than dropping the partial character entirely. Rust stores the replacement question mark, not Java's isolated-surrogate intermediate String.
+
+A regression verifies exact packet ID, length prefix, total bytes and final replacement byte. Full workspace tests pass. Native input still avoids isolated-surrogate insertion at its own GUI limit, and general malformed UTF-8/UTF-16 behavior remains outside proven parity. The temporary Java probe is local and ignored; no reference code or assets are committed.

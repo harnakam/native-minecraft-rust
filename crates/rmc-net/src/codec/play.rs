@@ -1857,13 +1857,20 @@ pub struct ChatMessageServerboundPacket {
 impl ChatMessageServerboundPacket {
     pub fn vanilla(message: &str) -> Self {
         let mut units = 0;
-        let truncated = message
-            .chars()
-            .take_while(|character| {
-                units += character.len_utf16();
-                units <= MAX_SERVERBOUND_CHAT_CHARS
-            })
-            .collect();
+        let mut truncated = String::new();
+        for character in message.chars() {
+            if units == MAX_SERVERBOUND_CHAT_CHARS {
+                break;
+            }
+            if units + character.len_utf16() > MAX_SERVERBOUND_CHAT_CHARS {
+                // Java substring leaves the high surrogate here. UTF-8 getBytes
+                // replaces that isolated surrogate with ASCII question mark.
+                truncated.push('?');
+                break;
+            }
+            units += character.len_utf16();
+            truncated.push(character);
+        }
         Self { message: truncated }
     }
 }
