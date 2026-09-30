@@ -2877,9 +2877,19 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
                 "yellow",
                 "white",
             ];
-            if color == "reset" {
-                has_color = Some('r');
-                style.color = [255; 3];
+            if let Some(code) = match color {
+                "obfuscated" => Some('k'),
+                "bold" => Some('l'),
+                "strikethrough" => Some('m'),
+                "underline" => Some('n'),
+                "italic" => Some('o'),
+                "reset" => Some('r'),
+                _ => None,
+            } {
+                has_color = Some(code);
+                if code == 'r' {
+                    style.color = [255; 3];
+                }
             } else if let Some(index) = names.iter().position(|name| *name == color) {
                 let code = char::from_digit(index as u32, 16).unwrap();
                 has_color = Some(code);
@@ -4765,6 +4775,32 @@ mod inventory_layout_tests {
         .unwrap();
         assert_eq!(chat_component_text(&prioritized), "");
         assert_eq!(tab_component_formatted(&prioritized), "");
+    }
+
+    #[test]
+    fn component_color_accepts_formatting_enum_names() {
+        for (name, code) in [
+            ("bold", 'l'),
+            ("strikethrough", 'm'),
+            ("underline", 'n'),
+            ("italic", 'o'),
+            ("obfuscated", 'k'),
+        ] {
+            let value = parse_chat_component(&format!(r#"{{"text":"A","color":"red","extra":[{{"text":"B","color":"{name}"}},{{"text":"C"}}]}}"#)).unwrap();
+            assert_eq!(
+                tab_component_formatted(&value).replace('\u{a7}', "&"),
+                format!("&cA&r&{code}B&r&cC&r")
+            );
+        }
+        let value = parse_chat_component(
+            r#"{"text":"A","color":"red","extra":[{"text":"B","color":"bold","bold":false}]}"#,
+        )
+        .unwrap();
+        assert!(
+            tab_styled_runs(&tab_component_formatted(&value), [255; 3], 100)
+                .iter()
+                .any(|(text, style)| text == "B" && style.bold && style.color == [255; 3])
+        );
     }
 
     #[test]

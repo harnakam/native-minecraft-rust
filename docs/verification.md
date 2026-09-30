@@ -889,3 +889,16 @@ retain their parent color. An executed MCP919 getFormattedText probe outputs
 regression matches this exact sequence and verifies reset honors a nonwhite
 draw base color. The workspace suite passes. Font/other enum color formatting
 values, obfuscation and manual visual parity remain incomplete.
+
+
+### Formatting enum names in component color
+
+MCP919 deserializes color through the full EnumChatFormatting enum, so bold,
+strikethrough, underline, italic and obfuscated are accepted in that field.
+Native formatted traversal now retains their corresponding l/m/n/o/k codes,
+including replacement of inherited color and restoration on following siblings.
+Executed MCP919 getFormattedText outputs match the five exact native regression
+sequences. A color bold code still produces bold glyph runs even if the separate
+bold flag is false, matching prefix semantics. Full workspace tests pass.
+Animated obfuscated glyph rendering, invalid enum input conversion and manual
+font parity remain incomplete. No assets/reference classes are published.
