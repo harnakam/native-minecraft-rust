@@ -145,6 +145,33 @@ impl WorldSnapshot {
         if matches!(id, 54 | 64 | 71 | 146 | 193..=197) {
             return self.block_collision_boxes(pos);
         }
+        if matches!(id, 101 | 102 | 160) {
+            let connects = |dx, dz| {
+                let neighbor =
+                    self.block_state_or_air(BlockPos::new(pos.x + dx, pos.y, pos.z + dz)) >> 4;
+                matches!(neighbor, 20 | 95 | 101 | 102 | 160) || supports_pane_connection(neighbor)
+            };
+            let (west, east, north, south) = (
+                connects(-1, 0),
+                connects(1, 0),
+                connects(0, -1),
+                connects(0, 1),
+            );
+            let isolated = !(west || east || north || south);
+            return vec![Aabb::new(
+                [
+                    if west || isolated { 0.0 } else { 0.4375 },
+                    0.0,
+                    if north || isolated { 0.0 } else { 0.4375 },
+                ],
+                [
+                    if east || isolated { 1.0 } else { 0.5625 },
+                    1.0,
+                    if south || isolated { 1.0 } else { 0.5625 },
+                ],
+            )
+            .offset([pos.x as f64, pos.y as f64, pos.z as f64])];
+        }
         if matches!(id, 85 | 101 | 102 | 113 | 139 | 160 | 188..=192) {
             let boxes = self.block_collision_boxes(pos);
             if !boxes.is_empty() {
@@ -383,7 +410,8 @@ impl WorldSnapshot {
                 let connects = |dx, dz| {
                     let neighbor =
                         self.block_state_or_air(BlockPos::new(pos.x + dx, pos.y, pos.z + dz)) >> 4;
-                    matches!(neighbor, 20 | 95 | 101 | 102 | 160) || is_full_cube(neighbor)
+                    matches!(neighbor, 20 | 95 | 101 | 102 | 160)
+                        || supports_pane_connection(neighbor)
                 };
                 let (west, east, north, south) = (
                     connects(-1, 0),
@@ -411,7 +439,9 @@ impl WorldSnapshot {
                 let connects = |dx, dz| {
                     let neighbor =
                         self.block_state_or_air(BlockPos::new(pos.x + dx, pos.y, pos.z + dz)) >> 4;
-                    neighbor == 139 || matches!(neighbor, 107 | 183..=187) || is_full_cube(neighbor)
+                    neighbor == 139
+                        || matches!(neighbor, 107 | 183..=187)
+                        || supports_fence_connection(neighbor)
                 };
                 let (west, east, north, south) = (
                     connects(-1, 0),
@@ -507,7 +537,10 @@ impl WorldSnapshot {
                 let connects = |dx, dz| {
                     let neighbor =
                         self.block_state_or_air(BlockPos::new(pos.x + dx, pos.y, pos.z + dz)) >> 4;
-                    neighbor == id || matches!(neighbor, 107 | 183..=187) || is_full_cube(neighbor)
+                    (neighbor == 113 && id == 113)
+                        || (matches!(neighbor, 85 | 188..=192) && id != 113)
+                        || matches!(neighbor, 107 | 183..=187)
+                        || supports_fence_connection(neighbor)
                 };
                 let min_x = if connects(-1, 0) { 0.0 } else { 0.375 };
                 let max_x = if connects(1, 0) { 1.0 } else { 0.625 };
@@ -673,6 +706,10 @@ impl WorldSnapshot {
     }
 }
 
-fn is_full_cube(id: u16) -> bool {
-    matches!(id, 1..=5 | 7 | 12..=25 | 35 | 41..=43 | 45..=49 | 56..=58 | 61 | 62 | 73 | 74 | 79 | 80 | 82 | 86..=89 | 91 | 95 | 97..=103 | 110 | 112 | 121 | 123..=125 | 129 | 133 | 137 | 152 | 153 | 155 | 158..=162 | 165 | 168..=170 | 172..=174 | 179 | 181)
+// Numeric MCP919 observations: material/full-cube and full-block predicates differ.
+fn supports_fence_connection(id: u16) -> bool {
+    matches!(id, 1..=5 | 7 | 12..=17 | 19 | 21..=25 | 35 | 41..=43 | 45 | 47..=49 | 52 | 56..=58 | 61..=62 | 73..=74 | 80 | 82 | 84 | 87..=88 | 97..=100 | 110 | 112 | 120..=121 | 123..=125 | 129 | 133 | 137 | 152..=153 | 155 | 158..=159 | 162 | 165 | 168 | 170 | 172..=174 | 179 | 181)
+}
+fn supports_pane_connection(id: u16) -> bool {
+    matches!(id, 1..=5 | 7 | 12..=19 | 21..=25 | 35 | 41..=43 | 45..=49 | 56..=58 | 61..=62 | 73..=74 | 80 | 82 | 84 | 86..=89 | 91 | 97..=100 | 103 | 110 | 112 | 121 | 123..=125 | 129 | 133 | 137 | 152..=153 | 155 | 158..=159 | 161..=162 | 168..=170 | 172..=174 | 179 | 181)
 }

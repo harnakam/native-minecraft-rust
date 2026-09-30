@@ -156,3 +156,27 @@ fn stair_internal_surfaces_follow_vanilla_octant_trace_order() {
         assert_eq!((hit.distance, hit.face), (0.0, 5));
     }
 }
+
+#[test]
+fn fence_and_pane_connections_use_distinct_mcp_material_predicates() {
+    let mut world = WorldSnapshot::new(WorldConfig::overworld());
+    set(&mut world, 0, 64, 0, 85 << 4);
+    set(&mut world, 1, 64, 0, 188 << 4);
+    let max_x = |world: &WorldSnapshot| {
+        world
+            .block_collision_boxes(BlockPos::new(0, 64, 0))
+            .iter()
+            .map(|b| b.max[0])
+            .fold(0.0, f64::max)
+    };
+    assert_eq!(max_x(&world), 1.0); // Different wood fences connect.
+    for neighbor in [113, 20, 95, 86, 91, 166] {
+        set(&mut world, 1, 64, 0, neighbor << 4);
+        assert_eq!(max_x(&world), 0.625, "neighbor {neighbor}");
+    }
+    set(&mut world, 0, 64, 0, 102 << 4);
+    set(&mut world, 1, 64, 0, 86 << 4);
+    let bounds = world.selection_boxes(BlockPos::new(0, 64, 0));
+    assert_eq!(bounds[0].min[0], 0.4375);
+    assert_eq!(bounds[0].max[0], 1.0); // Panes connect to pumpkin's full-block flag.
+}

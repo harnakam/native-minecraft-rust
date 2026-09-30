@@ -34,10 +34,12 @@ def main():
                     str(templates / 'RmcMovementOracle.java'),
                     str(templates / 'RmcMiningOracle.java'),
                     str(templates / 'RmcMiningStateOracle.java'),
+                    str(templates / 'RmcNeighborOracle.java'),
                     str(templates / 'RmcSelectionOracle.java')], cwd=root, check=True)
     output = root / 'tmp/local-oracles'
     output.mkdir(parents=True, exist_ok=True)
     for name, class_name, package, example in (
+        ('neighbors', 'RmcNeighborOracle', 'rmc-world', 'neighbor_dump'),
         ('collision', 'RmcCollisionOracle', 'rmc-world', 'collision_dump'),
         ('travel', 'RmcMovementOracle', 'rmc-game', 'travel_dump'),
         ('mining', 'RmcMiningOracle', 'rmc-game', 'mining_dump'),
@@ -51,7 +53,7 @@ def main():
         ):
             with destination.open('w', encoding='utf-8') as stream:
                 subprocess.run(command, cwd=root, stdout=stream, check=True)
-        subprocess.run([sys.executable, str(root / f'scripts/compare_{name}.py'),
+        subprocess.run([sys.executable, str(root / f"scripts/compare_{'collision' if name == 'neighbors' else name}.py"),
                         str(actual), str(reference)], cwd=root, check=True)
 
 
