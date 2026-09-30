@@ -645,6 +645,7 @@ impl WorldSnapshot {
             | PlayClientboundPacket::CloseWindow(_)
             | PlayClientboundPacket::SetSlot(_)
             | PlayClientboundPacket::WindowItems(_)
+            | PlayClientboundPacket::WindowProperty(_)
             | PlayClientboundPacket::ConfirmTransaction(_)
             | PlayClientboundPacket::PlayerListItem(_)
             | PlayClientboundPacket::ScoreboardObjective(_)

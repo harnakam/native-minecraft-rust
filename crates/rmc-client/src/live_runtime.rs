@@ -1676,6 +1676,56 @@ mod tests {
             confirmed,
             "official server did not confirm the block was air"
         );
+        for command in [
+            "/setblock 0 65 2 furnace 2",
+            "/replaceitem block 0 65 2 slot.container.0 minecraft:iron_ore 1",
+            "/replaceitem block 0 65 2 slot.container.1 minecraft:coal 1",
+        ] {
+            runtime.send_chat_message(command).unwrap();
+        }
+
+        for _ in 0..100 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            let id = runtime
+                .world
+                .block_state_or_air(rmc_world::BlockPos::new(0, 65, 2))
+                >> 4;
+            if matches!(id, 61 | 62) {
+                break;
+            }
+        }
+        advance(
+            &mut runtime,
+            &RuntimeActionInput {
+                use_pressed: true,
+                ..RuntimeActionInput::default()
+            },
+        );
+        let mut furnace_progress = false;
+        for _ in 0..250 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            furnace_progress = runtime
+                .usability
+                .inventory()
+                .open_window()
+                .is_some_and(|window| {
+                    window
+                        .metadata
+                        .as_ref()
+                        .is_some_and(|m| m.inventory_type == "minecraft:furnace")
+                        && window.properties.get(&0).is_some_and(|v| *v > 0)
+                        && window.properties.get(&2).is_some_and(|v| *v > 0)
+                        && window.properties.get(&3) == Some(&200)
+                });
+            if furnace_progress {
+                break;
+            }
+        }
+        assert!(
+            furnace_progress,
+            "official server furnace properties did not reach the runtime"
+        );
+        runtime.close_open_window().unwrap();
         runtime.send_chat_message("/kill").unwrap();
         for _ in 0..100 {
             advance(&mut runtime, &RuntimeActionInput::default());
@@ -1697,11 +1747,23 @@ mod tests {
             "official server did not initialize the respawn position"
         );
         assert!(runtime.summary.disconnect_reason_json.is_none());
-        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, server-confirmed stone mining, death and respawn passed");
+        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, furnace progress, server-confirmed stone mining, death and respawn passed");
         if std::env::var("RMC_STOP_TEST_SERVER").as_deref() == Ok("1") {
             runtime.send_chat_message("/stop").unwrap();
             for _ in 0..100 {
-                advance(&mut runtime, &RuntimeActionInput::default());
+                if let Err(error) = runtime.step(
+                    Duration::from_millis(50),
+                    &InputFrame::default(),
+                    &RuntimeActionInput::default(),
+                ) {
+                    // The server closes active sockets while processing /stop.
+                    assert!(
+                        error.contains("ConnectionAborted") || error.contains("ConnectionReset"),
+                        "unexpected shutdown error: {error}"
+                    );
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
                 if runtime.summary.ended_by_eof || runtime.summary.disconnect_reason_json.is_some()
                 {
                     break;

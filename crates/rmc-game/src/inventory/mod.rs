@@ -22,6 +22,7 @@ pub struct ContainerMetadata {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContainerSnapshot {
+    pub properties: BTreeMap<i16, i16>,
     pub window_id: u8,
     pub slots: Vec<Slot>,
     pub metadata: Option<ContainerMetadata>,
@@ -115,6 +116,7 @@ impl InventoryState {
         Self {
             selected_hotbar_slot: 0,
             inventory_window: ContainerSnapshot {
+                properties: BTreeMap::new(),
                 window_id: 0,
                 slots: vec![None; 45],
                 metadata: None,
@@ -223,6 +225,7 @@ impl InventoryState {
     pub fn apply_open_window(&mut self, packet: &OpenWindowPacket) -> InventoryUpdate {
         self.player_inventory_open = false;
         self.open_window = Some(ContainerSnapshot {
+            properties: BTreeMap::new(),
             window_id: packet.window_id,
             slots: vec![None; packet.slot_count as usize],
             metadata: Some(ContainerMetadata {
@@ -301,7 +304,14 @@ impl InventoryState {
                 .filter(|window| window.window_id == packet.window_id)
                 .and_then(|window| window.metadata.clone());
 
+            let properties = self
+                .open_window
+                .as_ref()
+                .filter(|w| w.window_id == packet.window_id)
+                .map(|w| w.properties.clone())
+                .unwrap_or_default();
             self.open_window = Some(ContainerSnapshot {
+                properties,
                 window_id: packet.window_id,
                 slots: packet.items.clone(),
                 metadata,
@@ -338,7 +348,7 @@ impl InventoryState {
                 .accepted_transactions
                 .push((packet.window_id, packet.action_number));
         } else {
-            if let Some((window, cursor)) = prediction {
+            if let Some((mut window, cursor)) = prediction {
                 if packet.window_id == 0 {
                     self.inventory_window = window;
                     self.sync_player_inventory_to_open();
@@ -347,6 +357,8 @@ impl InventoryState {
                     .as_ref()
                     .is_some_and(|open| open.window_id == packet.window_id)
                 {
+                    // Properties are authoritative server state, not click prediction.
+                    window.properties = self.open_window.as_ref().unwrap().properties.clone();
                     self.open_window = Some(window);
                     self.sync_open_player_inventory();
                 }
@@ -385,6 +397,18 @@ impl InventoryState {
             PlayClientboundPacket::CloseWindow(packet) => self.apply_close_window(packet),
             PlayClientboundPacket::SetSlot(packet) => self.apply_set_slot(packet),
             PlayClientboundPacket::WindowItems(packet) => self.apply_window_items(packet),
+            PlayClientboundPacket::WindowProperty(packet) => {
+                let mut update = InventoryUpdate::default();
+                if let Some(window) = self
+                    .open_window
+                    .as_mut()
+                    .filter(|w| w.window_id == packet.window_id)
+                {
+                    window.properties.insert(packet.property, packet.value);
+                    update.touch_window(packet.window_id);
+                }
+                update
+            }
             PlayClientboundPacket::ConfirmTransaction(packet) => {
                 self.apply_confirm_transaction(packet)
             }
@@ -518,6 +542,7 @@ impl InventoryState {
             .unwrap_or(true)
         {
             self.open_window = Some(ContainerSnapshot {
+                properties: BTreeMap::new(),
                 window_id,
                 slots: Vec::new(),
                 metadata: None,

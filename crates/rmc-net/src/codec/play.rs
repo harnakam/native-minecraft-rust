@@ -402,6 +402,13 @@ pub struct WindowItemsPacket {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WindowPropertyPacket {
+    pub window_id: u8,
+    pub property: i16,
+    pub value: i16,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmTransactionClientboundPacket {
     pub window_id: u8,
     pub action_number: i16,
@@ -696,6 +703,7 @@ pub enum PlayClientboundPacket {
     CloseWindow(CloseWindowPacket),
     SetSlot(SetSlotPacket),
     WindowItems(WindowItemsPacket),
+    WindowProperty(WindowPropertyPacket),
     ConfirmTransaction(ConfirmTransactionClientboundPacket),
     PlayerListItem(PlayerListItemPacket),
     ScoreboardObjective(ScoreboardObjectivePacket),
@@ -1070,6 +1078,11 @@ impl PlayClientboundPacket {
 
                 Self::WindowItems(WindowItemsPacket { window_id, items })
             }
+            0x31 => Self::WindowProperty(WindowPropertyPacket {
+                window_id: reader.read_u8()?,
+                property: reader.read_i16()?,
+                value: reader.read_i16()?,
+            }),
             0x32 => Self::ConfirmTransaction(ConfirmTransactionClientboundPacket {
                 window_id: reader.read_u8()?,
                 action_number: reader.read_i16()?,
@@ -1569,6 +1582,12 @@ impl PlayClientboundPacket {
                 }
 
                 0x30
+            }
+            Self::WindowProperty(packet) => {
+                writer.write_u8(packet.window_id);
+                writer.write_i16(packet.property);
+                writer.write_i16(packet.value);
+                0x31
             }
             Self::ConfirmTransaction(packet) => {
                 writer.write_u8(packet.window_id);

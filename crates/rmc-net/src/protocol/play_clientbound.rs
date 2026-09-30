@@ -370,6 +370,33 @@ pub const BLOCK_CHANGE: PacketSpec = PacketSpec {
     ],
 };
 
+pub const WINDOW_PROPERTY: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x31,
+    name: "Window Property",
+    java_class: "net.minecraft.network.play.server.S31PacketWindowProperty",
+    java_handler: "INetHandlerPlayClient.handleWindowProperty",
+    compression: PLAY_COMPRESSION,
+    fields: &[
+        FieldSpec {
+            name: "window_id",
+            encoding: "UnsignedByte",
+            notes: "Current container id.",
+        },
+        FieldSpec {
+            name: "property",
+            encoding: "Short",
+            notes: "Signed property index.",
+        },
+        FieldSpec {
+            name: "value",
+            encoding: "Short",
+            notes: "Signed property value.",
+        },
+    ],
+};
+
 pub const WINDOW_ITEMS: PacketSpec = PacketSpec {
     state: ProtocolState::Play,
     direction: PacketDirection::Clientbound,
@@ -1041,6 +1068,7 @@ pub const PACKETS: &[PacketSpec] = &[
     CLOSE_WINDOW,
     SET_SLOT,
     WINDOW_ITEMS,
+    WINDOW_PROPERTY,
     CONFIRM_TRANSACTION,
     PLAYER_LIST_ITEM,
     SCOREBOARD_OBJECTIVE,

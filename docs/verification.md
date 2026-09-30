@@ -83,3 +83,11 @@ Stack limits now come from the observed registry, replacing a manually maintaine
 The `--only container_transfer` oracle executes real MCP919 Container.slotClick for chest, hopper, dispenser, dropper and beacon. It compares the original return stack and every resulting slot against Rust for 6,930 scenarios: every source slot, five item types, counts 1/32, and empty/full/mixed inventories. Zero differences were observed. Seven Rust transfer tests include the specialized routes. The comparison rejects incomplete, duplicate or unexpected scenarios and missing slot state; a Python integrity test covers empty, partial and duplicate input.
 
 This probe uses deterministic storage states, without custom NBT, crafting or furnace output side effects. It does not establish complete container compatibility or exercise these new specialized routes against a live official server.
+
+## Window property delivery and furnace progress
+
+Protocol 47 S31PacketWindowProperty (0x31) is implemented with unsigned window ID and signed short property/value fields. The frozen registry exposes it to the driver and session forwards it through the usability path. Inventory applies properties only to the current matching container, preserves them across WindowItems refreshes and preserves newer server properties when reverting click prediction. Usability snapshots expose the properties to the native furnace overlay's fuel/cook bars. The fuel denominator fallback of 200 and integer scaling follow GuiFurnace; display widths are clamped to the available bar width. Other specialized GUI property presentations remain incomplete.
+
+Three focused tests cover exact signed wire bytes, truncation rejection, matching window/lifecycle rules and click rollback after newer progress. The opt-in official-server test places a furnace, fills iron ore and coal using short commands, opens it through the native runtime's block interaction path and verifies positive burn/cook values and total cook time 200. It passes alongside existing mining, swaps, throws, death and respawn checks. Native progress visuals have not been manually inspected and are not yet vanilla GUI artwork.
+
+The test's authorized /stop cleanup tolerates only ConnectionAborted/ConnectionReset socket errors caused by server shutdown; other runtime errors still fail.

@@ -242,6 +242,7 @@ mod tests {
                 property_count: 1,
             }],
             window: Some(WindowSnapshot {
+                properties: Default::default(),
                 window_id: 4,
                 inventory_type: "minecraft:chest".to_owned(),
                 title_json: "{\"text\":\"Loot\"}".to_owned(),

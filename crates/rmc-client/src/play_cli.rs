@@ -2290,6 +2290,56 @@ fn draw_window_overlay(frame: &mut [u8], width: u32, height: u32, window: &Windo
         1,
     );
 
+    if window.inventory_type == "minecraft:furnace" {
+        let property = |id| i32::from(*window.properties.get(&id).unwrap_or(&0));
+        let burn_total = if property(1) == 0 { 200 } else { property(1) };
+        let burn = (property(0) * 60 / burn_total).clamp(0, 60);
+        let cook = if property(3) == 0 {
+            0
+        } else {
+            (property(2) * 60 / property(3)).clamp(0, 60)
+        };
+        for (x, label, amount, color) in [
+            (layout.panel.x + 10, "FUEL", burn, [244, 144, 40]),
+            (layout.panel.x + 100, "COOK", cook, [235, 222, 150]),
+        ] {
+            draw_text_scaled(
+                frame,
+                width,
+                height,
+                x,
+                layout.panel.y + 44,
+                label,
+                [230, 230, 230],
+                1,
+            );
+            draw_rect(
+                frame,
+                width,
+                height,
+                UiRect {
+                    x,
+                    y: layout.panel.y + 55,
+                    width: 60,
+                    height: 4,
+                },
+                [60, 60, 60],
+            );
+            draw_rect(
+                frame,
+                width,
+                height,
+                UiRect {
+                    x,
+                    y: layout.panel.y + 55,
+                    width: amount,
+                    height: 4,
+                },
+                color,
+            );
+        }
+    }
+
     for (rect, slot_id) in layout.slots {
         draw_rect(frame, width, height, rect, [34, 37, 46]);
         draw_rect_outline(frame, width, height, rect, [92, 99, 116]);
@@ -3037,6 +3087,7 @@ mod inventory_layout_tests {
             (6, "minecraft:furnace", 3, 39),
         ] {
             let window = WindowSnapshot {
+                properties: Default::default(),
                 window_id: id,
                 inventory_type: kind.into(),
                 title_json: "{}".into(),

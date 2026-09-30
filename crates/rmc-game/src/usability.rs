@@ -56,6 +56,7 @@ pub struct SidebarSnapshot {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WindowSnapshot {
+    pub properties: BTreeMap<i16, i16>,
     pub window_id: u8,
     pub inventory_type: String,
     pub title_json: String,
@@ -274,6 +275,7 @@ impl UsabilityState {
         });
 
         let window = self.inventory.open_window().map(|window| WindowSnapshot {
+            properties: window.properties.clone(),
             window_id: window.window_id,
             inventory_type: window
                 .metadata
