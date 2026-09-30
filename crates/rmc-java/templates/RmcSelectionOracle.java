@@ -12,7 +12,7 @@ public final class RmcSelectionOracle {
         Bootstrap.register();
         RmcCollisionOracle.QueryWorld world=new RmcCollisionOracle.QueryWorld();
         BlockPos pos=new BlockPos(0,64,0);
-        double[][] samples={{0.25,0.25},{0.25,0.75},{0.75,0.25},{0.75,0.75},{0.5,0.5}};
+        double[][] samples={{0.25,0.25},{0.25,0.75},{0.75,0.25},{0.75,0.75},{0.5,0.5},{0.5,0.5},{0.5,0.5}};
         for(int id=0;id<=197;id++) for(int meta=0;meta<16;meta++) {
             world.states.clear();
             Block block=Block.getBlockById(id);
@@ -28,7 +28,7 @@ public final class RmcSelectionOracle {
                 int component=0;
                 for(int k=0;k<3;k++) {
                     double base=k==1?64:0;
-                    start[k]=base+(k==axis?(face%2==0?-2:2):samples[sample][component++]);
+                    start[k]=base+(k==axis?(sample==5?0.5:sample==6?0:(face%2==0?-2:2)):samples[sample][component++]);
                     end[k]=k==axis?base+(face%2==0?2:-2):start[k];
                 }
                 Vec3 a=new Vec3(start[0],start[1],start[2]),b=new Vec3(end[0],end[1],end[2]);

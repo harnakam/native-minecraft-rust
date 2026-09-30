@@ -47,36 +47,29 @@ impl Aabb {
     }
 
     pub fn ray_hit(self, origin: [f64; 3], direction: [f64; 3], reach: f64) -> Option<(f64, u8)> {
-        let mut near = 0.0_f64;
-        let mut far = reach;
-        let mut face = 0;
-        for axis in 0..3 {
-            if direction[axis].abs() < 1.0e-12 {
-                if origin[axis] < self.min[axis] || origin[axis] > self.max[axis] {
-                    return None;
-                }
+        let mut nearest: Option<(f64, u8)> = None;
+        // MCP tests each face plane in X/Y/Z order, including exits from inside.
+        // Ties retain the first face and tiny segment components are ignored.
+        for (axis, low_face, high_face) in [(0, 4, 5), (1, 0, 1), (2, 2, 3)] {
+            let delta = direction[axis] * reach;
+            if delta * delta < f64::from(1.0e-7_f32) {
                 continue;
             }
-            let a = (self.min[axis] - origin[axis]) / direction[axis];
-            let b = (self.max[axis] - origin[axis]) / direction[axis];
-            let entry = a.min(b);
-            if entry > near {
-                near = entry;
-                face = match (axis, direction[axis] > 0.0) {
-                    (0, true) => 4,
-                    (0, false) => 5,
-                    (1, true) => 0,
-                    (1, false) => 1,
-                    (2, true) => 2,
-                    _ => 3,
-                };
-            }
-            far = far.min(a.max(b));
-            if near > far {
-                return None;
+            for (plane, face) in [(self.min[axis], low_face), (self.max[axis], high_face)] {
+                let distance = (plane - origin[axis]) / direction[axis];
+                if distance < 0.0 || distance > reach {
+                    continue;
+                }
+                let point = std::array::from_fn::<_, 3, _>(|i| origin[i] + direction[i] * distance);
+                if (0..3).any(|i| i != axis && (point[i] < self.min[i] || point[i] > self.max[i])) {
+                    continue;
+                }
+                if nearest.is_none_or(|hit| distance < hit.0) {
+                    nearest = Some((distance, face));
+                }
             }
         }
-        (far >= 0.0 && near <= reach).then_some((near, face))
+        nearest
     }
 }
 
@@ -122,26 +115,32 @@ impl WorldSnapshot {
             id,
             53 | 67 | 108 | 109 | 114 | 128 | 134 | 135 | 136 | 156 | 163 | 164 | 180
         ) {
-            let top = meta & 4 != 0;
-            let base = Aabb::new(
-                [0.0, if top { 0.5 } else { 0.0 }, 0.0],
-                [1.0, if top { 1.0 } else { 0.5 }, 1.0],
-            );
-            let y = if top { (0.0, 0.5) } else { (0.5, 1.0) };
-            let (x0, z0, x1, z1) = match meta & 3 {
-                0 => (0.5, 0.0, 1.0, 1.0),
-                1 => (0.0, 0.0, 0.5, 1.0),
-                2 => (0.0, 0.5, 1.0, 1.0),
-                _ => (0.0, 0.0, 1.0, 0.5),
+            let mut excluded = match meta & 3 {
+                0 => [4, 6],
+                1 => [5, 7],
+                2 => [4, 5],
+                _ => [6, 7],
             };
-            return vec![
-                base.offset([pos.x as f64, pos.y as f64, pos.z as f64]),
-                Aabb::new([x0, y.0, z0], [x1, y.1, z1]).offset([
-                    pos.x as f64,
-                    pos.y as f64,
-                    pos.z as f64,
-                ]),
-            ];
+            if meta & 4 != 0 {
+                excluded = excluded.map(|i| i - 4);
+            }
+            // Vanilla traces six half-block octants in their original order.
+            // Merging them changes internal surface hits and equal-distance faces.
+            return (0..8)
+                .filter(|i| !excluded.contains(i))
+                .map(|i| {
+                    let min = [
+                        (i % 2) as f64 * 0.5,
+                        (i / 4 % 2) as f64 * 0.5,
+                        (i / 2 % 2) as f64 * 0.5,
+                    ];
+                    Aabb::new(min, min.map(|v| v + 0.5)).offset([
+                        pos.x as f64,
+                        pos.y as f64,
+                        pos.z as f64,
+                    ])
+                })
+                .collect();
         }
         if matches!(id, 54 | 64 | 71 | 146 | 193..=197) {
             return self.block_collision_boxes(pos);

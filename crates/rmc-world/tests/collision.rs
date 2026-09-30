@@ -127,3 +127,32 @@ fn noncolliding_plant_is_selectable_and_liquid_is_not_a_solid_target() {
         .raycast([0.5, 64.5, -2.0], [0.0, 0.0, 1.0], 4.0)
         .is_none());
 }
+
+#[test]
+fn ray_from_inside_hits_exit_and_surface_hits_keep_the_actual_face() {
+    let bounds = Aabb::new([0.0; 3], [1.0; 3]);
+    assert_eq!(
+        bounds.ray_hit([0.5; 3], [1.0, 0.0, 0.0], 4.0),
+        Some((0.5, 5))
+    );
+    assert_eq!(
+        bounds.ray_hit([0.0, 0.5, 0.5], [1.0, 0.0, 0.0], 4.0),
+        Some((0.0, 4))
+    );
+    assert_eq!(bounds.ray_hit([0.5; 3], [0.0, 1.0, 0.0], 0.25), None);
+    // Java ignores face intersections when that component of the segment is tiny.
+    assert_eq!(
+        bounds.ray_hit([0.0, 0.5, 0.5], [1.0, 0.0, 0.0], 0.0001),
+        None
+    );
+}
+
+#[test]
+fn stair_internal_surfaces_follow_vanilla_octant_trace_order() {
+    let mut world = WorldSnapshot::new(WorldConfig::overworld());
+    set(&mut world, 0, 64, 0, 53 << 4);
+    for direction in [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]] {
+        let hit = world.raycast([0.5, 64.5, 0.5], direction, 4.0).unwrap();
+        assert_eq!((hit.distance, hit.face), (0.0, 5));
+    }
+}

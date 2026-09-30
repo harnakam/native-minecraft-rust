@@ -8,6 +8,8 @@ fn main() {
         [0.75, 0.25],
         [0.75, 0.75],
         [0.5, 0.5],
+        [0.5, 0.5],
+        [0.5, 0.5],
     ];
     for id in 0..=197 {
         for meta in 0..16 {
@@ -27,7 +29,11 @@ fn main() {
                         let base = if k == 1 { 64.0 } else { 0.0 };
                         origin[k] = base
                             + if k == axis {
-                                if face % 2 == 0 {
+                                if sample == 5 {
+                                    0.5
+                                } else if sample == 6 {
+                                    0.0
+                                } else if face % 2 == 0 {
                                     -2.0
                                 } else {
                                     2.0
