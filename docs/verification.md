@@ -824,3 +824,16 @@ test passed (1 test, 0 failures); it restores its temporary working directory
 and must run alone because the startup table is process-global. Imported files
 remain in ignored local_assets. This proves real language import/display data
 integration, not manual window/font parity or server delivery of this message.
+
+
+### Selected score component validation
+
+The shared display parser now rejects selected score components lacking name or
+objective, nonobject score payloads, and null/object/array values for those fields
+or optional value. Gson JsonUtils.getString accepts all JSON primitives, so
+boolean/numeric fields remain accepted. Validation follows text/translate
+precedence and recurses into component arrays, selected translation arguments
+and extra siblings. A regression failed on an empty score object before the fix.
+This is display-parser validation only: protocol ingress rejection, validation
+of other component kinds/styles and vanilla exception/disconnect behavior are
+not yet reproduced.

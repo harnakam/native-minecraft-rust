@@ -2690,7 +2690,55 @@ fn draw_tab_italic_glyph(
 fn parse_chat_component(json: &str) -> Result<serde_json::Value, serde_json::Error> {
     // Validate syntax and the normal serde nesting bound before recursive raw
     // traversal. Values used for display retain Gson's numeric token spelling.
-    let _: serde_json::Value = serde_json::from_str(json)?;
+    let value: serde_json::Value = serde_json::from_str(json)?;
+    fn validate_scores(value: &serde_json::Value) -> Result<(), serde_json::Error> {
+        let error = || {
+            <serde_json::Error as serde::de::Error>::custom(
+                "score component requires primitive name/objective and optional primitive value",
+            )
+        };
+        let primitive = |value: &serde_json::Value| {
+            matches!(
+                value,
+                serde_json::Value::String(_)
+                    | serde_json::Value::Bool(_)
+                    | serde_json::Value::Number(_)
+            )
+        };
+        if let Some(array) = value.as_array() {
+            for item in array {
+                validate_scores(item)?;
+            }
+        } else if let Some(object) = value.as_object() {
+            if !object.contains_key("text") && !object.contains_key("translate") {
+                if let Some(score) = object.get("score") {
+                    let score = score.as_object().ok_or_else(error)?;
+                    for key in ["name", "objective"] {
+                        if !score.get(key).is_some_and(primitive) {
+                            return Err(error());
+                        }
+                    }
+                    if score.get("value").is_some_and(|value| !primitive(value)) {
+                        return Err(error());
+                    }
+                }
+            }
+            if !object.contains_key("text") && object.contains_key("translate") {
+                if let Some(args) = object.get("with").and_then(|value| value.as_array()) {
+                    for item in args {
+                        validate_scores(item)?;
+                    }
+                }
+            }
+            if let Some(extra) = object.get("extra").and_then(|value| value.as_array()) {
+                for item in extra {
+                    validate_scores(item)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    validate_scores(&value)?;
     fn convert(raw: &serde_json::value::RawValue) -> Result<serde_json::Value, serde_json::Error> {
         let token = raw.get().trim();
         Ok(match token.as_bytes().first().copied() {
@@ -4662,6 +4710,24 @@ mod inventory_layout_tests {
         .unwrap();
         assert_eq!(chat_component_text(&prioritized), "");
         assert_eq!(tab_component_formatted(&prioritized), "");
+    }
+
+    #[test]
+    fn score_components_require_primitive_name_objective_and_value() {
+        for invalid in [
+            r#"{"score":{}}"#,
+            r#"{"score":{"name":"Alex"}}"#,
+            r#"{"score":{"name":null,"objective":"points"}}"#,
+            r#"{"score":{"name":"Alex","objective":[]}}"#,
+            r#"{"score":{"name":"Alex","objective":"points","value":{}}}"#,
+            r#"{"text":"root","extra":[{"score":{}}]}"#,
+        ] {
+            assert!(parse_chat_component(invalid).is_err(), "{invalid}");
+        }
+        let value =
+            parse_chat_component(r#"{"score":{"name":true,"objective":123,"value":42}}"#).unwrap();
+        assert_eq!(chat_component_text(&value), "42");
+        assert!(parse_chat_component(r#"{"text":"chosen","score":{}}"#).is_ok());
     }
 
     #[test]
