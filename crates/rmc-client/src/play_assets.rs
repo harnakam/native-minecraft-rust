@@ -80,6 +80,7 @@ pub struct GameAssets {
     pub translations: BTreeMap<String, String>,
     pub widgets: Option<ImageAsset>,
     pub icons: Option<ImageAsset>,
+    pub ascii_font: Option<ImageAsset>,
     pub vignette: Option<ImageAsset>,
     block_textures: BTreeMap<String, ImageAsset>,
 }
@@ -105,6 +106,7 @@ impl GameAssets {
                 let texture_root = root.join("assets").join("minecraft").join("textures");
                 assets.widgets = ImageAsset::load(&texture_root.join("gui").join("widgets.png"));
                 assets.icons = ImageAsset::load(&texture_root.join("gui").join("icons.png"));
+                assets.ascii_font = ImageAsset::load(&texture_root.join("font").join("ascii.png"));
                 assets.vignette = ImageAsset::load(&texture_root.join("misc").join("vignette.png"));
                 assets.block_textures = load_block_textures(&texture_root.join("blocks"));
             }
@@ -574,6 +576,9 @@ fn ensure_vanilla_assets() -> Result<(PathBuf, bool), String> {
         .join("widgets.png");
     if marker.exists()
         && output_root
+            .join("assets/minecraft/textures/font/ascii.png")
+            .exists()
+        && output_root
             .join("assets/minecraft/lang/en_US.lang")
             .exists()
         && output_root
@@ -668,6 +673,7 @@ fn should_extract_asset(name: &str) -> bool {
         return false;
     }
     name == "assets/minecraft/lang/en_US.lang"
+        || name == "assets/minecraft/textures/font/ascii.png"
         || name.starts_with("assets/minecraft/textures/blocks/")
         || name == "assets/minecraft/textures/gui/widgets.png"
         || name == "assets/minecraft/textures/gui/icons.png"

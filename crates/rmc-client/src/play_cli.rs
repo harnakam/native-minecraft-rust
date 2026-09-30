@@ -402,6 +402,7 @@ impl PlayApp {
         let stop_after_join = options.stop_after_join;
         let (assets, asset_notice) = GameAssets::load();
         CHAT_TRANSLATIONS.get_or_init(|| assets.translations.clone());
+        HUD_BITMAP_FONT.get_or_init(|| assets.ascii_font.clone());
         let server_input = format!("{}:{}", options.server_host, options.server_port);
         let offline_username_input = options.offline_username.clone();
         let mut app = Self {
@@ -2501,14 +2502,85 @@ fn tab_banner_lines(json: &str, width: u32) -> Vec<String> {
     wrap_chat_text(&text, (width.saturating_sub(50) / 8).max(1) as usize)
 }
 
-fn native_text_width(text: &str) -> i32 {
-    if let Some(font) = ui_font() {
-        text.chars()
-            .map(|ch| font.metrics(ch, 14.0).advance_width)
-            .sum::<f32>() as i32
-    } else {
-        text.chars().count() as i32 * 8
+static HUD_BITMAP_FONT: std::sync::OnceLock<Option<ImageAsset>> = std::sync::OnceLock::new();
+
+fn bitmap_ascii_advance(font: &ImageAsset, ch: char) -> Option<i32> {
+    if !(' '..='~').contains(&ch) || font.width() != 128 || font.height() != 128 {
+        return None;
     }
+    if ch == ' ' {
+        return Some(8);
+    }
+    let index = ch as u32;
+    let mut right = 0;
+    for x in 0..8 {
+        if (0..8).any(|y| font.pixel(index % 16 * 8 + x, index / 16 * 8 + y)[3] != 0) {
+            right = x + 1;
+        }
+    }
+    Some((right as i32 + 1) * 2)
+}
+
+fn native_glyph_width(ch: char) -> i32 {
+    if let Some(Some(font)) = HUD_BITMAP_FONT.get() {
+        if let Some(width) = bitmap_ascii_advance(font, ch) {
+            return width;
+        }
+    }
+    if let Some(font) = ui_font() {
+        font.metrics(ch, 14.0).advance_width as i32
+    } else {
+        8
+    }
+}
+
+fn draw_bitmap_ascii_glyph(
+    frame: &mut [u8],
+    width: u32,
+    x: i32,
+    ch: char,
+    color: [u8; 3],
+    bold: bool,
+    italic: bool,
+) -> bool {
+    let Some(Some(font)) = HUD_BITMAP_FONT.get() else {
+        return false;
+    };
+    if bitmap_ascii_advance(font, ch).is_none() {
+        return false;
+    }
+    if ch == ' ' {
+        return true;
+    }
+    for py in 0..16i32 {
+        for px in 0..16i32 {
+            let coverage = font.pixel(
+                ch as u32 % 16 * 8 + px as u32 / 2,
+                ch as u32 / 16 * 8 + py as u32 / 2,
+            )[3] as u32;
+            if coverage == 0 {
+                continue;
+            }
+            for offset in 0..=i32::from(bold) {
+                let tx = x + px + offset + if italic { 2 - py / 4 } else { 0 };
+                if tx < 0 || tx >= width as i32 {
+                    continue;
+                }
+                let target = (py as usize * width as usize + tx as usize) * 4;
+                for channel in 0..3 {
+                    frame[target + channel] = ((frame[target + channel] as u32 * (255 - coverage)
+                        + color[channel] as u32 * coverage)
+                        / 255) as u8;
+                }
+                frame[target + 3] = 255;
+            }
+        }
+    }
+    true
+}
+
+fn native_text_width(text: &str) -> i32 {
+    text.chars().map(native_glyph_width).sum()
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -2660,7 +2732,9 @@ fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_v
                 ch
             };
             let text = ch.to_string();
-            if style.italic {
+            if draw_bitmap_ascii_glyph(frame, width, x, ch, style.color, style.bold, style.italic) {
+                // Local bitmap glyph already drawn.
+            } else if style.italic {
                 draw_tab_italic_glyph(frame, width, x, &text, style.color, style.bold);
             } else {
                 draw_text_scaled(frame, width, 16, x, 0, &text, style.color, 1);
@@ -5107,6 +5181,59 @@ mod inventory_layout_tests {
                 .collect::<Vec<_>>(),
             vec![true, false, true, false]
         );
+    }
+
+    #[test]
+    #[ignore = "requires local official 1.8.9 jar; run alone"]
+    fn local_vanilla_bitmap_font_reaches_hud_draw() {
+        let previous = std::env::current_dir().unwrap();
+        std::env::set_current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
+            .unwrap();
+        let (assets, notice) = GameAssets::load();
+        std::env::set_current_dir(previous).unwrap();
+        let font = assets
+            .ascii_font
+            .expect(&format!("font import failed: {notice:?}"));
+        assert_eq!((font.width(), font.height()), (128, 128));
+        assert!(HUD_BITMAP_FONT.set(Some(font.clone())).is_ok());
+        assert_eq!(
+            native_text_width("A"),
+            bitmap_ascii_advance(&font, 'A').unwrap()
+        );
+        let mut frame = vec![0; 64 * 16 * 4];
+        draw_tab_name(&mut frame, 64, "A", [255, 85, 85], 100);
+        let mut visible = 0;
+        for py in 0..16u32 {
+            for px in 0..16u32 {
+                let alpha = font.pixel(65 % 16 * 8 + px / 2, 65 / 16 * 8 + py / 2)[3] as u32;
+                let target = (py as usize * 64 + px as usize + 4) * 4;
+                for (channel, color) in [255u32, 85, 85].into_iter().enumerate() {
+                    assert_eq!(frame[target + channel], (color * alpha / 255) as u8);
+                }
+                visible += usize::from(alpha > 0);
+            }
+        }
+        assert!(visible > 0);
+        println!("official local ASCII font: imported atlas and HUD pixels match doubled source glyph alpha");
+    }
+
+    #[test]
+    fn bitmap_ascii_metrics_scan_alpha_and_keep_space_width() {
+        let path =
+            std::env::temp_dir().join(format!("rmc-ascii-metrics-{}.png", std::process::id()));
+        let mut image = image::RgbaImage::new(128, 128);
+        image.put_pixel(
+            65 % 16 * 8 + 4,
+            65 / 16 * 8 + 3,
+            image::Rgba([255, 255, 255, 1]),
+        );
+        image.save(&path).unwrap();
+        let font = ImageAsset::load(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(bitmap_ascii_advance(&font, 'A'), Some(12));
+        assert_eq!(bitmap_ascii_advance(&font, 'B'), Some(2));
+        assert_eq!(bitmap_ascii_advance(&font, ' '), Some(8));
+        assert_eq!(bitmap_ascii_advance(&font, '日'), None);
     }
 
     #[test]

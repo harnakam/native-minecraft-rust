@@ -1017,3 +1017,20 @@ age propagation and exclusion of action-bar messages. Narrow row tests check
 rendered advance bounds and text preservation rather than former column counts.
 Workspace tests and formatting checks pass. Minecraft font/space-boundary parity
 remains incomplete.
+
+
+### Local ASCII bitmap font in HUD rendering
+
+GameAssets now imports the user's 1.8.9 textures/font/ascii.png into ignored
+local_assets; cache completeness includes that file. Native startup installs the
+128x128 atlas for printable ASCII HUD glyphs. Glyph advance scans nonzero alpha
+columns following FontRenderer.readFontTexture, with the space render advance
+handled separately. HUD glyphs use doubled nearest bitmap pixels, and shared
+width lookup feeds Tab, title, chat wrapping and obfuscation. Synthetic tests
+cover nonzero low alpha, blank glyphs, space and unsupported Unicode. An isolated
+real-jar test verifies imported atlas size and every rendered A glyph pixel
+against doubled source alpha. It passed; full workspace tests also pass.
+This is incomplete font parity: extended atlas mapping, glyph_sizes/Unicode
+pages, exact bold/italic geometry, UI scale selection and manual visual parity
+remain required. Launcher/input UI still uses the native system font. No font
+image or other game assets are published.
