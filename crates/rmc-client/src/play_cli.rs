@@ -2610,20 +2610,21 @@ fn wrap_chat_text(text: &str, columns: usize) -> Vec<String> {
     let columns = columns.max(1);
     let mut rows = Vec::new();
     for paragraph in text.split('\n') {
-        let mut chars: Vec<char> = paragraph.chars().collect();
-        while chars.len() > columns {
-            let split = chars[..columns]
+        let chars: Vec<char> = paragraph.chars().collect();
+        let mut start = 0;
+        while chars.len() - start > columns {
+            let split = chars[start..start + columns]
                 .iter()
                 .rposition(|ch| *ch == ' ')
                 .filter(|index| *index > 0)
                 .unwrap_or(columns);
-            rows.push(chars[..split].iter().collect());
-            chars.drain(..split);
-            if chars.first() == Some(&' ') {
-                chars.remove(0);
+            rows.push(chars[start..start + split].iter().collect());
+            start += split;
+            if chars.get(start) == Some(&' ') {
+                start += 1;
             }
         }
-        rows.push(chars.iter().collect());
+        rows.push(chars[start..].iter().collect());
     }
     rows
 }
@@ -3385,6 +3386,14 @@ fn normalize(vector: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod inventory_layout_tests {
     use super::*;
+    #[test]
+    fn maximum_length_unbroken_chat_wraps_without_dropping_characters() {
+        let text = "a".repeat(32767);
+        let rows = wrap_chat_text(&text, 1);
+        assert_eq!(rows.len(), 32767);
+        assert_eq!(rows.concat(), text);
+    }
+
     #[test]
     fn chat_wraps_words_newlines_and_unbroken_unicode_without_loss() {
         assert_eq!(wrap_chat_text("hello world", 6), vec!["hello", "world"]);
