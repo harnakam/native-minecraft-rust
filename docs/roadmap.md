@@ -155,3 +155,12 @@ MCP、Minecraftのソース・JAR・画像・フォント・音声・ワール�
 - 公式サーバー側NBTで、12個→4/4/4、12個→1/1/1とcursor残9、creative→64/64/64を確認。
 - 未達: 手動mouse操作、preview、全特殊container/crafting副作用、他操作割込み時の厳密な順序。
 - 次は共有slot/take/merge制約とレシピを進める。M1全体は未完了。
+
+### M1 特殊slot・Shift移動 実行記録
+
+- slot.rsに挿入制約と回収除外を共有化し、pickup/drag/回収/UIの判断を接続。
+- 醸造材料をJavaの実登録で6,912件比較。通常13種とraw/cooked fish metadata 3を一致確認。
+- 醸造台・エンチャント台のShift移動を実装。複数stackを1個へ分割するNBT条件も再現。
+- 公式サーバーで特殊slotへShift→pickup→通常inventoryへ戻す操作を検証し、NBTで12個/1個を確認。
+- 未達: 金床/取引の取り出し条件、horse armor可否、クラフト/その他slot副作用、手動画面検証。
+- M1は未完了。次はレシピと結果slotの材料消費を実装する。

@@ -3,6 +3,7 @@
 mod container;
 pub mod furnace;
 pub mod item_properties;
+mod slot;
 mod transfer;
 
 use rmc_net::codec::play::{
@@ -431,66 +432,25 @@ impl InventoryState {
         slot_id: i16,
         item: Option<&rmc_net::codec::play::ItemStack>,
     ) -> (bool, u8) {
-        let Some(item) = item else {
-            return (true, 64);
-        };
-        let mut limit = item_stack_limit(item.item_id);
-        let valid = if window_id == 0 {
-            match slot_id {
-                0 => false,
-                5..=8 => {
-                    limit = 1;
-                    ((298..=317).contains(&item.item_id) && (item.item_id - 298) % 4 == slot_id - 5)
-                        || (slot_id == 5 && matches!(item.item_id, 86 | 397))
-                }
-                _ => true,
-            }
+        let window = if window_id == 0 {
+            Some(&self.inventory_window)
         } else {
-            match self
-                .open_window
+            self.open_window
                 .as_ref()
-                .and_then(|w| w.metadata.as_ref())
-                .map(|m| m.inventory_type.as_str())
-            {
-                Some("minecraft:crafting_table") if slot_id == 0 => false,
-                Some("minecraft:furnace" | "minecraft:anvil" | "minecraft:villager")
-                    if slot_id == 2 =>
-                {
-                    false
-                }
-                Some("minecraft:furnace") if slot_id == 1 => {
-                    if item.item_id == 325 {
-                        limit = 1;
-                    }
-                    furnace::fuel_ticks(item.item_id) > 0 || item.item_id == 325
-                }
-                Some("minecraft:enchanting_table") if slot_id == 0 => {
-                    limit = 1;
-                    true
-                }
-                Some("minecraft:enchanting_table") if slot_id == 1 => {
-                    item.item_id == 351 && item.damage == 4
-                }
-                Some("minecraft:brewing_stand") if (0..=2).contains(&slot_id) => {
-                    limit = 1;
-                    matches!(item.item_id, 373 | 374)
-                }
-                Some("minecraft:beacon") if slot_id == 0 => {
-                    limit = 1;
-                    matches!(item.item_id, 264 | 265 | 266 | 388)
-                }
-                Some("EntityHorse") if slot_id == 0 => {
-                    limit = 1;
-                    item.item_id == 329
-                }
-                Some("EntityHorse") if slot_id == 1 => {
-                    limit = 1;
-                    (417..=419).contains(&item.item_id)
-                }
-                _ => true,
-            }
+                .filter(|w| w.window_id == window_id)
         };
-        (valid, limit)
+        window.map_or((false, 0), |window| slot::rules(window, slot_id, item))
+    }
+
+    pub fn can_collect_slot(&self, window_id: u8, slot_id: i16) -> bool {
+        let window = if window_id == 0 {
+            Some(&self.inventory_window)
+        } else {
+            self.open_window
+                .as_ref()
+                .filter(|w| w.window_id == window_id)
+        };
+        window.is_some_and(|window| slot::can_merge(window, slot_id))
     }
 
     fn sync_open_player_inventory(&mut self) {

@@ -596,6 +596,11 @@ impl LiveRuntime {
         self.flush_if_pending()
     }
 
+    pub fn can_collect_window_slot(&self, window_id: u8, slot_id: i16) -> bool {
+        self.usability
+            .inventory()
+            .can_collect_slot(window_id, slot_id)
+    }
     pub fn can_drag_window_slot(&self, window_id: u8, slot_id: i16) -> bool {
         self.usability.inventory().can_drag_slot(window_id, slot_id)
     }
@@ -1641,8 +1646,186 @@ mod tests {
             .send_chat_message("/gamemode 0 VanillaProbe")
             .unwrap();
         runtime.close_open_window().unwrap();
+        for (block, kind, offset, item, count, target) in [
+            (
+                "brewing_stand",
+                "minecraft:brewing_stand",
+                4i16,
+                "sugar",
+                12u8,
+                3i16,
+            ),
+            (
+                "enchanting_table",
+                "minecraft:enchanting_table",
+                2,
+                "stone",
+                12,
+                0,
+            ),
+        ] {
+            runtime
+                .send_chat_message("/tp VanillaProbe 0.5 64 0.5 0 0")
+                .unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .output()
+                    .is_some_and(|out| (out.simulation.player.position.x - 0.5).abs() < 0.01)
+                    && runtime
+                        .world
+                        .chunk(rmc_world::BlockPos::new(0, 65, 2).chunk_pos())
+                        .is_some()
+                {
+                    break;
+                }
+            }
+            for command in [
+                "/clear VanillaProbe".to_owned(),
+                "/setblock 0 63 0 stone".into(),
+                "/setblock 0 65 2 air".into(),
+                format!("/setblock 0 65 2 {block}"),
+                format!(
+                    "/replaceitem entity VanillaProbe slot.inventory.0 minecraft:{item} {count}"
+                ),
+                "/tp VanillaProbe 0.5 64 0.5 0 0".into(),
+            ] {
+                runtime.send_chat_message(&command).unwrap();
+            }
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .output()
+                    .is_some_and(|out| (out.simulation.player.position.x - 0.5).abs() < 0.01)
+                    && runtime
+                        .world
+                        .block_state_or_air(rmc_world::BlockPos::new(0, 65, 2))
+                        >> 4
+                        == if block == "brewing_stand" { 117 } else { 116 }
+                {
+                    break;
+                }
+            }
+            runtime
+                .queue_play_packet(&block_use_packet(
+                    rmc_world::collision::BlockHit {
+                        position: rmc_world::BlockPos::new(0, 65, 2),
+                        distance: 2.0,
+                        face: 2,
+                        point: [0.5, 65.5, 2.0],
+                    },
+                    None,
+                ))
+                .unwrap();
+            runtime.flush_if_pending().unwrap();
+            let mut window_id = None;
+            for _ in 0..100 {
+                advance(&mut runtime);
+                window_id = runtime
+                    .usability
+                    .inventory()
+                    .open_window()
+                    .filter(|w| {
+                        w.metadata
+                            .as_ref()
+                            .is_some_and(|m| m.inventory_type == kind)
+                            && w.slots.len() == offset as usize + 36
+                    })
+                    .map(|w| w.window_id);
+                if window_id.is_some() {
+                    break;
+                }
+            }
+            let id = window_id.expect("official server did not open special container");
+            runtime.transfer_window_slot(id, offset, 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            let expected = if block == "brewing_stand" { 12 } else { 1 };
+            assert_eq!(
+                runtime
+                    .usability
+                    .inventory()
+                    .open_window()
+                    .unwrap()
+                    .slot(target)
+                    .and_then(|s| s.as_ref())
+                    .map(|s| s.count),
+                Some(expected)
+            );
+            runtime.click_window_slot(id, target, 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            assert_eq!(
+                runtime
+                    .usability
+                    .inventory()
+                    .carried_item()
+                    .as_ref()
+                    .unwrap()
+                    .count,
+                expected
+            );
+            runtime.click_window_slot(id, offset + 1, 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            let chat_count = runtime.usability.snapshot().chat_lines.len();
+            let command = format!(
+                r#"/testfor VanillaProbe {{Inventory:[{{Slot:10b,id:"minecraft:{item}",Count:{expected}b}}]}}"#
+            );
+            assert!(command.len() <= 100);
+            runtime.send_chat_message(&command).unwrap();
+            let mut confirmed = false;
+            for _ in 0..100 {
+                advance(&mut runtime);
+                confirmed = runtime
+                    .usability
+                    .snapshot()
+                    .chat_lines
+                    .iter()
+                    .skip(chat_count)
+                    .any(|line| line.message_json.contains("commands.testfor.success"));
+                if confirmed {
+                    break;
+                }
+            }
+            assert!(
+                confirmed,
+                "official server did not confirm {block} shift/pickup quantity"
+            );
+            runtime.close_open_window().unwrap();
+            println!("official server confirms {block} shift -> special slot -> pickup -> inventory {expected}");
+        }
         if std::env::var_os("RMC_STOP_TEST_SERVER").is_some() {
             runtime.send_chat_message("/stop").unwrap();
+            // Let the owned server process the queued command before dropping transport.
+            std::thread::sleep(Duration::from_millis(300));
         }
         println!(
             "official server confirms mode-6 collection: 10+20+30 stone => 60 in inventory slot 13"

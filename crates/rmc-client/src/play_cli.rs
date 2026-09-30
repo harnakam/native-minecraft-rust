@@ -1239,7 +1239,9 @@ impl PlayApp {
                         let double_click = button == MouseButton::Left
                             && !self.modifiers_shift
                             && slot_id >= 0
-                            && !(window_id == 0 && slot_id == 0)
+                            && self.runtime.as_ref().is_some_and(|runtime| {
+                                runtime.can_collect_window_slot(window_id, slot_id)
+                            })
                             && self.last_inventory_click.is_some_and(|(id, slot, time)| {
                                 id == window_id
                                     && slot == slot_id

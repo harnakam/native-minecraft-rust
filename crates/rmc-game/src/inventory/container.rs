@@ -128,19 +128,8 @@ impl InventoryState {
         } else {
             self.open_window.as_ref().unwrap().clone()
         };
-        if window_id != 0
-            && !matches!(
-                before.metadata.as_ref().map(|m| m.inventory_type.as_str()),
-                Some(
-                    "minecraft:chest"
-                        | "minecraft:container"
-                        | "minecraft:hopper"
-                        | "minecraft:dispenser"
-                        | "minecraft:dropper"
-                )
-            )
-        {
-            return Err("Collect requires container-specific take/merge rules");
+        if !self.can_collect_slot(window_id, slot_id) {
+            return Err("Collect requires implemented container take/merge rules");
         }
         let previous_cursor = self.carried_item.clone();
         let mut after = before.clone();
@@ -157,7 +146,7 @@ impl InventoryState {
                             break;
                         }
                         // ContainerPlayer disallows merging from its crafting result.
-                        if window_id == 0 && index == 0 {
+                        if !super::slot::can_merge(&before, index as i16) {
                             continue;
                         }
                         let Some(stack) = after.slots[index].as_mut() else {
@@ -235,6 +224,24 @@ impl InventoryState {
                 } else {
                     (9, 36, false)
                 }
+            } else if before
+                .metadata
+                .as_ref()
+                .is_some_and(|m| m.inventory_type == "minecraft:enchanting_table")
+                && slot_id >= 2
+                && !(stack.item_id == 351 && stack.damage == 4)
+            {
+                if after.slots[0].is_none() {
+                    let mut item = stack.clone();
+                    item.count = 1;
+                    // MCP constructs a fresh stack when splitting a larger tagged stack.
+                    if stack.count > 1 {
+                        item.nbt = None;
+                    }
+                    after.slots[0] = Some(item);
+                    stack.count -= 1;
+                }
+                (0, 0, false)
             } else {
                 super::transfer::destination(&before, slot_id as usize, &stack)?
             };

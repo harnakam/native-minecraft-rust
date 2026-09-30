@@ -1157,3 +1157,29 @@ failed with tag syntax errors; per-slot commands <=100 characters resolved
 this test issue. Manual GUI parity, selected-slot preview, complete special
 container/recipe side effects and exact interruption behavior remain open.
 No game assets or reference sources are published.
+
+### Shared insertion/merge rules and special-container Shift transfer
+
+Insertion rules now reside in inventory/slot.rs and are shared by pickup and
+drag. Known-container collection exclusions feed native double-click gating
+and collection prediction; workbench crafting output is excluded, while
+furnace/brewing/enchanting/beacon and horse base merge paths are enabled.
+Anvil/merchant take conditions remain unsupported rather than assumed true.
+Brewing ingredient metadata was checked by executing local MCP919 Item
+registration and isPotionIngredient for 432 IDs times 16 metadata values.
+All 6,912 cases match, including raw/cooked fish metadata 3 (210 positive
+cases total). Five new tests cover ingredient pickup/drag, output exclusion,
+special-slot collection, brewing Shift priorities and enchanting split NBT.
+Brewing Shift routes to an empty ingredient slot, potion storage or player
+storage according to source order. Enchanting Shift handles lapis and the
+one-item branch: single-stack NBT is copied; a split larger stack produces
+a fresh untagged item. mergeItemStack behavior remains source-driven rather
+than globally imposing insertion limits on its separate algorithm.
+The isolated official server test confirms brewing 12 and enchanting 1
+items after Shift into the special slot, pickup and replacement into player
+inventory using server-side /testfor NBT. Earlier drag and collection checks
+also pass. The first special-container probe attempted /setblock before the
+destination chunk loaded; teleport/chunk readiness before setup fixed the
+fixture. Full workspace tests pass. Recipe side effects, enchanting actions,
+anvil/merchant costs, complete horse restrictions and manual UI parity are
+not complete. No game resources or reference sources are published.

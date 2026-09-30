@@ -18,6 +18,28 @@ pub(super) fn destination(
         return Err("Incomplete container inventory");
     }
     match kind {
+        "minecraft:brewing_stand" => {
+            if slot < 4 {
+                Ok((4, 40, true))
+            } else if window.slots[3].is_none() && super::slot::is_potion_ingredient(stack) {
+                Ok((3, 4, false))
+            } else if matches!(stack.item_id, 373 | 374) {
+                Ok((0, 3, false))
+            } else if slot < 31 {
+                Ok((31, 40, false))
+            } else {
+                Ok((4, 31, false))
+            }
+        }
+        "minecraft:enchanting_table" => {
+            if slot < 2 {
+                Ok((2, 38, true))
+            } else if stack.item_id == 351 && stack.damage == 4 {
+                Ok((1, 2, true))
+            } else {
+                Err("Enchanting item transfer uses its one-item branch")
+            }
+        }
         "minecraft:furnace" => {
             if slot == 2 {
                 Ok((3, 39, true))
