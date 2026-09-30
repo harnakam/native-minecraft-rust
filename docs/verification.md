@@ -696,6 +696,19 @@ and inherited styling, and leaves absent values empty. This is connected to chat
 Tab names, title/subtitle and other existing component consumers. A regression
 verifies value + extras, red/bold inheritance, colored title framebuffer output,
 and absence of a value. The workspace suite passes.
-Integrated-server resolution, required name/objective validation, official-server
-score-component delivery, translations, fonts and manual visual parity remain
-incomplete. No reference source, binaries or game assets are published.
+Integrated-server resolution, required name/objective validation, translations,
+fonts and manual visual parity remain incomplete. Official-server delivery is
+verified below. No reference source, binaries or game assets are published.
+
+### Official tellraw score-component delivery
+
+The isolated official 1.8.9 test sends /tellraw VanillaProbe with a score component
+referencing native_tab, after setting that objective's score to 42. It verifies
+received chat JSON contains that objective and explicit score.value "42",
+confirming server resolution and the compressed S02 receive/session/HUD path.
+The expanded ignored test passed together with existing inventory, furnace,
+experience/time/weather, border/title, Tab/team, mining, death and respawn checks.
+It requested /stop; the owned server saved players/worlds/chunks and exited
+successfully. Native display parsing/rendering has separate regressions; this
+real-server test verifies delivery to runtime state, not manual visual parity.
+No official binary/world/reference source is published.

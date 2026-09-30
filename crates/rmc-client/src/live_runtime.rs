@@ -1845,6 +1845,31 @@ mod tests {
             entry.tab_score == Some((42, "integer".into()))
                 && entry.team_formatted_name == "\u{a7}cVanillaProbe\u{a7}r"
         });
+        runtime.send_chat_message(r#"/tellraw VanillaProbe {"score":{"name":"VanillaProbe","objective":"native_tab"}}"#).unwrap();
+        let mut score_component_received = false;
+        for _ in 0..100 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            score_component_received = runtime.usability.snapshot().chat_lines.iter().any(|line| {
+                serde_json::from_str::<serde_json::Value>(&line.message_json)
+                    .ok()
+                    .is_some_and(|value| {
+                        value.get("score").is_some_and(|score| {
+                            score.get("objective").and_then(|value| value.as_str())
+                                == Some("native_tab")
+                                && score.get("value").and_then(|value| value.as_str()) == Some("42")
+                        })
+                    })
+            });
+            if score_component_received {
+                break;
+            }
+        }
+        assert!(
+            score_component_received,
+            "official tellraw score value did not reach chat: {:?}",
+            runtime.usability.snapshot().chat_lines
+        );
+
         runtime
             .send_chat_message("/scoreboard players set VanillaProbe native_tab -7")
             .unwrap();
@@ -1923,7 +1948,7 @@ mod tests {
             "official server did not initialize the respawn position"
         );
         assert!(runtime.summary.disconnect_reason_json.is_none());
-        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, furnace progress, experience/time/weather/border/title/tab-score/team synchronization, server-confirmed stone mining, death and respawn passed");
+        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, furnace progress, experience/time/weather/border/title/tab-score/team/score-component synchronization, server-confirmed stone mining, death and respawn passed");
         if std::env::var("RMC_STOP_TEST_SERVER").as_deref() == Ok("1") {
             runtime.send_chat_message("/stop").unwrap();
             for _ in 0..100 {
