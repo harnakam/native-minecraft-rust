@@ -2510,9 +2510,24 @@ fn native_text_width(text: &str) -> i32 {
     }
 }
 
-fn tab_color_runs(text: &str, base_color: [u8; 3], max_visible: usize) -> Vec<(String, [u8; 3])> {
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct TabNameStyle {
+    color: [u8; 3],
+    bold: bool,
+    underline: bool,
+    strike: bool,
+}
+
+fn tab_styled_runs(
+    text: &str,
+    base_color: [u8; 3],
+    max_visible: usize,
+) -> Vec<(String, TabNameStyle)> {
     let mut runs = Vec::new();
-    let mut color = base_color;
+    let mut style = TabNameStyle {
+        color: base_color,
+        ..Default::default()
+    };
     let mut current = String::new();
     let mut chars = text.chars().peekable();
     let mut visible = 0;
@@ -2520,20 +2535,32 @@ fn tab_color_runs(text: &str, base_color: [u8; 3], max_visible: usize) -> Vec<(S
         if ch == '\u{a7}' && chars.peek().is_some() {
             let code = chars.next().unwrap().to_ascii_lowercase();
             if !current.is_empty() {
-                runs.push((std::mem::take(&mut current), color));
+                runs.push((std::mem::take(&mut current), style));
             }
             if code == 'r' {
-                color = base_color;
-            } else if !"klmno".contains(code) {
+                style = TabNameStyle {
+                    color: base_color,
+                    ..Default::default()
+                };
+            } else if code == 'l' {
+                style.bold = true;
+            } else if code == 'm' {
+                style.strike = true;
+            } else if code == 'n' {
+                style.underline = true;
+            } else if !"ko".contains(code) {
+                style.bold = false;
+                style.strike = false;
+                style.underline = false;
                 let index = code.to_digit(16).unwrap_or(15) as u8;
                 let bright = (index >> 3 & 1) * 85;
-                color = [
+                style.color = [
                     (index >> 2 & 1) * 170 + bright,
                     (index >> 1 & 1) * 170 + bright,
                     (index & 1) * 170 + bright,
                 ];
                 if index == 6 {
-                    color[0] += 85;
+                    style.color[0] += 85;
                 }
             }
             continue;
@@ -2545,16 +2572,51 @@ fn tab_color_runs(text: &str, base_color: [u8; 3], max_visible: usize) -> Vec<(S
         current.push(ch);
     }
     if !current.is_empty() {
-        runs.push((current, color));
+        runs.push((current, style));
     }
     runs
 }
 
+#[cfg(test)]
+fn tab_color_runs(text: &str, color: [u8; 3], limit: usize) -> Vec<(String, [u8; 3])> {
+    tab_styled_runs(text, color, limit)
+        .into_iter()
+        .map(|(text, style)| (text, style.color))
+        .collect()
+}
+
 fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_visible: usize) {
     let mut x = 4;
-    for (text, color) in tab_color_runs(text, color, max_visible) {
-        draw_text_scaled(frame, width, 16, x, 0, &text, color, 1);
-        x += native_text_width(&text);
+    for (text, style) in tab_styled_runs(text, color, max_visible) {
+        for ch in text.chars() {
+            let text = ch.to_string();
+            draw_text_scaled(frame, width, 16, x, 0, &text, style.color, 1);
+            if style.bold {
+                draw_text_scaled(frame, width, 16, x + 1, 0, &text, style.color, 1);
+            }
+            let advance = native_text_width(&text) + i32::from(style.bold);
+            for y in [
+                if style.underline { Some(14) } else { None },
+                if style.strike { Some(7) } else { None },
+            ]
+            .into_iter()
+            .flatten()
+            {
+                draw_rect(
+                    frame,
+                    width,
+                    16,
+                    UiRect {
+                        x,
+                        y,
+                        width: advance,
+                        height: 1,
+                    },
+                    style.color,
+                );
+            }
+            x += advance;
+        }
     }
 }
 
@@ -3975,6 +4037,40 @@ mod inventory_layout_tests {
             );
             assert_eq!(frame[0], 0);
         }
+    }
+
+    #[test]
+    fn tab_style_codes_accumulate_then_color_and_reset_clear_them() {
+        let runs = tab_styled_runs("\u{a7}lB\u{a7}nU\u{a7}mS\u{a7}cC\u{a7}rR", [236; 3], 10);
+        assert!(runs[0].1.bold);
+        assert!(runs[1].1.bold && runs[1].1.underline);
+        assert!(runs[2].1.strike && runs[2].1.underline);
+        assert_eq!(
+            runs[3].1,
+            TabNameStyle {
+                color: [255, 85, 85],
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            runs[4].1,
+            TabNameStyle {
+                color: [236; 3],
+                ..Default::default()
+            }
+        );
+        let mut plain = vec![0; 200 * 16 * 4];
+        let mut bold = plain.clone();
+        draw_tab_name(&mut plain, 200, "Test", [255; 3], 10);
+        draw_tab_name(&mut bold, 200, "\u{a7}lTest", [255; 3], 10);
+        assert_ne!(plain, bold);
+        let mut lined = vec![0; 200 * 16 * 4];
+        draw_tab_name(&mut lined, 200, "\u{a7}n\u{a7}mTest", [255; 3], 10);
+        assert_eq!(
+            &lined[(14 * 200 + 4) * 4..(14 * 200 + 4) * 4 + 3],
+            &[255; 3]
+        );
+        assert_eq!(&lined[(7 * 200 + 4) * 4..(7 * 200 + 4) * 4 + 3], &[255; 3]);
     }
 
     #[test]

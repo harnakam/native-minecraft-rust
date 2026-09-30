@@ -527,3 +527,17 @@ underline, strikethrough, obfuscation, anaglyph palette, full JSON style handlin
 Minecraft font metrics and manual visual parity remain incomplete. These style
 codes are consumed without their visual effects in the current Tab-name path;
 this is explicitly partial formatting support, not full styled-text parity.
+
+
+### Native Tab bold and line decorations
+
+Tab-name formatting now tracks bold (section-sign l), strikethrough (m), and
+underline (n), accumulating them across runs. Color changes and reset clear
+these flags, matching the FontRenderer control flow. The cell renderer draws
+bold with a second glyph at x+1 and advances by an extra pixel; underline and
+strike draw actual horizontal lines. Tests check flag accumulation/reset, bold
+framebuffer changes, and pixels on both line positions. Whole-workspace tests
+passed. Native font metrics and line positions use the current 16-pixel native
+font layout; they are not an exact reproduction of Minecraft's font. Italic,
+obfuscated text, shadows, styled JSON components, and manual visual parity remain
+incomplete. No game assets are added to publication.
