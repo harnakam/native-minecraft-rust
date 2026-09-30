@@ -356,6 +356,7 @@ struct PlayApp {
     join_announced: bool,
     chat_open: bool,
     chat_input: String,
+    chat_scroll: usize,
     show_tab_overlay: bool,
 }
 
@@ -406,6 +407,7 @@ impl PlayApp {
             join_announced: false,
             chat_open: false,
             chat_input: String::new(),
+            chat_scroll: 0,
             show_tab_overlay: false,
         };
         app.reload_accounts();
@@ -944,6 +946,15 @@ impl PlayApp {
                     }
                 }
                 if self.chat_open {
+                    if let Some(snapshot) = runtime.usability_snapshot() {
+                        draw_chat_history(
+                            frame,
+                            width,
+                            height,
+                            &snapshot.chat_lines,
+                            self.chat_scroll,
+                        );
+                    }
                     draw_chat_input_overlay(frame, width, height, &self.chat_input);
                 }
                 draw_runtime_overlay(frame, width, height, runtime);
@@ -1160,6 +1171,24 @@ impl PlayApp {
     }
 
     fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta) {
+        if self.screen == ScreenState::Playing && self.chat_open {
+            let y = match delta {
+                MouseScrollDelta::LineDelta(_, y) => y,
+                MouseScrollDelta::PixelDelta(p) => p.y as f32,
+            };
+            let count = self
+                .runtime
+                .as_ref()
+                .and_then(|r| r.usability_snapshot())
+                .map_or(0, |s| s.chat_lines.len());
+            let step = if self.modifiers_shift { 1 } else { 7 };
+            if y.is_finite() && y != 0.0 {
+                self.chat_scroll = (self.chat_scroll as i64 + i64::from(y.signum() as i8) * step)
+                    .clamp(0, count.saturating_sub(8) as i64)
+                    as usize;
+            }
+            return;
+        }
         if self.screen != ScreenState::Playing
             || self.chat_open
             || !self.mouse_captured
@@ -1331,12 +1360,14 @@ impl PlayApp {
         if pressed {
             if key == VirtualKeyCode::T {
                 self.chat_open = true;
+                self.chat_scroll = 0;
                 self.chat_input.clear();
                 self.apply_cursor_capture(window, false);
                 return;
             }
             if key == VirtualKeyCode::Slash {
                 self.chat_open = true;
+                self.chat_scroll = 0;
                 self.chat_input = "/".to_owned();
                 self.apply_cursor_capture(window, false);
                 return;
@@ -2542,6 +2573,75 @@ fn death_button_rect(width: i32, height: i32, index: i32) -> UiRect {
     }
 }
 
+fn chat_component_text(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Array(values) => values.iter().map(chat_component_text).collect(),
+        serde_json::Value::Object(object) => {
+            let mut text = object
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
+            if let Some(key) = object.get("translate").and_then(|v| v.as_str()) {
+                let args: Vec<String> = object
+                    .get("with")
+                    .and_then(|v| v.as_array())
+                    .map(|values| values.iter().map(chat_component_text).collect())
+                    .unwrap_or_default();
+                text = match (key, args.as_slice()) {
+                    ("chat.type.text", [name, message]) => format!("<{name}> {message}"),
+                    ("chat.type.announcement", [name, message]) => format!("[{name}] {message}"),
+                    _ => format!("{} {}", key, args.join(" ")),
+                };
+            }
+            if let Some(extra) = object.get("extra") {
+                text.push_str(&chat_component_text(extra));
+            }
+            text
+        }
+        _ => String::new(),
+    }
+}
+
+fn draw_chat_history(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    lines: &[rmc_game::usability::ChatLine],
+    scroll: usize,
+) {
+    let offset = scroll.min(lines.len().saturating_sub(8));
+    for (row, line) in lines.iter().rev().skip(offset).take(8).enumerate() {
+        let y = height as i32 - 50 - row as i32 * 12;
+        draw_rect(
+            frame,
+            width,
+            height,
+            UiRect {
+                x: 8,
+                y: y - 2,
+                width: (width as i32 - 16).min(480),
+                height: 12,
+            },
+            [10, 10, 10],
+        );
+        let text = serde_json::from_str(&line.message_json)
+            .map(|v| chat_component_text(&v))
+            .unwrap_or_else(|_| line.message_json.clone());
+        draw_text_scaled(
+            frame,
+            width,
+            height,
+            12,
+            y,
+            &truncate_text(&text, ((width.saturating_sub(24)).min(470) / 6) as usize),
+            [255, 255, 255],
+            1,
+        );
+    }
+}
+
 fn draw_chat_input_overlay(frame: &mut [u8], width: u32, height: u32, value: &str) {
     let rect = UiRect {
         x: 8,
@@ -3254,6 +3354,16 @@ fn normalize(vector: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod inventory_layout_tests {
     use super::*;
+
+    #[test]
+    fn received_chat_components_preserve_player_message_and_extra_text() {
+        let value = serde_json::json!({"translate":"chat.type.text","with":[{"text":"Alex"},{"text":"hello","extra":[{"text":" world"}]}]});
+        assert_eq!(chat_component_text(&value), "<Alex> hello world");
+        assert_eq!(
+            chat_component_text(&serde_json::json!([{"text":"a"},"b"])),
+            "ab"
+        );
+    }
 
     #[test]
     fn border_warning_uses_loaded_texture_color_in_destination_blend() {
