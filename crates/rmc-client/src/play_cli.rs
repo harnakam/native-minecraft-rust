@@ -2801,6 +2801,11 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
             let mut own = value.clone();
             own.as_object_mut().unwrap().remove("extra");
             chat_component_text(&own)
+        } else if let Some(score) = value.get("score") {
+            score
+                .get("value")
+                .and_then(primitive_text)
+                .unwrap_or_default()
         } else {
             String::new()
         };
@@ -3209,6 +3214,11 @@ fn chat_component_text(value: &serde_json::Value) -> String {
                     ("chat.type.announcement", [name, message]) => format!("[{name}] {message}"),
                     _ => format!("{} {}", key, args.join(" ")),
                 };
+            }
+            if !object.contains_key("text") && !object.contains_key("translate") {
+                if let Some(value) = object.get("score").and_then(|score| score.get("value")) {
+                    text = chat_component_text(value);
+                }
             }
             if let Some(extra) = object.get("extra") {
                 text.push_str(&chat_component_text(extra));
@@ -4370,6 +4380,30 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn score_components_render_server_values_with_extra_and_styles() {
+        let value=parse_chat_component(r#"{"score":{"name":"Alex","objective":"points","value":"42"},"color":"red","bold":true,"extra":[{"text":" points"}]}"#).unwrap();
+        assert_eq!(chat_component_text(&value), "42 points");
+        let formatted = tab_component_formatted(&value);
+        let runs = tab_styled_runs(&formatted, [255; 3], 100);
+        assert_eq!(
+            runs.iter()
+                .map(|(text, _)| text.as_str())
+                .collect::<String>(),
+            "42 points"
+        );
+        assert!(runs
+            .iter()
+            .all(|(_, style)| style.bold && style.color == [255, 85, 85]));
+        let mut frame = vec![0; 320 * 200 * 4];
+        draw_styled_title_line(&mut frame, 320, 200, &formatted, 60, 4, 255);
+        assert!(frame.chunks_exact(4).any(|pixel| pixel[0] > pixel[1]));
+        let absent =
+            parse_chat_component(r#"{"score":{"name":"Alex","objective":"points"}}"#).unwrap();
+        assert_eq!(chat_component_text(&absent), "");
+        assert_eq!(tab_component_formatted(&absent), "");
     }
 
     #[test]

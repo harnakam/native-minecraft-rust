@@ -685,3 +685,17 @@ palette colors and darker shadow pixels outside the foreground glyph footprint.
 The complete workspace suite passes. Native glyphs, rasterization/rounding,
 obfuscation, translations and manual visual parity remain incomplete; no game
 assets/reference source are published.
+
+
+### Server-valued score chat components
+
+MCP919 ChatComponentScore retains its explicit value; dynamic score resolution
+requires the in-process MinecraftServer. The native multiplayer HUD now renders
+score.value through both plain and styled component paths, preserves extra text
+and inherited styling, and leaves absent values empty. This is connected to chat,
+Tab names, title/subtitle and other existing component consumers. A regression
+verifies value + extras, red/bold inheritance, colored title framebuffer output,
+and absence of a value. The workspace suite passes.
+Integrated-server resolution, required name/objective validation, official-server
+score-component delivery, translations, fonts and manual visual parity remain
+incomplete. No reference source, binaries or game assets are published.
