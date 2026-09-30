@@ -15,6 +15,7 @@ pub const SIDEBAR_DISPLAY_SLOT: u8 = 1;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChatLine {
+    pub age_ticks: u64,
     pub message_json: String,
     pub position: i8,
 }
@@ -179,6 +180,12 @@ impl Default for UsabilityState {
 }
 
 impl UsabilityState {
+    pub fn advance_chat_ticks(&mut self, ticks: usize) {
+        for line in &mut self.chat_lines {
+            line.age_ticks = line.age_ticks.saturating_add(ticks as u64);
+        }
+    }
+
     pub fn reset_experience(&mut self) {
         self.experience = Experience::default();
     }
@@ -340,6 +347,7 @@ impl UsabilityState {
 
     fn push_chat(&mut self, packet: &ChatMessagePacket) {
         self.chat_lines.push(ChatLine {
+            age_ticks: 0,
             message_json: packet.message_json.clone(),
             position: packet.position,
         });
@@ -609,6 +617,24 @@ mod tests {
         ScoreboardObjectivePacket, SoundEffectPacket, TeamAction, TeamsPacket, UpdateScoreAction,
         UpdateScorePacket,
     };
+
+    #[test]
+    fn chat_age_uses_simulation_ticks_and_new_messages_start_at_zero() {
+        let mut state = UsabilityState::new();
+        let packet = ChatMessagePacket {
+            message_json: "{\"text\":\"hello\"}".into(),
+            position: 0,
+        };
+        state.apply_play_packet(&PlayClientboundPacket::ChatMessage(packet.clone()));
+        state.advance_chat_ticks(190);
+        state.apply_play_packet(&PlayClientboundPacket::ChatMessage(packet));
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.chat_lines[0].age_ticks, 190);
+        assert_eq!(snapshot.chat_lines[1].age_ticks, 0);
+        state.advance_chat_ticks(10);
+        assert_eq!(state.snapshot().chat_lines[0].age_ticks, 200);
+        assert_eq!(state.snapshot().chat_lines.len(), 2);
+    }
 
     #[test]
     fn chat_is_capped_and_outbound_chat_is_truncated() {

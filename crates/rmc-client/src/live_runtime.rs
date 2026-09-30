@@ -438,6 +438,7 @@ impl LiveRuntime {
                 .telemetry_snapshot(&self.world, &world_render, &cycle);
         self.render_history.record(render_telemetry);
 
+        self.usability.advance_chat_ticks(output.ticks_run);
         let usability_snapshot = self.usability.snapshot();
         let hud = PvPHud::from_snapshot(&usability_snapshot);
 

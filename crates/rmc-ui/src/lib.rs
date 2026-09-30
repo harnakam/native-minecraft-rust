@@ -221,6 +221,7 @@ mod tests {
         let hud = PvPHud::from_snapshot(&UsabilitySnapshot {
             experience: Default::default(),
             chat_lines: vec![ChatLine {
+                age_ticks: 0,
                 message_json: "{\"text\":\"Queue popped\"}".to_owned(),
                 position: 1,
             }],

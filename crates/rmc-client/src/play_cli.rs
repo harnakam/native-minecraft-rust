@@ -982,16 +982,19 @@ impl PlayApp {
                         }
                     }
                 }
-                if self.chat_open {
-                    if let Some(snapshot) = runtime.usability_snapshot() {
+                if let Some(snapshot) = runtime.usability_snapshot() {
+                    if snapshot.settings.chat_visibility != 2 {
                         draw_chat_history(
                             frame,
                             width,
                             height,
                             &snapshot.chat_lines,
                             self.chat_scroll,
+                            self.chat_open,
                         );
                     }
+                }
+                if self.chat_open {
                     draw_chat_input_overlay(frame, width, height, &self.chat_input);
                 }
                 draw_runtime_overlay(frame, width, height, runtime);
@@ -2696,6 +2699,13 @@ fn wrap_chat_text(text: &str, columns: usize) -> Vec<String> {
 }
 
 fn chat_display_lines(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec<String> {
+    chat_display_rows(lines, width)
+        .into_iter()
+        .map(|(text, _)| text)
+        .collect()
+}
+
+fn chat_display_rows(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec<(String, u64)> {
     let columns = (width.saturating_sub(24).min(470) / 6).max(1) as usize;
     let mut rows = Vec::new();
     for line in lines {
@@ -2705,12 +2715,27 @@ fn chat_display_lines(lines: &[rmc_game::usability::ChatLine], width: u32) -> Ve
         let text = serde_json::from_str(&line.message_json)
             .map(|value| chat_component_text(&value))
             .unwrap_or_else(|_| line.message_json.clone());
-        rows.extend(wrap_chat_text(&text, columns));
+        rows.extend(
+            wrap_chat_text(&text, columns)
+                .into_iter()
+                .map(|text| (text, line.age_ticks)),
+        );
     }
     if rows.len() > 100 {
         rows.drain(..rows.len() - 100);
     }
     rows
+}
+
+fn chat_alpha(age_ticks: u64, open: bool) -> u8 {
+    if open {
+        return 255;
+    }
+    if age_ticks >= 200 {
+        return 0;
+    }
+    let fade = ((1.0 - age_ticks as f64 / 200.0) * 10.0).clamp(0.0, 1.0);
+    (255.0 * fade * fade) as u8
 }
 
 fn draw_chat_history(
@@ -2719,24 +2744,51 @@ fn draw_chat_history(
     height: u32,
     lines: &[rmc_game::usability::ChatLine],
     scroll: usize,
+    open: bool,
 ) {
-    let rows = chat_display_lines(lines, width);
-    let offset = scroll.min(rows.len().saturating_sub(8));
-    for (row, text) in rows.iter().rev().skip(offset).take(8).enumerate() {
+    let rows = chat_display_rows(lines, width);
+    let offset = if open {
+        scroll.min(rows.len().saturating_sub(8))
+    } else {
+        0
+    };
+    let mut text_mask = vec![0u8; width as usize * 20 * 4];
+    for (row, (text, age)) in rows.iter().rev().skip(offset).take(8).enumerate() {
+        let alpha = chat_alpha(*age, open);
+        if alpha <= 3 {
+            continue;
+        }
         let y = height as i32 - 50 - row as i32 * 12;
-        draw_rect(
-            frame,
-            width,
-            height,
-            UiRect {
-                x: 8,
-                y: y - 2,
-                width: (width as i32 - 16).min(480),
-                height: 12,
-            },
-            [10, 10, 10],
-        );
-        draw_text_scaled(frame, width, height, 12, y, text, [255, 255, 255], 1);
+        for py in (y - 2).max(0)..(y + 10).min(height as i32) {
+            for px in 8..(width as i32 - 8).min(488) {
+                let index = (py as usize * width as usize + px as usize) * 4;
+                for channel in 0..3 {
+                    frame[index + channel] =
+                        (frame[index + channel] as u32 * (255 - alpha as u32 / 2) / 255) as u8;
+                }
+            }
+        }
+        text_mask.fill(0);
+        draw_text_scaled(&mut text_mask, width, 20, 12, 0, text, [255, 255, 255], 1);
+        for py in 0..20 {
+            let target_y = y + py;
+            if target_y < 0 || target_y >= height as i32 {
+                continue;
+            }
+            for px in 0..width as usize {
+                let source = (py as usize * width as usize + px) * 4;
+                let coverage = text_mask[source] as u32 * alpha as u32 / 255;
+                if coverage == 0 {
+                    continue;
+                }
+                let target = (target_y as usize * width as usize + px) * 4;
+                for channel in 0..3 {
+                    frame[target + channel] = ((frame[target + channel] as u32 * (255 - coverage)
+                        + 255 * coverage)
+                        / 255) as u8;
+                }
+            }
+        }
     }
 }
 
@@ -3497,12 +3549,44 @@ mod inventory_layout_tests {
     }
 
     #[test]
+    fn closed_chat_fades_at_vanilla_tick_boundaries_and_open_chat_restores_history() {
+        assert_eq!(chat_alpha(0, false), 255);
+        assert_eq!(chat_alpha(180, false), 254);
+        assert_eq!(chat_alpha(190, false), 63);
+        assert_eq!(chat_alpha(199, false), 0);
+        assert_eq!(chat_alpha(200, false), 0);
+        assert_eq!(chat_alpha(u64::MAX, true), 255);
+        let lines = vec![rmc_game::usability::ChatLine {
+            age_ticks: 190,
+            message_json: "{\"text\":\"abc def\"}".into(),
+            position: 0,
+        }];
+        assert!(chat_display_rows(&lines, 42)
+            .iter()
+            .all(|(_, age)| *age == 190));
+        let initial = vec![100; 160 * 100 * 4];
+        let mut faded = initial.clone();
+        draw_chat_history(&mut faded, 160, 100, &lines, 0, false);
+        assert_ne!(faded, initial);
+        let expired = vec![rmc_game::usability::ChatLine {
+            age_ticks: 200,
+            ..lines[0].clone()
+        }];
+        let mut closed = initial.clone();
+        draw_chat_history(&mut closed, 160, 100, &expired, 0, false);
+        assert_eq!(closed, initial);
+        draw_chat_history(&mut closed, 160, 100, &expired, 0, true);
+        assert_ne!(closed, initial);
+    }
+
+    #[test]
     fn chat_wraps_words_newlines_and_unbroken_unicode_without_loss() {
         assert_eq!(wrap_chat_text("hello world", 6), vec!["hello", "world"]);
         assert_eq!(wrap_chat_text("abcdefghi", 3), vec!["abc", "def", "ghi"]);
         assert_eq!(wrap_chat_text("日本語テスト", 3), vec!["日本語", "テスト"]);
         assert_eq!(wrap_chat_text("a\nb", 4), vec!["a", "b"]);
         let lines = vec![rmc_game::usability::ChatLine {
+            age_ticks: 0,
             message_json: "{\"text\":\"abcdefghi\"}".into(),
             position: 0,
         }];

@@ -327,3 +327,22 @@ NBT's separate string decoder is unchanged. This is a bounded set of Java
 observations, not exhaustive evidence for all malformed byte streams or complete
 client compatibility. The probe and Java binaries remain ignored local files;
 no Minecraft assets or reference source are included.
+
+
+### Native closed-chat display and tick fade
+
+Incoming chat lines now retain an age in simulation ticks. LiveRuntime advances
+that age with the actual scheduled tick count, and wrapped rows inherit the
+message age. The native HUD draws chat with the input screen closed, using the
+MCP919 GuiNewChat alpha formula: full strength through approximately tick 180,
+quadratic fade through tick 199, hidden at tick 200. Opening chat overrides the
+fade without discarding history. Hidden chat visibility suppresses drawing.
+Background alpha is half of text alpha and is blended into the rendered frame.
+Regression tests cover message age, wrapped-row age, the alpha boundaries, and
+actual framebuffer changes for fresh/faded/open/expired lines.
+
+Remaining differences include native font metrics, row geometry, configurable
+opacity/scale/height, formatting and interactions, action-bar rendering, and
+scroll anchoring for incoming messages. A scheduled frame may apply a batch of
+ticks to a newly received message; per-tick packet dispatch timing is not yet
+matched. No manual window or official-client visual comparison was performed.
