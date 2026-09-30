@@ -1104,3 +1104,16 @@ of two U+0488 glyphs with and without an intervening white formatting code
 in chat and scaled title paths. Dedicated and full workspace tests pass.
 Per-glyph shadow offsets, forced Unicode mode, default extended atlas mapping
 and manual visual parity remain incomplete.
+
+### Per-glyph chat shadow offset in normal mode
+
+MCP919 drawString starts the shadow at +1/+1, but renderStringAtPos
+subtracts the normal-mode offset for Unicode glyph rendering. Chat masks
+now composite per character: local ASCII glyphs retain +2/+2 at current
+scale, local Unicode glyphs use zero net offset. An actual-jar test compares
+Japanese shadow coverage and quarter-color pixels with foreground glyph
+coverage at the same location. Both Unicode and ASCII dedicated integration
+tests and the full workspace suite pass. Underline/strike shadow positioning,
+title shadow offsets, extended default atlas mapping, forced Unicode mode
+and manual visual parity remain incomplete. Per-character mask composition
+has not been performance profiled. No game assets are published.

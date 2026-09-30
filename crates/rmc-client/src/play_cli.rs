@@ -3892,18 +3892,7 @@ fn blend_styled_chat_line(
     alpha: u8,
     mask: &mut [u8],
 ) {
-    let offset = native_shadow_offset(text);
-    blend_styled_chat_pass(
-        frame,
-        width,
-        height,
-        x + offset,
-        y + offset,
-        text,
-        alpha,
-        mask,
-        true,
-    );
+    blend_styled_chat_pass(frame, width, height, x, y, text, alpha, mask, true);
     blend_styled_chat_pass(frame, width, height, x, y, text, alpha, mask, false);
 }
 
@@ -3918,7 +3907,37 @@ fn blend_styled_chat_pass(
     mask: &mut [u8],
     shadow: bool,
 ) {
-    for (text, mut style) in tab_styled_runs(text, [255; 3], usize::MAX) {
+    let glyphs = tab_styled_runs(text, [255; 3], usize::MAX)
+        .into_iter()
+        .flat_map(|(text, style)| {
+            text.chars()
+                .map(|ch| (ch.to_string(), style))
+                .collect::<Vec<_>>()
+        });
+    for (text, mut style) in glyphs {
+        let ch = text.chars().next().unwrap();
+        let shadow_offset = if shadow {
+            if HUD_BITMAP_FONT
+                .get()
+                .and_then(Option::as_ref)
+                .and_then(|font| bitmap_ascii_advance(font, ch))
+                .is_some()
+            {
+                2
+            } else if HUD_UNICODE_FONT
+                .get()
+                .and_then(Option::as_ref)
+                .and_then(|font| unicode_font_render_advance(font, ch))
+                .is_some()
+            {
+                // Vanilla subtracts the normal-mode one-unit offset for Unicode glyphs.
+                0
+            } else {
+                1
+            }
+        } else {
+            0
+        };
         if shadow {
             style.color = title_shadow_color(style.color);
         }
@@ -3943,8 +3962,8 @@ fn blend_styled_chat_pass(
                 let coverage = mask[(py as usize * width as usize + px as usize) * 4] as u32
                     * alpha as u32
                     / 255;
-                let tx = x + px - 4;
-                let ty = y + py;
+                let tx = x + px - 4 + shadow_offset;
+                let ty = y + py + shadow_offset;
                 if coverage == 0 || tx < 0 || tx >= width as i32 || ty < 0 || ty >= height as i32 {
                     continue;
                 }
@@ -5511,6 +5530,42 @@ mod inventory_layout_tests {
             false,
         );
         assert_eq!(plain_chat, split_chat);
+        let mut unicode_shadow = vec![0; 64 * 20 * 4];
+        let mut expected_shadow = unicode_shadow.clone();
+        blend_styled_chat_pass(
+            &mut unicode_shadow,
+            64,
+            20,
+            4,
+            0,
+            "日",
+            255,
+            &mut mask,
+            true,
+        );
+        blend_styled_chat_pass(
+            &mut expected_shadow,
+            64,
+            20,
+            4,
+            0,
+            "日",
+            255,
+            &mut mask,
+            false,
+        );
+        for (actual, foreground) in unicode_shadow
+            .chunks_exact(4)
+            .zip(expected_shadow.chunks_exact(4))
+        {
+            for channel in 0..3 {
+                assert_eq!(
+                    actual[channel],
+                    (foreground[channel] as u32 * 63 / 255) as u8
+                );
+            }
+        }
+        assert!(unicode_shadow.chunks_exact(4).any(|pixel| pixel[0] > 0));
         let mut plain_title = vec![0; 128 * 32 * 4];
         let mut split_title = plain_title.clone();
         draw_styled_title_pass(
