@@ -757,3 +757,15 @@ MCP919 ChatComponentTranslation.initializeFromFormat is the reference. Invalid
 formats currently fall back to the key in the native display path rather than
 propagating the Java component exception; language lookup and argument style
 inheritance are still incomplete. No language assets or reference code are shipped.
+
+
+### Styled translation arguments
+
+The shared formatter now retains literal spans and argument components instead
+of flattening them before formatted display. Literal spans inherit the translation
+style; argument components resolve their own overrides against that parent, and
+extra siblings retain the parent style. A regression covers a red/bold parent,
+blue nonbold player name, italic message and plain inherited punctuation/extra.
+This follows MCP919 ChatComponentTranslation.getFormatArgumentAsComponent and
+setChatStyle. The shared parts parser also drives plain text output. Full language
+lookup, invalid component exceptions and manual font parity remain incomplete.

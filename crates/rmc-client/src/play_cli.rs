@@ -2785,6 +2785,26 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
                 *flag = value;
             }
         }
+        if value.get("text").is_none() {
+            if let Some(key) = value.get("translate").and_then(|value| value.as_str()) {
+                let args = value
+                    .get("with")
+                    .and_then(|value| value.as_array())
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let parts = chat_translation_parts(chat_translation_format(key), args)
+                    .unwrap_or_else(|| vec![serde_json::Value::String(key.to_owned())]);
+                for part in &parts {
+                    visit(part, style, has_color, output);
+                }
+                if let Some(extra) = value.get("extra").and_then(|value| value.as_array()) {
+                    for part in extra {
+                        visit(part, style, has_color, output);
+                    }
+                }
+                return (style, has_color);
+            }
+        }
         let primitive_text = |value: &serde_json::Value| -> Option<String> {
             match value {
                 serde_json::Value::String(text) => Some(text.clone()),
@@ -3194,7 +3214,11 @@ fn append_chat_input(input: &mut String, text: &str) {
     }
 }
 
-fn format_chat_translation(format: &str, args: &[String]) -> Option<String> {
+fn chat_translation_parts(
+    format: &str,
+    args: &[serde_json::Value],
+) -> Option<Vec<serde_json::Value>> {
+    let mut parts = Vec::new();
     let mut output = String::new();
     let mut rest = format;
     let mut sequential = 0usize;
@@ -3219,11 +3243,39 @@ fn format_chat_translation(format: &str, args: &[String]) -> Option<String> {
         };
         rest = rest.strip_prefix('s')?;
         if let Some(argument) = args.get(index) {
-            output.push_str(argument);
+            if !output.is_empty() {
+                parts.push(serde_json::Value::String(std::mem::take(&mut output)));
+            }
+            parts.push(argument.clone());
         }
     }
     output.push_str(rest);
-    Some(output)
+    if !output.is_empty() {
+        parts.push(serde_json::Value::String(output));
+    }
+    Some(parts)
+}
+
+fn format_chat_translation(format: &str, args: &[String]) -> Option<String> {
+    let args: Vec<_> = args
+        .iter()
+        .cloned()
+        .map(serde_json::Value::String)
+        .collect();
+    Some(
+        chat_translation_parts(format, &args)?
+            .iter()
+            .map(chat_component_text)
+            .collect(),
+    )
+}
+
+fn chat_translation_format(key: &str) -> &str {
+    match key {
+        "chat.type.text" => "<%s> %s",
+        "chat.type.announcement" => "[%s] %s",
+        _ => key,
+    }
 }
 
 fn chat_component_text(value: &serde_json::Value) -> String {
@@ -3247,11 +3299,7 @@ fn chat_component_text(value: &serde_json::Value) -> String {
                     .and_then(|v| v.as_array())
                     .map(|values| values.iter().map(chat_component_text).collect())
                     .unwrap_or_default();
-                let format = match key {
-                    "chat.type.text" => "<%s> %s",
-                    "chat.type.announcement" => "[%s] %s",
-                    _ => key,
-                };
+                let format = chat_translation_format(key);
                 text = format_chat_translation(format, &args).unwrap_or_else(|| key.to_owned());
             }
             if !object.contains_key("text") && !object.contains_key("translate") {
@@ -4423,6 +4471,30 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn translation_arguments_preserve_styles_and_parent_literals() {
+        let value = serde_json::json!({"translate":"chat.type.text","color":"red","bold":true,"with":[{"text":"Alex","color":"blue","bold":false},{"text":"hello","italic":true}],"extra":[{"text":"!"}]});
+        let formatted = tab_component_formatted(&value);
+        let runs = tab_styled_runs(&formatted, [255; 3], 100);
+        assert_eq!(
+            runs.iter()
+                .map(|(text, _)| text.as_str())
+                .collect::<String>(),
+            "<Alex> hello!"
+        );
+        assert!(runs
+            .iter()
+            .any(|(text, style)| text == "Alex" && style.color == [85, 85, 255] && !style.bold));
+        assert!(runs.iter().any(|(text, style)| text == "hello"
+            && style.color == [255, 85, 85]
+            && style.bold
+            && style.italic));
+        assert!(runs
+            .iter()
+            .filter(|(text, _)| text.contains('<') || text.contains('>') || text.contains('!'))
+            .all(|(_, style)| style.bold && style.color == [255, 85, 85] && !style.italic));
     }
 
     #[test]
