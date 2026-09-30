@@ -161,6 +161,12 @@ pub struct LocalSimulationLayer {
     allow_flying: bool,
     flying: bool,
     flying_speed: f32,
+    walking_speed: f32,
+    abilities_flags: u8,
+    game_mode: u8,
+    fly_toggle_ticks: u8,
+    previous_jump: bool,
+    ability_changes: Vec<rmc_net::codec::play::PlayerAbilitiesPacket>,
     attribute_speed: f64,
     air_movement_factor: f32,
     effects: std::collections::BTreeMap<u8, (u8, i32)>,
@@ -197,6 +203,12 @@ impl LocalSimulationLayer {
             allow_flying: false,
             flying: false,
             flying_speed: 0.05,
+            walking_speed: 0.1,
+            abilities_flags: 0,
+            game_mode: 0,
+            fly_toggle_ticks: 0,
+            previous_jump: false,
+            ability_changes: Vec::new(),
             attribute_speed: f64::from(0.1_f32),
             air_movement_factor: 0.02,
             effects: std::collections::BTreeMap::new(),
@@ -265,6 +277,10 @@ impl LocalSimulationLayer {
         use rmc_net::codec::play::PlayClientboundPacket as Packet;
         match packet {
             Packet::PlayerAbilities(p) => {
+                self.abilities_flags = p.flags & 15;
+                if p.walking_speed.is_finite() {
+                    self.walking_speed = p.walking_speed;
+                }
                 self.allow_flying = p.flags & 4 != 0;
                 self.flying = p.flags & 2 != 0;
                 if p.flying_speed.is_finite() {
@@ -318,10 +334,17 @@ impl LocalSimulationLayer {
                     }
                 }
             }
+            Packet::JoinGame(packet) => self.set_game_mode(packet.game_mode),
+            Packet::ChangeGameState(packet) if packet.reason == 3 => {
+                self.set_game_mode(if (0..=3).contains(&(packet.value as i32)) {
+                    packet.value as u8
+                } else {
+                    0
+                });
+            }
             Packet::Respawn(packet) => {
                 *self = Self::new(self.config);
-                self.allow_flying = matches!(packet.game_mode, 1 | 3);
-                self.flying = packet.game_mode == 3;
+                self.set_game_mode(packet.game_mode);
             }
             _ => {}
         }
@@ -353,6 +376,21 @@ impl LocalSimulationLayer {
         } else {
             MovementInput::default()
         };
+        if self.allow_flying {
+            if self.game_mode == 3 && !self.flying {
+                self.flying = true;
+                self.queue_ability_change();
+            } else if self.game_mode != 3 && movement.jump && !self.previous_jump {
+                if self.fly_toggle_ticks == 0 {
+                    self.fly_toggle_ticks = 7;
+                } else {
+                    self.flying = !self.flying;
+                    self.fly_toggle_ticks = 0;
+                    self.queue_ability_change();
+                }
+            }
+        }
+        self.previous_jump = movement.jump;
         self.effects.retain(|_, effect| {
             effect.1 -= 1;
             effect.1 > 0
@@ -507,11 +545,42 @@ impl LocalSimulationLayer {
         } else {
             0.02
         };
+        if self.flying && self.player.on_ground && self.game_mode != 3 {
+            self.flying = false;
+            self.queue_ability_change();
+        }
+        self.fly_toggle_ticks = self.fly_toggle_ticks.saturating_sub(1);
         self.interpolation.current_position = self.player.position;
 
         if self.sprint_reset_ticks > 0 {
             self.sprint_reset_ticks -= 1;
         }
+    }
+
+    fn set_game_mode(&mut self, mode: u8) {
+        self.game_mode = mode;
+        self.allow_flying = matches!(mode, 1 | 3);
+        if mode == 3 {
+            self.flying = true;
+        } else if mode != 1 {
+            self.flying = false;
+        }
+        self.abilities_flags = match mode {
+            1 => 13,
+            3 => 5,
+            _ => 0,
+        };
+    }
+    fn queue_ability_change(&mut self) {
+        self.ability_changes
+            .push(rmc_net::codec::play::PlayerAbilitiesPacket {
+                flags: (self.abilities_flags & !2) | if self.flying { 2 } else { 0 },
+                flying_speed: self.flying_speed,
+                walking_speed: self.walking_speed,
+            });
+    }
+    pub fn take_ability_changes(&mut self) -> Vec<rmc_net::codec::play::PlayerAbilitiesPacket> {
+        std::mem::take(&mut self.ability_changes)
     }
 
     pub fn snapshot(&self) -> SimulationSnapshot {

@@ -94,6 +94,39 @@ mod tests {
             assert_eq!(output.simulation.velocity, expected);
         }
     }
+    #[test]
+    fn double_jump_input_emits_real_player_abilities_before_movement() {
+        use rmc_game::input::PhysicalInput;
+        use rmc_net::codec::play::PlayerAbilitiesPacket;
+        let mut shell = ClientShell::new(ClientShellConfig::vanilla());
+        shell.set_mouse_captured(true);
+        shell.apply_player_packet(
+            &PlayClientboundPacket::PlayerAbilities(PlayerAbilitiesPacket {
+                flags: 13,
+                flying_speed: 0.05,
+                walking_speed: 0.1,
+            }),
+            Some(1),
+        );
+        let press = InputFrame {
+            pressed_inputs: vec![PhysicalInput::Space],
+            ..InputFrame::default()
+        };
+        let release = InputFrame {
+            released_inputs: vec![PhysicalInput::Space],
+            ..InputFrame::default()
+        };
+        shell.advance(Duration::from_millis(50), &press);
+        shell.advance(Duration::from_millis(50), &release);
+        let output = shell.advance(Duration::from_millis(50), &press);
+        assert!(
+            matches!(output.packets.first(),Some(PlayServerboundPacket::PlayerAbilities(packet)) if packet.flags==15)
+        );
+        assert_eq!(
+            output.packets[0].encode_packet().unwrap().packet_bytes()[0],
+            0x13
+        );
+    }
 }
 
 impl ClientShell {
@@ -221,6 +254,12 @@ impl ClientShell {
                 self.simulation
                     .tick(update.movement, self.camera, update.selected_hotbar_slot);
             }
+            packets.extend(
+                self.simulation
+                    .take_ability_changes()
+                    .into_iter()
+                    .map(PlayServerboundPacket::PlayerAbilities),
+            );
             packets.push(
                 self.packet_emitter
                     .next_packet(self.simulation.player(), self.camera),

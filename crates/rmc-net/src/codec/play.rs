@@ -1971,6 +1971,7 @@ pub enum PlayServerboundPacket {
     ClickWindow(ClickWindowPacket),
     ConfirmTransaction(ConfirmTransactionServerboundPacket),
     ClientStatus(i32),
+    PlayerAbilities(PlayerAbilitiesPacket),
     ClientSettings(ClientSettingsPacket),
     CustomPayload(CustomPayloadPacket),
 }
@@ -1985,6 +1986,11 @@ impl PlayServerboundPacket {
         let mut reader = PacketReader::new(body);
 
         let packet = match packet_id {
+            0x13 => Self::PlayerAbilities(PlayerAbilitiesPacket {
+                flags: reader.read_u8()?,
+                flying_speed: reader.read_f32()?,
+                walking_speed: reader.read_f32()?,
+            }),
             0x16 => {
                 let action = reader.read_var_i32()?;
                 if !(0..=2).contains(&action) {
@@ -2098,6 +2104,12 @@ impl PlayServerboundPacket {
         let mut writer = PacketWriter::new();
 
         let packet_id = match self {
+            Self::PlayerAbilities(packet) => {
+                writer.write_u8(packet.flags);
+                writer.write_f32(packet.flying_speed);
+                writer.write_f32(packet.walking_speed);
+                0x13
+            }
             Self::ClientStatus(action) => {
                 if !(0..=2).contains(action) {
                     return Err(CodecError::InvalidEnumValue {

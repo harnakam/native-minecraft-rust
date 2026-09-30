@@ -78,3 +78,18 @@ fn respawn_and_inventory_status_have_vanilla_wire_actions() {
         );
     }
 }
+
+#[test]
+fn flight_change_serverbound_has_c13_flags_and_speeds() {
+    let bytes = [0x13, 0x0f, 0x3d, 0x4c, 0xcc, 0xcd, 0x3d, 0xcc, 0xcc, 0xcd];
+    let expected = PlayServerboundPacket::PlayerAbilities(PlayerAbilitiesPacket {
+        flags: 15,
+        flying_speed: 0.05,
+        walking_speed: 0.1,
+    });
+    assert_eq!(
+        PlayServerboundPacket::decode_packet(&bytes).unwrap(),
+        expected
+    );
+    assert_eq!(expected.encode_packet().unwrap().packet_bytes(), bytes);
+}

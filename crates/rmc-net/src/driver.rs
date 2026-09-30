@@ -395,6 +395,7 @@ impl HeadlessDriver {
             | PlayServerboundPacket::CloseWindow(_)
             | PlayServerboundPacket::ClickWindow(_)
             | PlayServerboundPacket::ConfirmTransaction(_)
+            | PlayServerboundPacket::PlayerAbilities(_)
             | PlayServerboundPacket::ClientStatus(_)
             | PlayServerboundPacket::ClientSettings(_)
             | PlayServerboundPacket::CustomPayload(_) => {}

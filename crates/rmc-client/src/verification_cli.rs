@@ -1549,6 +1549,12 @@ fn render_serverbound_packet_line(
         PlayServerboundPacket::KeepAlive(packet) => {
             parts.push(format!("id={}", packet.id));
         }
+        PlayServerboundPacket::PlayerAbilities(abilities) => {
+            parts.push(format!(
+                "flags={} flying_speed={} walking_speed={}",
+                abilities.flags, abilities.flying_speed, abilities.walking_speed
+            ));
+        }
         PlayServerboundPacket::ClientStatus(action) => {
             parts.push(format!("action={action}"));
         }
@@ -1577,6 +1583,7 @@ fn packet_label(packet: &PlayServerboundPacket) -> &'static str {
         PlayServerboundPacket::CloseWindow(_) => "CloseWindow",
         PlayServerboundPacket::ClickWindow(_) => "ClickWindow",
         PlayServerboundPacket::ConfirmTransaction(_) => "ConfirmTransaction",
+        PlayServerboundPacket::PlayerAbilities(_) => "PlayerAbilities",
         PlayServerboundPacket::ClientStatus(_) => "ClientStatus",
         PlayServerboundPacket::ClientSettings(_) => "ClientSettings",
         PlayServerboundPacket::CustomPayload(_) => "CustomPayload",

@@ -469,6 +469,7 @@ pub const CLIENT_STATUS: PacketSpec = PacketSpec {
 };
 pub const PACKETS: &[PacketSpec] = &[
     CLIENT_STATUS,
+    PLAYER_ABILITIES,
     KEEP_ALIVE,
     CHAT_MESSAGE,
     USE_ENTITY,
@@ -487,3 +488,25 @@ pub const PACKETS: &[PacketSpec] = &[
     CLIENT_SETTINGS,
     CUSTOM_PAYLOAD,
 ];
+
+pub const PLAYER_ABILITIES: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Serverbound,
+    id: 0x13,
+    name: "Player Abilities",
+    java_class: "net.minecraft.network.play.client.C13PacketPlayerAbilities",
+    java_handler: "INetHandlerPlayServer.processPlayerAbilities",
+    compression: PLAY_COMPRESSION,
+    fields: &[
+        FieldSpec {
+            name: "flags",
+            encoding: "Byte",
+            notes: "Invulnerable, flying, allow-flight, creative bits.",
+        },
+        FieldSpec {
+            name: "speeds",
+            encoding: "Float x2",
+            notes: "Fly speed then walk speed.",
+        },
+    ],
+};
