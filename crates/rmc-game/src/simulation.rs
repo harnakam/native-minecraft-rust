@@ -163,6 +163,7 @@ pub struct LocalSimulationLayer {
     flying_speed: f32,
     walking_speed: f32,
     abilities_flags: u8,
+    outside_border: bool,
     game_mode: u8,
     fly_toggle_ticks: u8,
     previous_jump: bool,
@@ -205,6 +206,7 @@ impl LocalSimulationLayer {
             flying_speed: 0.05,
             walking_speed: 0.1,
             abilities_flags: 0,
+            outside_border: false,
             game_mode: 0,
             fly_toggle_ticks: 0,
             previous_jump: false,
@@ -750,14 +752,22 @@ impl LocalSimulationLayer {
             };
             while desired[0] != 0.0
                 && world
-                    .collision_boxes(initial.offset([desired[0], -1.0, 0.0]))
+                    .collision_boxes_for_player(
+                        initial.offset([desired[0], -1.0, 0.0]),
+                        [position.x, position.y, position.z],
+                        &mut self.outside_border,
+                    )
                     .is_empty()
             {
                 desired[0] = reduce(desired[0]);
             }
             while desired[2] != 0.0
                 && world
-                    .collision_boxes(initial.offset([0.0, -1.0, desired[2]]))
+                    .collision_boxes_for_player(
+                        initial.offset([0.0, -1.0, desired[2]]),
+                        [position.x, position.y, position.z],
+                        &mut self.outside_border,
+                    )
                     .is_empty()
             {
                 desired[2] = reduce(desired[2]);
@@ -765,26 +775,40 @@ impl LocalSimulationLayer {
             while desired[0] != 0.0
                 && desired[2] != 0.0
                 && world
-                    .collision_boxes(initial.offset([desired[0], -1.0, desired[2]]))
+                    .collision_boxes_for_player(
+                        initial.offset([desired[0], -1.0, desired[2]]),
+                        [position.x, position.y, position.z],
+                        &mut self.outside_border,
+                    )
                     .is_empty()
             {
                 desired[0] = reduce(desired[0]);
                 desired[2] = reduce(desired[2]);
             }
         }
-        let obstacles = world.collision_boxes(initial.swept(desired));
+        let obstacles = world.collision_boxes_for_player(
+            initial.swept(desired),
+            [position.x, position.y, position.z],
+            &mut self.outside_border,
+        );
         let (mut bounds, mut actual) = clip_motion(initial, desired, &obstacles);
         let grounded = self.player.on_ground || (desired[1] < 0.0 && actual[1] != desired[1]);
         if grounded && (actual[0] != desired[0] || actual[2] != desired[2]) {
-            let step_obstacles =
-                world.collision_boxes(initial.swept([desired[0], 0.6, desired[2]]));
+            let step_obstacles = world.collision_boxes_for_player(
+                initial.swept([desired[0], 0.6, desired[2]]),
+                [position.x, position.y, position.z],
+                &mut self.outside_border,
+            );
             let (stepped, step_delta) =
                 clip_motion(initial, [desired[0], 0.6, desired[2]], &step_obstacles);
             if step_delta[0] * step_delta[0] + step_delta[2] * step_delta[2]
                 > actual[0] * actual[0] + actual[2] * actual[2]
             {
-                let down_obstacles =
-                    world.collision_boxes(stepped.swept([0.0, -step_delta[1], 0.0]));
+                let down_obstacles = world.collision_boxes_for_player(
+                    stepped.swept([0.0, -step_delta[1], 0.0]),
+                    [position.x, position.y, position.z],
+                    &mut self.outside_border,
+                );
                 let (landed, down_delta) =
                     clip_motion(stepped, [0.0, -step_delta[1], 0.0], &down_obstacles);
                 bounds = landed;

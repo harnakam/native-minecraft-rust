@@ -199,6 +199,55 @@ impl WorldSnapshot {
         }
         vec![bounds.offset([pos.x as f64, pos.y as f64, pos.z as f64])]
     }
+    /// World.getCollidingBoundingBoxes border replacement and outside hysteresis.
+    pub fn collision_boxes_for_player(
+        &self,
+        area: Aabb,
+        position: [f64; 3],
+        outside: &mut bool,
+    ) -> Vec<Aabb> {
+        let mut border = self.border.clone();
+        let [min_x, max_x, min_z, max_z] = border.bounds_at(crate::border::current_millis());
+        let margin = if *outside { -1.0 } else { 1.0 };
+        let inside = position[0] > min_x - margin
+            && position[0] < max_x + margin
+            && position[2] > min_z - margin
+            && position[2] < max_z + margin;
+        let mut result = Vec::new();
+        for x in area.min[0].floor() as i32..(area.max[0] + 1.0).floor() as i32 {
+            for z in area.min[2].floor() as i32..(area.max[2] + 1.0).floor() as i32 {
+                if self.chunk(BlockPos::new(x, 64, z).chunk_pos()).is_none() {
+                    continue;
+                }
+                for y in (area.min[1].floor() as i32).saturating_sub(1)
+                    ..(area.max[1] + 1.0).floor() as i32
+                {
+                    *outside = !inside;
+                    let contains = f64::from(x.wrapping_add(1)) > min_x
+                        && f64::from(x) < max_x
+                        && f64::from(z.wrapping_add(1)) > min_z
+                        && f64::from(z) < max_z;
+                    if !contains && inside {
+                        let bounds = Aabb::new(
+                            [x as f64, y as f64, z as f64],
+                            [x as f64 + 1.0, y as f64 + 1.0, z as f64 + 1.0],
+                        );
+                        if bounds.intersects(area) {
+                            result.push(bounds);
+                        }
+                    } else {
+                        for bounds in self.block_collision_boxes(BlockPos::new(x, y, z)) {
+                            if bounds.intersects(area) {
+                                result.push(bounds);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+
     pub fn collision_boxes(&self, area: Aabb) -> Vec<Aabb> {
         let mut result = Vec::new();
         for x in area.min[0].floor() as i32..=area.max[0].floor() as i32 {

@@ -64,3 +64,45 @@ fn received_border_updates_reach_world_state() {
         .unwrap();
     assert_eq!(world.border_mut().center, [4.0, -4.0]);
 }
+
+#[test]
+fn collision_border_uses_loaded_columns_and_outside_hysteresis() {
+    use rmc_net::codec::play::{BlockChangePacket, BlockPosition};
+    use rmc_world::collision::Aabb;
+    let mut world = WorldSnapshot::new(WorldConfig::overworld());
+    world
+        .apply_play_packet(&PlayClientboundPacket::WorldBorder(Packet::SetSize {
+            diameter: 4.0,
+        }))
+        .unwrap();
+    let area = Aabb::new([1.8, 64.0, 0.1], [2.8, 65.8, 0.9]);
+    let mut outside = false;
+    assert!(world
+        .collision_boxes_for_player(area, [1.5, 64.0, 0.5], &mut outside)
+        .is_empty());
+    world
+        .apply_block_change(&BlockChangePacket {
+            position: BlockPosition::new(0, 0, 0),
+            block_state_id: 16,
+        })
+        .unwrap();
+    let obstacles = world.collision_boxes_for_player(area, [1.5, 64.0, 0.5], &mut outside);
+    assert_eq!(obstacles.len(), 2);
+    assert_eq!(obstacles[0], Aabb::new([2.0, 64.0, 0.0], [3.0, 65.0, 1.0]));
+    assert!(!outside);
+    assert!(world
+        .collision_boxes_for_player(area, [4.0, 64.0, 0.5], &mut outside)
+        .is_empty());
+    assert!(outside);
+    assert!(world
+        .collision_boxes_for_player(area, [1.5, 64.0, 0.5], &mut outside)
+        .is_empty());
+    assert!(outside);
+    assert_eq!(
+        world
+            .collision_boxes_for_player(area, [0.5, 64.0, 0.5], &mut outside)
+            .len(),
+        2
+    );
+    assert!(!outside);
+}
