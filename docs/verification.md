@@ -952,3 +952,15 @@ does not consume RNG state. Candidate widths are cached once, avoiding repeated
 font metric computation on rejected candidates while preserving draw order.
 The workspace suite and formatting checks pass. This does not broaden the
 candidate set or establish Minecraft font/visual parity.
+
+
+### Color enum input validation
+
+Native display parsing now rejects boolean/array/object color inputs, matching
+MCP919 EnumTypeAdapterFactory's JsonReader nextString conversion. Null, numeric
+and unknown string inputs remain accepted and inherit parent color; enum names
+are case-sensitive, so uppercase RED also inherits rather than selecting red.
+A regression failed on boolean color before the fix. An executed MCP919 probe
+confirms four rejections and four identical inherited-color code sequences,
+matching the native tests. Full workspace tests pass. Exact exception classes
+and ingress/disconnect handling still remain incomplete.

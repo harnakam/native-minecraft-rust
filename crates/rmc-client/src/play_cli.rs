@@ -2782,6 +2782,16 @@ fn parse_chat_component(json: &str) -> Result<serde_json::Value, serde_json::Err
                 validate_component_structure(item)?;
             }
         } else if let Some(object) = value.as_object() {
+            if object.get("color").is_some_and(|value| {
+                !matches!(
+                    value,
+                    serde_json::Value::String(_)
+                        | serde_json::Value::Number(_)
+                        | serde_json::Value::Null
+                )
+            }) {
+                return Err(error());
+            }
             for key in [
                 "bold",
                 "italic",
@@ -4930,6 +4940,23 @@ mod inventory_layout_tests {
                 .collect::<Vec<_>>(),
             vec![true, false, true, false]
         );
+    }
+
+    #[test]
+    fn component_color_enum_rejects_wrong_types_and_inherits_unknown_names() {
+        for color in ["true", "[]", "[\"red\"]", "{}"] {
+            let json = format!(r#"{{"text":"A","color":{color}}}"#);
+            assert!(parse_chat_component(&json).is_err(), "{json}");
+        }
+        for color in ["null", "123", "\"missing\"", "\"RED\""] {
+            let json =
+                format!(r#"{{"text":"A","color":"red","extra":[{{"text":"B","color":{color}}}]}}"#);
+            let value = parse_chat_component(&json).unwrap();
+            assert_eq!(
+                tab_component_formatted(&value).replace('\u{a7}', "&"),
+                "&cA&r&cB&r"
+            );
+        }
     }
 
     #[test]
