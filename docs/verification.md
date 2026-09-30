@@ -75,3 +75,11 @@ Four tests cover reverse-order merge, full destinations, partial transfers and a
 RmcItemPropertiesOracle queries the local MCP919 registry for maximum stack size, subtype status and maximum damage. Rust stores only these numeric observations in inventory/item_properties.rs. The `--only item_properties` probe compares the complete 337-item registry, including IDs and all three properties, with zero differences. The comparator rejects incomplete, duplicated and malformed observations; two Python integrity tests exercise those failures.
 
 Stack limits now come from the observed registry, replacing a manually maintained list. Shift-click and displaced-hotbar insertion ignore metadata for non-subtype items; normal valid-slot pickup continues to require exact metadata as Container.slotClick does. A regression checks paper merging and wool color separation. This validates registered properties and selected merge behavior, not all inventory or item behavior.
+
+## Specialized storage transfer algorithms
+
+`inventory/transfer.rs` owns destination selection corresponding to the individual MCP919 container classes. Hopper, dispenser and dropper use lower-inventory/player transfer ranges. Beacon transfers insert payment only when the payment slot is empty, the item is valid and the stack contains exactly one item; other stacks move between player main storage and hotbar. Native Shift-click uses these algorithms through the existing live path.
+
+The `--only container_transfer` oracle executes real MCP919 Container.slotClick for chest, hopper, dispenser, dropper and beacon. It compares the original return stack and every resulting slot against Rust for 6,930 scenarios: every source slot, five item types, counts 1/32, and empty/full/mixed inventories. Zero differences were observed. Seven Rust transfer tests include the specialized routes. The comparison rejects incomplete, duplicate or unexpected scenarios and missing slot state; a Python integrity test covers empty, partial and duplicate input.
+
+This probe uses deterministic storage states, without custom NBT, crafting or furnace output side effects. It does not establish complete container compatibility or exercise these new specialized routes against a live official server.

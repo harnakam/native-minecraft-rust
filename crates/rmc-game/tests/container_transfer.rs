@@ -133,3 +133,64 @@ fn transfer_ignores_non_subtype_metadata_but_preserves_subtypes() {
         assert_eq!(state.open_window().unwrap().slots[61].is_none(), merged);
     }
 }
+
+#[test]
+fn hopper_dispenser_and_dropper_transfer_like_their_mcp_containers() {
+    for (kind, size) in [
+        ("minecraft:hopper", 5),
+        ("minecraft:dispenser", 9),
+        ("minecraft:dropper", 9),
+    ] {
+        let mut state = InventoryState::new();
+        state.apply_open_window(&OpenWindowPacket {
+            window_id: 1,
+            inventory_type: kind.into(),
+            window_title_json: "{}".into(),
+            slot_count: size,
+            entity_id: None,
+        });
+        let mut slots = vec![None; size as usize + 36];
+        slots[0] = Some(ItemStack::simple(1, 12, 0));
+        state.apply_window_items(&WindowItemsPacket {
+            window_id: 1,
+            items: slots,
+        });
+        state.queue_transfer_click(1, 0, 0).unwrap();
+        assert_eq!(
+            state.inventory_window().slots[44],
+            Some(ItemStack::simple(1, 12, 0))
+        );
+        state.queue_transfer_click(1, size as i16 + 35, 0).unwrap();
+        assert_eq!(
+            state.open_window().unwrap().slots[0],
+            Some(ItemStack::simple(1, 12, 0))
+        );
+        assert!(state.inventory_window().slots[44].is_none());
+    }
+}
+
+#[test]
+fn beacon_only_auto_inserts_single_payment_other_stacks_move_between_player_ranges() {
+    for (id, count, target) in [(264, 1, 0), (264, 12, 28), (1, 1, 28)] {
+        let mut state = InventoryState::new();
+        state.apply_open_window(&OpenWindowPacket {
+            window_id: 1,
+            inventory_type: "minecraft:beacon".into(),
+            window_title_json: "{}".into(),
+            slot_count: 1,
+            entity_id: None,
+        });
+        let mut slots = vec![None; 37];
+        slots[1] = Some(ItemStack::simple(id, count, 0));
+        state.apply_window_items(&WindowItemsPacket {
+            window_id: 1,
+            items: slots,
+        });
+        state.queue_transfer_click(1, 1, 0).unwrap();
+        assert_eq!(
+            state.open_window().unwrap().slots[target],
+            Some(ItemStack::simple(id, count, 0))
+        );
+        assert!(state.open_window().unwrap().slots[1].is_none());
+    }
+}

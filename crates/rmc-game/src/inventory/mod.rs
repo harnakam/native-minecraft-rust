@@ -2,6 +2,7 @@
 
 mod container;
 pub mod item_properties;
+mod transfer;
 
 use rmc_net::codec::play::{
     ClickWindowPacket, CloseWindowPacket, CloseWindowServerboundPacket,

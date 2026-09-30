@@ -11,7 +11,7 @@ def main():
     parser.add_argument('--mcp-root', type=Path, default=Path('MCP-919'))
     parser.add_argument('--java-home', type=Path, required=True)
     parser.add_argument('--cargo', default='cargo')
-    parser.add_argument('--only', choices=['collision','neighbors','travel','mining','minestate','selection','explosion','item_properties'])
+    parser.add_argument('--only', choices=['collision','neighbors','travel','mining','minestate','selection','explosion','item_properties','container_transfer'])
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     mcp = args.mcp_root.resolve()
@@ -35,6 +35,7 @@ def main():
                     str(templates / 'RmcMovementOracle.java'),
                     str(templates / 'RmcMiningOracle.java'),
                     str(templates / 'RmcItemPropertiesOracle.java'),
+                    str(templates / 'RmcContainerTransferOracle.java'),
                     str(templates / 'RmcMiningStateOracle.java'),
                     str(templates / 'RmcExplosionOracle.java'),
                     str(templates / 'RmcNeighborOracle.java'),
@@ -42,6 +43,7 @@ def main():
     output = root / 'tmp/local-oracles'
     output.mkdir(parents=True, exist_ok=True)
     for name, class_name, package, example in (
+        ('container_transfer', 'RmcContainerTransferOracle', 'rmc-game', 'container_transfer_dump'),
         ('item_properties', 'RmcItemPropertiesOracle', 'rmc-game', 'item_properties_dump'),
         ('explosion', 'RmcExplosionOracle', 'rmc-net', 'explosion_dump'),
         ('neighbors', 'RmcNeighborOracle', 'rmc-world', 'neighbor_dump'),

@@ -42,21 +42,7 @@ impl InventoryState {
                     (9, 36, false)
                 }
             } else {
-                if !matches!(
-                    before.metadata.as_ref().map(|m| m.inventory_type.as_str()),
-                    Some("minecraft:container" | "minecraft:chest")
-                ) {
-                    return Err("This container requires a specialized transfer algorithm");
-                }
-                let offset = before.player_inventory_offset();
-                if before.slots.len() != offset + 36 {
-                    return Err("Incomplete container inventory");
-                }
-                if (slot_id as usize) < offset {
-                    (offset, after.slots.len(), true)
-                } else {
-                    (0, offset, false)
-                }
+                super::transfer::destination(&before, slot_id as usize, &stack)?
             };
             if after.slots.len() < end {
                 return Err("Incomplete player inventory");
