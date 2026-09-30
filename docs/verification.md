@@ -902,3 +902,14 @@ sequences. A color bold code still produces bold glyph runs even if the separate
 bold flag is false, matching prefix semantics. Full workspace tests pass.
 Animated obfuscated glyph rendering, invalid enum input conversion and manual
 font parity remain incomplete. No assets/reference classes are published.
+
+
+### Obfuscated flag propagation and code ordering
+
+Native component traversal and legacy styled runs now retain the obfuscated
+flag. It inherits to extra siblings, supports explicit false overrides, and is
+cleared by color/reset codes. Formatted prefixes emit flags in MCP919 order:
+bold, italic, underline, obfuscated, strikethrough. Executed MCP919 formatted
+text matches &l&n&k&mA&r&l&n&mB&r&l&n&k&mC&r for the regression fixture.
+Workspace tests pass. This preserves state and codes only: same-width randomized
+animated glyph drawing remains required and is not claimed as implemented.

@@ -2518,6 +2518,7 @@ struct TabNameStyle {
     italic: bool,
     underline: bool,
     strike: bool,
+    obfuscated: bool,
 }
 
 fn tab_styled_runs(
@@ -2552,7 +2553,10 @@ fn tab_styled_runs(
                 style.underline = true;
             } else if code == 'o' {
                 style.italic = true;
-            } else if code != 'k' {
+            } else if code == 'k' {
+                style.obfuscated = true;
+            } else {
+                style.obfuscated = false;
                 style.bold = false;
                 style.italic = false;
                 style.strike = false;
@@ -2903,6 +2907,7 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
             ("italic", &mut style.italic),
             ("underlined", &mut style.underline),
             ("strikethrough", &mut style.strike),
+            ("obfuscated", &mut style.obfuscated),
         ] {
             if let Some(value) = value.get(key).and_then(|value| value.as_bool()) {
                 *flag = value;
@@ -2963,6 +2968,7 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
                 (style.bold, 'l'),
                 (style.italic, 'o'),
                 (style.underline, 'n'),
+                (style.obfuscated, 'k'),
                 (style.strike, 'm'),
             ] {
                 if enabled {
@@ -4775,6 +4781,27 @@ mod inventory_layout_tests {
         .unwrap();
         assert_eq!(chat_component_text(&prioritized), "");
         assert_eq!(tab_component_formatted(&prioritized), "");
+    }
+
+    #[test]
+    fn obfuscated_component_flag_is_inherited_overridden_and_reset() {
+        let value = parse_chat_component(r#"{"text":"A","bold":true,"underlined":true,"obfuscated":true,"strikethrough":true,"extra":[{"text":"B","obfuscated":false},{"text":"C"}]}"#).unwrap();
+        let formatted = tab_component_formatted(&value);
+        assert_eq!(
+            formatted.replace('\u{a7}', "&"),
+            "&l&n&k&mA&r&l&n&mB&r&l&n&k&mC&r"
+        );
+        let runs = tab_styled_runs(&formatted, [255; 3], 100);
+        assert!(runs[0].1.obfuscated);
+        assert!(!runs[1].1.obfuscated);
+        assert!(runs[2].1.obfuscated);
+        let runs = tab_styled_runs("\u{a7}kA\u{a7}cB\u{a7}kC\u{a7}rD", [255; 3], 100);
+        assert_eq!(
+            runs.iter()
+                .map(|(_, style)| style.obfuscated)
+                .collect::<Vec<_>>(),
+            vec![true, false, true, false]
+        );
     }
 
     #[test]
