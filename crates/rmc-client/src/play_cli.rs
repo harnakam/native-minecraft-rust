@@ -3645,13 +3645,31 @@ fn blend_styled_chat_line(
     frame: &mut [u8],
     width: u32,
     height: u32,
-    mut x: i32,
+    x: i32,
     y: i32,
     text: &str,
     alpha: u8,
     mask: &mut [u8],
 ) {
-    for (text, style) in tab_styled_runs(text, [255; 3], usize::MAX) {
+    blend_styled_chat_pass(frame, width, height, x + 1, y + 1, text, alpha, mask, true);
+    blend_styled_chat_pass(frame, width, height, x, y, text, alpha, mask, false);
+}
+
+fn blend_styled_chat_pass(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    mut x: i32,
+    y: i32,
+    text: &str,
+    alpha: u8,
+    mask: &mut [u8],
+    shadow: bool,
+) {
+    for (text, mut style) in tab_styled_runs(text, [255; 3], usize::MAX) {
+        if shadow {
+            style.color = title_shadow_color(style.color);
+        }
         mask.fill(0);
         let mut formatted = String::new();
         for (enabled, code) in [
@@ -5064,6 +5082,43 @@ mod inventory_layout_tests {
                 .collect::<Vec<_>>(),
             vec![true, false, true, false]
         );
+    }
+
+    #[test]
+    fn styled_chat_shadow_precedes_foreground_and_uses_shadow_palette() {
+        let mut plain = vec![0; 320 * 200 * 4];
+        let mut shadowed = plain.clone();
+        let mut mask = vec![0; 320 * 20 * 4];
+        blend_styled_chat_pass(
+            &mut plain,
+            320,
+            200,
+            12,
+            100,
+            "\u{a7}6Gold\u{a7}cRed",
+            255,
+            &mut mask,
+            false,
+        );
+        blend_styled_chat_line(
+            &mut shadowed,
+            320,
+            200,
+            12,
+            100,
+            "\u{a7}6Gold\u{a7}cRed",
+            255,
+            &mut mask,
+        );
+        assert_ne!(plain, shadowed);
+        assert!(plain
+            .chunks_exact(4)
+            .zip(shadowed.chunks_exact(4))
+            .any(|(before, after)| before[0] == 0 && after[0] > 0 && after[0] <= 63));
+        let background = vec![40; 320 * 200 * 4];
+        let mut transparent = background.clone();
+        blend_styled_chat_line(&mut transparent, 320, 200, 12, 100, "Shadow", 0, &mut mask);
+        assert_eq!(transparent, background);
     }
 
     #[test]

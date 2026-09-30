@@ -978,3 +978,15 @@ framebuffer output, and the actual draw_chat_history path from JSON ChatLine.
 Full workspace tests pass. Minecraft pixel-width wrapping, shadows, local font
 metrics, click/hover interaction and manual visual parity remain incomplete.
 No assets/reference source are published.
+
+
+### Native styled chat shadows
+
+Chat history now draws a full shadow pass at x+1/y+1 before the foreground
+pass, matching GuiNewChat's drawStringWithShadow path and FontRenderer's ordering.
+Both passes use the existing source shadow palette (quarter intensity and the
+gold exception) and the same age alpha; zero alpha leaves the frame unchanged.
+Framebuffer regressions verify additional dark shadow pixels and transparent
+behavior, alongside the existing real chat-history style test. The workspace
+suite passes. Native font glyphs/scale, pixel-width wrapping and manual visual
+parity remain incomplete. No game assets/reference source are published.
