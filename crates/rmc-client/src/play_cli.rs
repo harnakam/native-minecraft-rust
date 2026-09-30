@@ -2686,6 +2686,49 @@ fn draw_tab_italic_glyph(
     }
 }
 
+fn parse_tab_component(json: &str) -> Result<serde_json::Value, serde_json::Error> {
+    // Validate syntax and the normal serde nesting bound before recursive raw
+    // traversal. Values used for display retain Gson's numeric token spelling.
+    let _: serde_json::Value = serde_json::from_str(json)?;
+    fn convert(raw: &serde_json::value::RawValue) -> Result<serde_json::Value, serde_json::Error> {
+        let token = raw.get().trim();
+        Ok(match token.as_bytes().first().copied() {
+            Some(b'{') => {
+                let fields: std::collections::BTreeMap<String, Box<serde_json::value::RawValue>> =
+                    serde_json::from_str(token)?;
+                let mut object = serde_json::Map::new();
+                for (key, value) in fields {
+                    object.insert(key, convert(&value)?);
+                }
+                serde_json::Value::Object(object)
+            }
+            Some(b'[') => {
+                let items: Vec<Box<serde_json::value::RawValue>> = serde_json::from_str(token)?;
+                serde_json::Value::Array(
+                    items
+                        .iter()
+                        .map(|item| convert(item))
+                        .collect::<Result<Vec<_>, _>>()?,
+                )
+            }
+            Some(b'-' | b'0'..=b'9') => {
+                let text = if !token.contains(['.', 'e', 'E']) {
+                    token
+                        .parse::<i64>()
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|_| token.to_owned())
+                } else {
+                    token.to_owned()
+                };
+                serde_json::Value::String(text)
+            }
+            _ => serde_json::from_str(token)?,
+        })
+    }
+    let raw: Box<serde_json::value::RawValue> = serde_json::from_str(json)?;
+    convert(&raw)
+}
+
 fn tab_component_formatted(value: &serde_json::Value) -> String {
     fn visit(
         value: &serde_json::Value,
@@ -2907,7 +2950,7 @@ fn draw_tab_snapshot(
                     .display_name_json
                     .as_ref()
                     .map(|json| {
-                        serde_json::from_str(json)
+                        parse_tab_component(json)
                             .map(|value| tab_component_formatted(&value))
                             .unwrap_or_else(|_| json.clone())
                     })
@@ -4250,6 +4293,40 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn raw_tab_components_preserve_gson_exponent_spelling_and_nested_numbers() {
+        for (input, expected) in [
+            ("1E3", "1E3"),
+            ("1e3", "1e3"),
+            ("1e-03", "1e-03"),
+            ("-0", "0"),
+            ("-0.00", "-0.00"),
+        ] {
+            let value = parse_tab_component(input).unwrap();
+            let formatted = tab_component_formatted(&value);
+            assert_eq!(
+                tab_styled_runs(&formatted, [255; 3], 100)
+                    .into_iter()
+                    .map(|(text, _)| text)
+                    .collect::<String>(),
+                expected
+            );
+        }
+        let value =
+            parse_tab_component(r#"{"text":1E3,"color":"red","extra":[1e3,{"text":1.2300}]}"#)
+                .unwrap();
+        let runs = tab_styled_runs(&tab_component_formatted(&value), [255; 3], 100);
+        assert_eq!(
+            runs.iter()
+                .map(|(text, _)| text.as_str())
+                .collect::<String>(),
+            "1E31e31.2300"
+        );
+        assert!(runs.iter().all(|(_, style)| style.color == [255, 85, 85]));
+        assert!(parse_tab_component("[1e]").is_err());
+        assert!(parse_tab_component(&format!("{}0{}", "[".repeat(130), "]".repeat(130))).is_err());
     }
 
     #[test]

@@ -628,3 +628,21 @@ This still does not preserve every numeric lexeme: serde_json's local exponent
 scanner lowercases E and inserts a plus when absent. A raw-token component parser
 is still needed for exact Gson lexical parity. The Java probe/jar remain local
 ignored files; no reference binaries or game assets are published.
+
+
+### Raw numeric tokens in native Tab components
+
+A second local Gson 2.2.4 probe confirmed exact text for 1E3, 1e3, 1e-03, -0
+(normalized to 0), and -0.00. Tab display-name parsing now uses serde_json's
+existing raw_value feature to traverse raw component tokens, converting numbers
+to display strings without exponent normalization. Integer tokens fitting Java's
+long range use decimal conversion; other valid tokens retain their original
+spelling. The ordinary serde JSON validation and depth bound run before raw
+traversal. Nested text/extra values preserve their spelling and color inheritance.
+Regressions cover the observed Gson cases, nested exponents/decimal zeros,
+malformed numeric syntax, and excessive nesting. No dependency version or
+lockfile change is required.
+This path is currently wired to Tab display names; other component consumers
+still use their prior parsers. Full Gson lenient syntax, invalid component
+semantics, translations, obfuscation, fonts and manual parity remain incomplete.
+The independently authored Java probe and reference jars remain ignored locally.
