@@ -74,6 +74,41 @@ impl ImageAsset {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct UnicodeFontAsset {
+    pub glyph_widths: Vec<u8>,
+    root: PathBuf,
+    pages: std::sync::Arc<std::sync::Mutex<BTreeMap<u8, Option<ImageAsset>>>>,
+}
+
+impl UnicodeFontAsset {
+    fn load(root: &Path) -> Option<Self> {
+        let glyph_widths = fs::read(root.join("assets/minecraft/font/glyph_sizes.bin")).ok()?;
+        if glyph_widths.len() != 65536 {
+            return None;
+        }
+        Some(Self {
+            glyph_widths,
+            root: root.to_owned(),
+            pages: Default::default(),
+        })
+    }
+    pub fn with_page<T>(&self, ch: char, draw: impl FnOnce(&ImageAsset) -> T) -> Option<T> {
+        let page = u8::try_from(ch as u32 >> 8).ok()?;
+        let mut pages = self.pages.lock().ok()?;
+        let image = pages.entry(page).or_insert_with(|| {
+            ImageAsset::load(&self.root.join(format!(
+                "assets/minecraft/textures/font/unicode_page_{page:02x}.png"
+            )))
+        });
+        let image = image.as_ref()?;
+        if image.width() != 256 || image.height() != 256 {
+            return None;
+        }
+        Some(draw(image))
+    }
+}
+
 #[derive(Default)]
 pub struct GameAssets {
     pub vanilla_root: Option<PathBuf>,
@@ -81,6 +116,7 @@ pub struct GameAssets {
     pub widgets: Option<ImageAsset>,
     pub icons: Option<ImageAsset>,
     pub ascii_font: Option<ImageAsset>,
+    pub unicode_font: Option<UnicodeFontAsset>,
     pub vignette: Option<ImageAsset>,
     block_textures: BTreeMap<String, ImageAsset>,
 }
@@ -107,6 +143,7 @@ impl GameAssets {
                 assets.widgets = ImageAsset::load(&texture_root.join("gui").join("widgets.png"));
                 assets.icons = ImageAsset::load(&texture_root.join("gui").join("icons.png"));
                 assets.ascii_font = ImageAsset::load(&texture_root.join("font").join("ascii.png"));
+                assets.unicode_font = UnicodeFontAsset::load(&root);
                 assets.vignette = ImageAsset::load(&texture_root.join("misc").join("vignette.png"));
                 assets.block_textures = load_block_textures(&texture_root.join("blocks"));
             }
@@ -576,6 +613,9 @@ fn ensure_vanilla_assets() -> Result<(PathBuf, bool), String> {
         .join("widgets.png");
     if marker.exists()
         && output_root
+            .join("assets/minecraft/font/glyph_sizes.bin")
+            .exists()
+        && output_root
             .join("assets/minecraft/textures/font/ascii.png")
             .exists()
         && output_root
@@ -673,6 +713,13 @@ fn should_extract_asset(name: &str) -> bool {
         return false;
     }
     name == "assets/minecraft/lang/en_US.lang"
+        || name == "assets/minecraft/font/glyph_sizes.bin"
+        || name
+            .strip_prefix("assets/minecraft/textures/font/unicode_page_")
+            .and_then(|name| name.strip_suffix(".png"))
+            .is_some_and(|name| {
+                name.len() == 2 && name.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
         || name == "assets/minecraft/textures/font/ascii.png"
         || name.starts_with("assets/minecraft/textures/blocks/")
         || name == "assets/minecraft/textures/gui/widgets.png"
@@ -701,6 +748,18 @@ mod tests {
     #[test]
     fn imports_only_supported_local_language_file() {
         assert!(should_extract_asset("assets/minecraft/lang/en_US.lang"));
+        assert!(should_extract_asset(
+            "assets/minecraft/font/glyph_sizes.bin"
+        ));
+        assert!(should_extract_asset(
+            "assets/minecraft/textures/font/unicode_page_65.png"
+        ));
+        assert!(!should_extract_asset(
+            "assets/minecraft/textures/font/unicode_page_../secret.png"
+        ));
+        assert!(!should_extract_asset(
+            "assets/minecraft/textures/font/unicode_page_zz.png"
+        ));
         assert!(!should_extract_asset("assets/minecraft/lang/../../secret"));
         assert!(!should_extract_asset("assets/minecraft/lang/ja_JP.lang"));
         let table = super::parse_language_table("#ignore\r\nkey=a=b\r\nempty=\r\n");

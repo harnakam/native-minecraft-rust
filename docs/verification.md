@@ -1057,3 +1057,20 @@ real-atlas integration test checks the composited chat glyph/shadow pixels
 against source alpha at the original and x+2/y+2 positions. Dedicated and full
 workspace tests pass. Mixed bitmap/Unicode per-glyph offsets, selectable GUI
 scale and full Unicode rendering remain incomplete.
+
+
+### Local Unicode font pages in HUD drawing
+
+GameAssets imports local glyph_sizes.bin and Unicode page PNGs into ignored
+local_assets. The 65,536-byte table is validated; 256x256 pages load lazily with
+a shared cache, including missing-page results. Shared HUD width/draw paths now
+use BMP glyph nibbles and cropped page alpha rather than the system font, with
+zero-width table entries drawing nothing. The width calculation follows
+FontRenderer.getCharWidth's wide-glyph normalization. An isolated actual-jar
+test verifies Japanese 日 width lookup and every cropped glyph pixel against
+the local Unicode page; it passed. Extraction path restrictions and full
+workspace tests also pass. Extended default-atlas mapping, UTF-16 supplementary
+characters, forced Unicode mode, bold/italic/shadow precision, GUI scaling and
+manual visual parity remain incomplete. Missing/malformed page fallback does
+not yet reproduce vanilla resource exceptions. No binary table, font image or
+other game asset is published.

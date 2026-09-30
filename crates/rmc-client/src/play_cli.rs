@@ -1,7 +1,7 @@
 use crate::live_runtime::{
     EntityTracker, LiveRuntime, LiveRuntimeConfig, RuntimeActionInput, TargetedEntity,
 };
-use crate::play_assets::{GameAssets, ImageAsset};
+use crate::play_assets::{GameAssets, ImageAsset, UnicodeFontAsset};
 use crate::verification_cli::{hypixel_gate_decision, GateDecision};
 use arboard::Clipboard;
 use font8x8::UnicodeFonts;
@@ -403,6 +403,7 @@ impl PlayApp {
         let (assets, asset_notice) = GameAssets::load();
         CHAT_TRANSLATIONS.get_or_init(|| assets.translations.clone());
         HUD_BITMAP_FONT.get_or_init(|| assets.ascii_font.clone());
+        HUD_UNICODE_FONT.get_or_init(|| assets.unicode_font.clone());
         let server_input = format!("{}:{}", options.server_host, options.server_port);
         let offline_username_input = options.offline_username.clone();
         let mut app = Self {
@@ -2554,9 +2555,78 @@ fn native_bold_advance(ch: char, bold: bool) -> i32 {
     }
 }
 
+static HUD_UNICODE_FONT: std::sync::OnceLock<Option<UnicodeFontAsset>> = std::sync::OnceLock::new();
+
+fn unicode_font_advance(font: &UnicodeFontAsset, ch: char) -> Option<i32> {
+    let size = *font.glyph_widths.get(ch as usize)?;
+    if size == 0 {
+        return Some(0);
+    }
+    let (left, right) = if size & 15 > 7 {
+        (0, 15)
+    } else {
+        (size >> 4, size & 15)
+    };
+    Some(((i32::from(right) + 1 - i32::from(left)) / 2 + 1) * 2)
+}
+
+fn draw_unicode_font_glyph(
+    frame: &mut [u8],
+    width: u32,
+    x: i32,
+    ch: char,
+    color: [u8; 3],
+    bold: bool,
+    italic: bool,
+) -> bool {
+    let Some(Some(font)) = HUD_UNICODE_FONT.get() else {
+        return false;
+    };
+    let Some(&size) = font.glyph_widths.get(ch as usize) else {
+        return false;
+    };
+    if size == 0 {
+        return true;
+    }
+    let left = size >> 4;
+    let span = (size & 15).saturating_add(1).saturating_sub(left);
+    font.with_page(ch, |page| {
+        for py in 0..16i32 {
+            for px in 0..i32::from(span) {
+                let alpha = page.pixel(
+                    ch as u32 % 16 * 16 + u32::from(left) + px as u32,
+                    (ch as u32 & 255) / 16 * 16 + py as u32,
+                )[3] as u32;
+                if alpha == 0 {
+                    continue;
+                }
+                for copy in 0..=i32::from(bold) {
+                    let tx = x + px + copy + if italic { 2 - py / 4 } else { 0 };
+                    if tx < 0 || tx >= width as i32 {
+                        continue;
+                    }
+                    let target = (py as usize * width as usize + tx as usize) * 4;
+                    for channel in 0..3 {
+                        frame[target + channel] = ((frame[target + channel] as u32 * (255 - alpha)
+                            + color[channel] as u32 * alpha)
+                            / 255) as u8;
+                    }
+                    frame[target + 3] = 255;
+                }
+            }
+        }
+    })
+    .is_some()
+}
+
 fn native_glyph_width(ch: char) -> i32 {
     if let Some(Some(font)) = HUD_BITMAP_FONT.get() {
         if let Some(width) = bitmap_ascii_advance(font, ch) {
+            return width;
+        }
+    }
+    if let Some(Some(font)) = HUD_UNICODE_FONT.get() {
+        if let Some(width) = unicode_font_advance(font, ch) {
             return width;
         }
     }
@@ -2765,8 +2835,18 @@ fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_v
                 ch
             };
             let text = ch.to_string();
-            if draw_bitmap_ascii_glyph(frame, width, x, ch, style.color, style.bold, style.italic) {
-                // Local bitmap glyph already drawn.
+            if draw_bitmap_ascii_glyph(frame, width, x, ch, style.color, style.bold, style.italic)
+                || draw_unicode_font_glyph(
+                    frame,
+                    width,
+                    x,
+                    ch,
+                    style.color,
+                    style.bold,
+                    style.italic,
+                )
+            {
+                // Local glyph already drawn.
             } else if style.italic {
                 draw_tab_italic_glyph(frame, width, x, &text, style.color, style.bold);
             } else {
@@ -5322,6 +5402,46 @@ mod inventory_layout_tests {
             }
         }
         println!("official local ASCII font: imported atlas and HUD pixels match doubled source glyph alpha");
+    }
+
+    #[test]
+    #[ignore = "requires local official 1.8.9 jar; run alone"]
+    fn local_vanilla_unicode_font_reaches_hud_draw() {
+        let previous = std::env::current_dir().unwrap();
+        std::env::set_current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
+            .unwrap();
+        let (assets, notice) = GameAssets::load();
+        std::env::set_current_dir(previous).unwrap();
+        let font = assets
+            .unicode_font
+            .expect(&format!("Unicode import failed: {notice:?}"));
+        assert_eq!(font.glyph_widths.len(), 65536);
+        assert!(HUD_UNICODE_FONT.set(Some(font.clone())).is_ok());
+        let ch = '日';
+        let size = font.glyph_widths[ch as usize];
+        assert!(size != 0);
+        assert_eq!(
+            native_text_width(&ch.to_string()),
+            unicode_font_advance(&font, ch).unwrap()
+        );
+        let mut frame = vec![0; 64 * 16 * 4];
+        draw_tab_name(&mut frame, 64, &ch.to_string(), [255; 3], 100);
+        let left = size >> 4;
+        let span = (size & 15) + 1 - left;
+        font.with_page(ch, |page| {
+            for py in 0..16u32 {
+                for px in 0..u32::from(span) {
+                    let alpha = page.pixel(
+                        ch as u32 % 16 * 16 + u32::from(left) + px,
+                        (ch as u32 & 255) / 16 * 16 + py,
+                    )[3];
+                    assert_eq!(frame[(py as usize * 64 + px as usize + 4) * 4], alpha);
+                }
+            }
+        })
+        .expect("local Unicode page unavailable");
+        assert!(frame.chunks_exact(4).any(|pixel| pixel[0] > 0));
+        println!("official local Unicode font: Japanese glyph pixels match the local page crop");
     }
 
     #[test]
