@@ -2521,6 +2521,22 @@ fn bitmap_ascii_advance(font: &ImageAsset, ch: char) -> Option<i32> {
     Some((right as i32 + 1) * 2)
 }
 
+fn native_bold_advance(ch: char, bold: bool) -> i32 {
+    if !bold {
+        return 0;
+    }
+    if HUD_BITMAP_FONT
+        .get()
+        .and_then(Option::as_ref)
+        .and_then(|font| bitmap_ascii_advance(font, ch))
+        .is_some()
+    {
+        2
+    } else {
+        1
+    }
+}
+
 fn native_glyph_width(ch: char) -> i32 {
     if let Some(Some(font)) = HUD_BITMAP_FONT.get() {
         if let Some(width) = bitmap_ascii_advance(font, ch) {
@@ -2561,8 +2577,8 @@ fn draw_bitmap_ascii_glyph(
             if coverage == 0 {
                 continue;
             }
-            for offset in 0..=i32::from(bold) {
-                let tx = x + px + offset + if italic { 2 - py / 4 } else { 0 };
+            for copy in 0..=i32::from(bold) {
+                let tx = x + px + copy * 2 + if italic { 2 - py / 4 } else { 0 };
                 if tx < 0 || tx >= width as i32 {
                     continue;
                 }
@@ -2742,7 +2758,7 @@ fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_v
                     draw_text_scaled(frame, width, 16, x + 1, 0, &text, style.color, 1);
                 }
             }
-            let advance = original_width + i32::from(style.bold);
+            let advance = original_width + native_bold_advance(ch, style.bold);
             for y in [
                 if style.underline { Some(14) } else { None },
                 if style.strike { Some(7) } else { None },
@@ -3634,7 +3650,7 @@ fn wrap_formatted_chat_text(text: &str, columns: usize) -> Vec<String> {
 
 fn wrap_formatted_chat_pixels(text: &str, pixels: i32) -> Vec<String> {
     wrap_styled_chat(text, pixels.max(1), |ch, style| {
-        native_text_width(&ch.to_string()) + i32::from(style.bold)
+        native_text_width(&ch.to_string()) + native_bold_advance(ch, style.bold)
     })
 }
 
@@ -3805,7 +3821,7 @@ fn blend_styled_chat_pass(
         }
         x += text
             .chars()
-            .map(|ch| native_text_width(&ch.to_string()) + i32::from(style.bold))
+            .map(|ch| native_text_width(&ch.to_string()) + native_bold_advance(ch, style.bold))
             .sum::<i32>();
     }
 }
@@ -3998,7 +4014,7 @@ fn draw_styled_title_pass(
     let runs = tab_styled_runs(text, [255; 3], usize::MAX);
     let run_width = |text: &str, style: TabNameStyle| {
         text.chars()
-            .map(|ch| native_text_width(&ch.to_string()) + i32::from(style.bold))
+            .map(|ch| native_text_width(&ch.to_string()) + native_bold_advance(ch, style.bold))
             .sum::<i32>()
     };
     let total = runs
@@ -5214,6 +5230,30 @@ mod inventory_layout_tests {
             }
         }
         assert!(visible > 0);
+        assert_eq!(native_bold_advance('A', true), 2);
+        assert_eq!(native_bold_advance('A', false), 0);
+        assert_eq!(native_bold_advance('日', true), 1);
+        frame.fill(0);
+        draw_tab_name(&mut frame, 64, "\u{a7}lA", [255; 3], 100);
+        for py in 0..16u32 {
+            for px in 0..18u32 {
+                let original = if px < 16 {
+                    font.pixel(65 % 16 * 8 + px / 2, 65 / 16 * 8 + py / 2)[3] as u32
+                } else {
+                    0
+                };
+                let shifted = if px >= 2 {
+                    font.pixel(65 % 16 * 8 + (px - 2) / 2, 65 / 16 * 8 + py / 2)[3] as u32
+                } else {
+                    0
+                };
+                let expected = original + (255 - original) * shifted / 255;
+                assert_eq!(
+                    frame[(py as usize * 64 + px as usize + 4) * 4],
+                    expected as u8
+                );
+            }
+        }
         println!("official local ASCII font: imported atlas and HUD pixels match doubled source glyph alpha");
     }
 
@@ -5271,7 +5311,9 @@ mod inventory_layout_tests {
                 .iter()
                 .map(|(text, style)| {
                     text.chars()
-                        .map(|ch| native_text_width(&ch.to_string()) + i32::from(style.bold))
+                        .map(|ch| {
+                            native_text_width(&ch.to_string()) + native_bold_advance(ch, style.bold)
+                        })
                         .sum::<i32>()
                 })
                 .sum();

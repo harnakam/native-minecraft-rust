@@ -1034,3 +1034,15 @@ This is incomplete font parity: extended atlas mapping, glyph_sizes/Unicode
 pages, exact bold/italic geometry, UI scale selection and manual visual parity
 remain required. Launcher/input UI still uses the native system font. No font
 image or other game assets are published.
+
+
+### Doubled bitmap bold spacing and geometry
+
+Bitmap ASCII bold now draws the second glyph at two native pixels rather than
+one, corresponding to FontRenderer's one-unit default glyph bold offset under
+the current doubled atlas scale. Its advance also adds two pixels consistently
+in Tab, chat wrapping/composition and title centering; system-font fallback
+retains its existing one-pixel spacing. The isolated real-atlas test checks
+bold pixels against the composited original glyph and x+2 copy and verifies
+ASCII/fallback advance selection. Dedicated and workspace tests pass. Unicode
+font paths, exact italic geometry and selectable GUI scale remain incomplete.
