@@ -287,3 +287,9 @@ Native wrapping no longer drains and shifts the remaining character vector on ev
 Open native chat now handles PageUp/PageDown using GuiChat's visible-line-count-minus-one movement: seven rows for the current eight-row display. Wheel and keyboard input share one bounded scroll method, with saturation before clamping to retained wrapped display rows. Keys are handled only in the open-chat branch and do not enter movement input.
 
 Full workspace tests pass, and key routing was reviewed against the existing pressed/released handling. Native interactive paging has not been manually exercised. Configurable visible row count, sent-input history, caret editing, tab completion and full native keyboard parity remain incomplete.
+
+## Sent chat input history
+
+Native open-chat Up/Down keys now traverse submitted messages following GuiChat.getSentHistory: clamp to history bounds, save the current draft on first leaving the newest position, and restore it on returning. Opening chat resets the cursor. Successful runtime submission records the trimmed message; adjacent equal messages are deduplicated like GuiNewChat.addToSentMessages. Failed submission preserves input and does not record a new entry, and absent runtime now reports unavailable rather than clearing the draft as though sent. History is in-memory for the app session.
+
+A regression checks adjacent deduplication, oldest-bound clamping, traversal and draft restoration. Full workspace tests pass, followed by the focused history test after the absent-runtime guard. Server acceptance is not implied by successful local submission. Interactive keyboard verification, caret/selection editing, completion and complete chat formatting remain incomplete.

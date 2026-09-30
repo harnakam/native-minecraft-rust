@@ -328,6 +328,41 @@ pub fn run_play_cli(raw_args: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Default)]
+struct SentChatHistory {
+    messages: Vec<String>,
+    cursor: usize,
+    draft: String,
+}
+impl SentChatHistory {
+    fn open(&mut self) {
+        self.cursor = self.messages.len();
+        self.draft.clear();
+    }
+    fn record(&mut self, message: &str) {
+        if self.messages.last().is_none_or(|last| last != message) {
+            self.messages.push(message.to_owned());
+        }
+        self.open();
+    }
+    fn navigate(&mut self, direction: i32, input: &mut String) {
+        let next = (self.cursor as i64 + i64::from(direction)).clamp(0, self.messages.len() as i64)
+            as usize;
+        if next == self.cursor {
+            return;
+        }
+        if next == self.messages.len() {
+            *input = self.draft.clone();
+        } else {
+            if self.cursor == self.messages.len() {
+                self.draft = input.clone();
+            }
+            *input = self.messages[next].clone();
+        }
+        self.cursor = next;
+    }
+}
+
 struct PlayApp {
     options: PlayCliOptions,
     assets: GameAssets,
@@ -357,6 +392,7 @@ struct PlayApp {
     chat_open: bool,
     chat_input: String,
     chat_scroll: usize,
+    sent_chat: SentChatHistory,
     show_tab_overlay: bool,
 }
 
@@ -408,6 +444,7 @@ impl PlayApp {
             chat_open: false,
             chat_input: String::new(),
             chat_scroll: 0,
+            sent_chat: SentChatHistory::default(),
             show_tab_overlay: false,
         };
         app.reload_accounts();
@@ -1352,6 +1389,8 @@ impl PlayApp {
                 VirtualKeyCode::Return => {
                     self.send_chat_input();
                 }
+                VirtualKeyCode::Up => self.sent_chat.navigate(-1, &mut self.chat_input),
+                VirtualKeyCode::Down => self.sent_chat.navigate(1, &mut self.chat_input),
                 VirtualKeyCode::PageUp => self.scroll_chat(7),
                 VirtualKeyCode::PageDown => self.scroll_chat(-7),
                 VirtualKeyCode::V if self.modifiers_ctrl => self.paste_chat_from_clipboard(),
@@ -1369,6 +1408,7 @@ impl PlayApp {
             if key == VirtualKeyCode::T {
                 self.chat_open = true;
                 self.chat_scroll = 0;
+                self.sent_chat.open();
                 self.chat_input.clear();
                 self.apply_cursor_capture(window, false);
                 return;
@@ -1376,6 +1416,7 @@ impl PlayApp {
             if key == VirtualKeyCode::Slash {
                 self.chat_open = true;
                 self.chat_scroll = 0;
+                self.sent_chat.open();
                 self.chat_input = "/".to_owned();
                 self.apply_cursor_capture(window, false);
                 return;
@@ -1928,8 +1969,12 @@ impl PlayApp {
                 self.status_line = error;
                 return;
             }
+        } else {
+            self.status_line = "Chat is unavailable without a connection".to_owned();
+            return;
         }
 
+        self.sent_chat.record(message);
         self.chat_open = false;
         self.chat_input.clear();
     }
@@ -3392,6 +3437,26 @@ fn normalize(vector: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod inventory_layout_tests {
     use super::*;
+    #[test]
+    fn sent_history_restores_draft_and_skips_adjacent_duplicates() {
+        let mut history = SentChatHistory::default();
+        history.record("one");
+        history.record("one");
+        history.record("two");
+        assert_eq!(history.messages.len(), 2);
+        let mut input = "draft".to_owned();
+        history.navigate(-1, &mut input);
+        assert_eq!(input, "two");
+        history.navigate(-1, &mut input);
+        assert_eq!(input, "one");
+        history.navigate(-1, &mut input);
+        assert_eq!(input, "one");
+        history.navigate(1, &mut input);
+        assert_eq!(input, "two");
+        history.navigate(1, &mut input);
+        assert_eq!(input, "draft");
+    }
+
     #[test]
     fn maximum_length_unbroken_chat_wraps_without_dropping_characters() {
         let text = "a".repeat(32767);
