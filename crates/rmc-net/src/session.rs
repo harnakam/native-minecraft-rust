@@ -281,6 +281,7 @@ impl HeadlessSession {
             | PlayClientboundPacket::EntityTeleport(_)
             | PlayClientboundPacket::EntityEquipment(_)
             | PlayClientboundPacket::ResourcePackSend(_)
+            | PlayClientboundPacket::ServerDifficulty(_)
             | PlayClientboundPacket::TimeUpdate(_)
             | PlayClientboundPacket::EntityMetadata(_)
             | PlayClientboundPacket::EntityHeadLook(_) => None,

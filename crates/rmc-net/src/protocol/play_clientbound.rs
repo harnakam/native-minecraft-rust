@@ -1136,6 +1136,7 @@ pub const HELD_ITEM_CHANGE: PacketSpec = PacketSpec {
     }],
 };
 pub const PACKETS: &[PacketSpec] = &[
+    SERVER_DIFFICULTY,
     RESOURCE_PACK_SEND,
     CHANGE_GAME_STATE,
     EXPLOSION,
@@ -1250,4 +1251,19 @@ pub const RESOURCE_PACK_SEND: PacketSpec = PacketSpec {
             notes: "MCP919 wire field.",
         },
     ],
+};
+
+pub const SERVER_DIFFICULTY: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x41,
+    name: "Server Difficulty",
+    java_class: "net.minecraft.network.play.server.S41PacketServerDifficulty",
+    java_handler: "INetHandlerPlayClient.handleServerDifficulty",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "difficulty",
+        encoding: "UnsignedByte",
+        notes: "EnumDifficulty modulo four; no lock field on protocol 47 wire.",
+    }],
 };

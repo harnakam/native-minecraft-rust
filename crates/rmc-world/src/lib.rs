@@ -398,6 +398,7 @@ impl WorldChangeSummary {
 
 #[derive(Clone, Debug, Default)]
 pub struct WorldSnapshot {
+    difficulty: Option<u8>,
     weather: weather::Weather,
     time: time::WorldTime,
     config: WorldConfig,
@@ -407,6 +408,7 @@ pub struct WorldSnapshot {
 impl WorldSnapshot {
     pub fn new(config: WorldConfig) -> Self {
         Self {
+            difficulty: None,
             weather: weather::Weather::default(),
             time: time::WorldTime::default(),
             config,
@@ -416,6 +418,10 @@ impl WorldSnapshot {
 
     pub fn config(&self) -> WorldConfig {
         self.config
+    }
+
+    pub fn difficulty(&self) -> Option<u8> {
+        self.difficulty
     }
 
     pub fn time(&self) -> time::WorldTime {
@@ -628,6 +634,10 @@ impl WorldSnapshot {
         let summary = match packet {
             PlayClientboundPacket::ChangeGameState(packet) => {
                 self.weather.receive(packet.reason, packet.value);
+                None
+            }
+            PlayClientboundPacket::ServerDifficulty(difficulty) => {
+                self.difficulty = Some(*difficulty % 4);
                 None
             }
             PlayClientboundPacket::TimeUpdate(packet) => {

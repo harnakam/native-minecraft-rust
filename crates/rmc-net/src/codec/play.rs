@@ -747,6 +747,7 @@ pub enum PlayClientboundPacket {
     WindowProperty(WindowPropertyPacket),
     EntityEquipment(EntityEquipmentPacket),
     ResourcePackSend(ResourcePackSendPacket),
+    ServerDifficulty(u8),
     TimeUpdate(TimeUpdatePacket),
     EntityMetadata(EntityMetadataPacket),
     SetExperience(SetExperiencePacket),
@@ -796,6 +797,7 @@ impl PlayClientboundPacket {
                 message_json: reader.read_chat()?,
                 position: reader.read_i8()?,
             }),
+            0x41 => Self::ServerDifficulty(reader.read_u8()? % 4),
             0x48 => Self::ResourcePackSend(ResourcePackSendPacket {
                 url: reader.read_string(32767)?,
                 hash: reader.read_string(40)?,
@@ -1667,6 +1669,10 @@ impl PlayClientboundPacket {
                 writer.write_string(&packet.url, 32767)?;
                 writer.write_string(&packet.hash, 40)?;
                 0x48
+            }
+            Self::ServerDifficulty(difficulty) => {
+                writer.write_u8(*difficulty % 4);
+                0x41
             }
             Self::TimeUpdate(packet) => {
                 writer.write_i64(packet.total_world_time);
