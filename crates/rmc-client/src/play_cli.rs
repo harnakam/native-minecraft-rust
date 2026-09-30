@@ -910,43 +910,13 @@ impl PlayApp {
                     draw_tab_overlay(frame, width, height, runtime);
                 }
                 if let Some(snapshot) = runtime.usability_snapshot() {
-                    let xp = snapshot.experience;
-                    let x = width as i32 / 2 - 91;
-                    let y = height as i32 - 50;
-                    draw_rect(
-                        frame,
-                        width,
-                        height,
-                        UiRect {
-                            x,
-                            y,
-                            width: 182,
-                            height: 5,
-                        },
-                        [30, 45, 15],
-                    );
-                    draw_rect(
-                        frame,
-                        width,
-                        height,
-                        UiRect {
-                            x,
-                            y,
-                            width: (xp.progress.clamp(0.0, 1.0) * 182.0) as i32,
-                            height: 5,
-                        },
-                        [128, 190, 35],
-                    );
-                    if xp.level > 0 {
-                        draw_text_scaled(
+                    if runtime.is_survival_or_adventure() {
+                        draw_experience_overlay(
                             frame,
                             width,
                             height,
-                            width as i32 / 2 - 4,
-                            y - 12,
-                            &xp.level.to_string(),
-                            [128, 220, 50],
-                            1,
+                            snapshot.experience,
+                            &self.assets,
                         );
                     }
 
@@ -2191,6 +2161,85 @@ struct WindowLayout {
     slots: Vec<(UiRect, i16)>,
 }
 
+fn draw_experience_overlay(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    xp: rmc_game::usability::Experience,
+    assets: &GameAssets,
+) {
+    let x = width as i32 / 2 - 91;
+    let y = height as i32 - 29;
+    let filled = (xp.progress * 183.0) as i32;
+    let cap = if xp.level >= 30 {
+        112_i32.wrapping_add(xp.level.wrapping_sub(30).wrapping_mul(9))
+    } else if xp.level >= 15 {
+        37_i32.wrapping_add(xp.level.wrapping_sub(15).wrapping_mul(5))
+    } else {
+        7_i32.wrapping_add(xp.level.wrapping_mul(2))
+    };
+    if cap > 0 {
+        for (bar_width, texture_y, color) in [(182, 64, [30, 45, 15]), (filled, 69, [128, 190, 35])]
+        {
+            if bar_width <= 0 {
+                continue;
+            }
+            let rect = UiRect {
+                x,
+                y,
+                width: bar_width,
+                height: 5,
+            };
+            if let Some(icons) = assets.icons.as_ref() {
+                draw_sprite_region(
+                    frame,
+                    width,
+                    height,
+                    icons,
+                    rect,
+                    UiRect {
+                        x: 0,
+                        y: texture_y,
+                        width: bar_width,
+                        height: 5,
+                    },
+                    [255, 255, 255],
+                    1.0,
+                );
+            } else {
+                draw_rect(frame, width, height, rect, color);
+            }
+        }
+    }
+    if xp.level > 0 {
+        let label = xp.level.to_string();
+        let label_x = width as i32 / 2 - label.len() as i32 * 3;
+        let label_y = height as i32 - 35;
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            draw_text_scaled(
+                frame,
+                width,
+                height,
+                label_x + dx,
+                label_y + dy,
+                &label,
+                [0, 0, 0],
+                1,
+            );
+        }
+        draw_text_scaled(
+            frame,
+            width,
+            height,
+            label_x,
+            label_y,
+            &label,
+            [128, 255, 32],
+            1,
+        );
+    }
+}
+
 fn draw_hotbar_overlay(
     frame: &mut [u8],
     width: u32,
@@ -3151,6 +3200,28 @@ fn normalize(vector: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod inventory_layout_tests {
     use super::*;
+
+    #[test]
+    fn experience_bar_renders_source_width_and_vertical_position() {
+        let mut frame = vec![0; 320 * 200 * 4];
+        draw_experience_overlay(
+            &mut frame,
+            320,
+            200,
+            rmc_game::usability::Experience {
+                progress: 0.999,
+                level: 7,
+                total: 0,
+            },
+            &GameAssets::default(),
+        );
+        let pixel = |x: usize, y: usize| &frame[(y * 320 + x) * 4..(y * 320 + x) * 4 + 3];
+        assert_eq!(pixel(69, 170), [0, 0, 0]);
+        assert_eq!(pixel(69, 171), [128, 190, 35]);
+        assert_eq!(pixel(250, 175), [128, 190, 35]);
+        assert_eq!(pixel(251, 175), [0, 0, 0]);
+        assert_eq!(pixel(69, 176), [0, 0, 0]);
+    }
 
     #[test]
     fn every_slot_is_unique_and_inside_the_clickable_panel() {

@@ -470,6 +470,10 @@ impl LiveRuntime {
         &self.entity_tracker
     }
 
+    pub fn is_survival_or_adventure(&self) -> bool {
+        matches!(self.game_mode & 7, 0 | 2)
+    }
+
     pub fn is_spectator(&self) -> bool {
         self.game_mode == 3
     }
