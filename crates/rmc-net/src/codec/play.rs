@@ -1,6 +1,8 @@
 //! Play-state codecs for the protocol 47 packet set used by headless, world, and PvP bring-up.
 
 pub mod metadata;
+mod world_border;
+pub use world_border::WorldBorderPacket;
 
 use crate::buffer::{BufferError, PacketReader, PacketWriter};
 use crate::codec::{split_packet_bytes, CodecError, EncodedPacket};
@@ -747,6 +749,7 @@ pub enum PlayClientboundPacket {
     WindowProperty(WindowPropertyPacket),
     EntityEquipment(EntityEquipmentPacket),
     ResourcePackSend(ResourcePackSendPacket),
+    WorldBorder(WorldBorderPacket),
     ServerDifficulty(u8),
     TimeUpdate(TimeUpdatePacket),
     EntityMetadata(EntityMetadataPacket),
@@ -797,6 +800,7 @@ impl PlayClientboundPacket {
                 message_json: reader.read_chat()?,
                 position: reader.read_i8()?,
             }),
+            0x44 => Self::WorldBorder(WorldBorderPacket::read(&mut reader)?),
             0x41 => Self::ServerDifficulty(reader.read_u8()? % 4),
             0x48 => Self::ResourcePackSend(ResourcePackSendPacket {
                 url: reader.read_string(32767)?,
@@ -1669,6 +1673,10 @@ impl PlayClientboundPacket {
                 writer.write_string(&packet.url, 32767)?;
                 writer.write_string(&packet.hash, 40)?;
                 0x48
+            }
+            Self::WorldBorder(packet) => {
+                packet.write(&mut writer);
+                0x44
             }
             Self::ServerDifficulty(difficulty) => {
                 writer.write_u8(*difficulty % 4);

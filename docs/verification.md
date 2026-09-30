@@ -187,3 +187,9 @@ The framed local TCP join test asserts initial difficulty. The existing TCP deat
 The inspected S44 WorldBorder packet needs PacketBuffer.readVarLong/writeVarLong for transition milliseconds. The Rust packet buffer now provides signed i64 VarLong operations, preserving Java long bit patterns and unsigned-shift encoding. Decoding is bounded to ten bytes, rejects an unfinished tenth byte, and retains Java's low-bit behavior for an oversized tenth payload. Failed reads do not advance the reader offset.
 
 A regression verifies positive/negative extremes, golden negative-one and 128 encodings, truncation/oversize rejection and reading the next buffer field. Workspace tests pass. This is necessary communication support; S44 action decoding, border state/interpolation, collision and rendering still remain unimplemented. No world-border compatibility is claimed by these primitive tests.
+
+## World-border packet action layouts
+
+S44PacketWorldBorder (0x44) is registered and decoded into a typed action enum: set size, lerp size, set center, initialize, warning time and warning blocks. Action fields follow MCP919; transition time is signed VarLong, and initialize sends center, old/new diameter, time, world-size clamp, warning distance, warning time in that order. All actions encode as well as decode. The protocol driver now exposes these inbound packets instead of ignoring an unsupported ID.
+
+A regression checks all six action roundtrips, the exact initialize wire bytes, each truncated prefix, trailing bytes, invalid action and overlong duration. Workspace tests pass. WorldSnapshot intentionally does not yet apply the border actions: wall-clock size interpolation, limits/collision, warning overlay and boundary rendering remain required before claiming border compatibility. No official-server border assertion has been run.

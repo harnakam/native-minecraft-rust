@@ -1136,6 +1136,7 @@ pub const HELD_ITEM_CHANGE: PacketSpec = PacketSpec {
     }],
 };
 pub const PACKETS: &[PacketSpec] = &[
+    WORLD_BORDER,
     SERVER_DIFFICULTY,
     RESOURCE_PACK_SEND,
     CHANGE_GAME_STATE,
@@ -1265,5 +1266,20 @@ pub const SERVER_DIFFICULTY: PacketSpec = PacketSpec {
         name: "difficulty",
         encoding: "UnsignedByte",
         notes: "EnumDifficulty modulo four; no lock field on protocol 47 wire.",
+    }],
+};
+
+pub const WORLD_BORDER: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x44,
+    name: "World Border",
+    java_class: "net.minecraft.network.play.server.S44PacketWorldBorder",
+    java_handler: "INetHandlerPlayClient.handleWorldBorder",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "action and fields",
+        encoding: "VarInt, action-specific Double/VarLong/VarInt",
+        notes: "Six action layouts from MCP919; initialize warning distance precedes warning time.",
     }],
 };
