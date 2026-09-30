@@ -769,3 +769,17 @@ blue nonbold player name, italic message and plain inherited punctuation/extra.
 This follows MCP919 ChatComponentTranslation.getFormatArgumentAsComponent and
 setChatStyle. The shared parts parser also drives plain text output. Full language
 lookup, invalid component exceptions and manual font parity remain incomplete.
+
+
+### Executed MCP919 translation formatter comparison
+
+A local Java 8 probe subclass called the compiled MCP919
+ChatComponentTranslation.initializeFromFormat and read its actual child text.
+Thirteen cases confirmed mixed indexed/sequential ordering, missing arguments,
+escaped percent, leading-zero indices, maximum signed index and adjacent
+placeholders. The Rust regression now includes those boundary outputs. The
+reference rejects unsupported/dangling/zero/overflow/malformed formats; zero
+and overflow throw distinct Java runtime exceptions, while Rust represents all
+formatter failures as None. Native display still falls back to the key on error
+and therefore does not reproduce exception propagation. Probe source/classes
+and logs are ignored local verification files and are not published.

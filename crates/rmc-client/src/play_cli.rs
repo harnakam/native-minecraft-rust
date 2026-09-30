@@ -4509,6 +4509,18 @@ mod inventory_layout_tests {
             Some("[] Alex")
         );
         assert_eq!(format_chat_translation("%%s", &args).as_deref(), Some("%s"));
+        assert_eq!(
+            format_chat_translation("%01$s", &args).as_deref(),
+            Some("Alex")
+        );
+        assert_eq!(
+            format_chat_translation("%2147483647$s", &args).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            format_chat_translation("%s%s", &args).as_deref(),
+            Some("Alexhello")
+        );
         for invalid in ["%d", "%", "%0$s", "%2147483648$s", "%2$%", "%1.2s"] {
             assert_eq!(format_chat_translation(invalid, &args), None, "{invalid}");
         }
