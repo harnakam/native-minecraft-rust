@@ -541,3 +541,17 @@ passed. Native font metrics and line positions use the current 16-pixel native
 font layout; they are not an exact reproduction of Minecraft's font. Italic,
 obfuscated text, shadows, styled JSON components, and manual visual parity remain
 incomplete. No game assets are added to publication.
+
+
+### Native Tab italic and spectator names
+
+The Tab-name style parser now tracks section-sign o and clears italic on color
+changes and reset. Spectator rows prepend italic to the resolved display name,
+as GuiPlayerTabOverlay does; embedded color codes can subsequently clear it.
+Italic glyph coverage is sheared in the cell framebuffer and blended with the
+selected text color, including bold overlap. Tests check italic/reset ordering
+and actual glyph pixel changes, and the complete workspace suite passes.
+This uses the current native 16-pixel glyph rasterization and a per-row shear;
+Minecraft atlas glyph geometry, shadows, spectator alpha, obfuscation, complete
+JSON style handling, and manual visual parity remain incomplete. No Minecraft
+image/source data is published.

@@ -2514,6 +2514,7 @@ fn native_text_width(text: &str) -> i32 {
 struct TabNameStyle {
     color: [u8; 3],
     bold: bool,
+    italic: bool,
     underline: bool,
     strike: bool,
 }
@@ -2548,8 +2549,11 @@ fn tab_styled_runs(
                 style.strike = true;
             } else if code == 'n' {
                 style.underline = true;
-            } else if !"ko".contains(code) {
+            } else if code == 'o' {
+                style.italic = true;
+            } else if code != 'k' {
                 style.bold = false;
+                style.italic = false;
                 style.strike = false;
                 style.underline = false;
                 let index = code.to_digit(16).unwrap_or(15) as u8;
@@ -2590,9 +2594,13 @@ fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_v
     for (text, style) in tab_styled_runs(text, color, max_visible) {
         for ch in text.chars() {
             let text = ch.to_string();
-            draw_text_scaled(frame, width, 16, x, 0, &text, style.color, 1);
-            if style.bold {
-                draw_text_scaled(frame, width, 16, x + 1, 0, &text, style.color, 1);
+            if style.italic {
+                draw_tab_italic_glyph(frame, width, x, &text, style.color, style.bold);
+            } else {
+                draw_text_scaled(frame, width, 16, x, 0, &text, style.color, 1);
+                if style.bold {
+                    draw_text_scaled(frame, width, 16, x + 1, 0, &text, style.color, 1);
+                }
             }
             let advance = native_text_width(&text) + i32::from(style.bold);
             for y in [
@@ -2616,6 +2624,40 @@ fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_v
                 );
             }
             x += advance;
+        }
+    }
+}
+
+fn draw_tab_italic_glyph(
+    frame: &mut [u8],
+    width: u32,
+    x: i32,
+    text: &str,
+    color: [u8; 3],
+    bold: bool,
+) {
+    let glyph_width = native_text_width(text).max(1) as u32 + 8;
+    let mut mask = vec![0; glyph_width as usize * 16 * 4];
+    draw_text_scaled(&mut mask, glyph_width, 16, 3, 0, text, [255; 3], 1);
+    for y in 0..16i32 {
+        let shear = 2 - y / 4;
+        for px in 0..glyph_width as i32 {
+            let coverage = mask[(y as usize * glyph_width as usize + px as usize) * 4] as u32;
+            if coverage == 0 {
+                continue;
+            }
+            for offset in 0..=i32::from(bold) {
+                let target_x = x + px - 3 + shear + offset;
+                if target_x < 0 || target_x >= width as i32 {
+                    continue;
+                }
+                let target = (y as usize * width as usize + target_x as usize) * 4;
+                for channel in 0..3 {
+                    frame[target + channel] = ((frame[target + channel] as u32 * (255 - coverage)
+                        + color[channel] as u32 * coverage)
+                        / 255) as u8;
+                }
+            }
         }
     }
 }
@@ -2734,6 +2776,11 @@ fn draw_tab_snapshot(
                 for pixel in cell.chunks_exact_mut(4) {
                     pixel.copy_from_slice(&[18, 22, 28, 255]);
                 }
+                let name = if entry.game_mode == 3 {
+                    format!("\u{a7}o{name}")
+                } else {
+                    name
+                };
                 draw_tab_name(
                     &mut cell,
                     column_width as u32,
@@ -4037,6 +4084,21 @@ mod inventory_layout_tests {
             );
             assert_eq!(frame[0], 0);
         }
+    }
+
+    #[test]
+    fn tab_italic_shears_glyphs_and_color_codes_clear_italic() {
+        let runs = tab_styled_runs("\u{a7}oA\u{a7}cB\u{a7}oC\u{a7}rD", [255; 3], 10);
+        assert!(runs[0].1.italic);
+        assert!(!runs[1].1.italic);
+        assert!(runs[2].1.italic);
+        assert!(!runs[3].1.italic);
+        let mut plain = vec![0; 200 * 16 * 4];
+        let mut italic = plain.clone();
+        draw_tab_name(&mut plain, 200, "Test", [255; 3], 10);
+        draw_tab_name(&mut italic, 200, "\u{a7}oTest", [255; 3], 10);
+        assert_ne!(plain, italic);
+        assert!(italic.chunks_exact(4).any(|pixel| pixel[0] > 0));
     }
 
     #[test]
