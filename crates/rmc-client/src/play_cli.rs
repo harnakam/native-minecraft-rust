@@ -1170,24 +1170,28 @@ impl PlayApp {
         }
     }
 
+    fn scroll_chat(&mut self, amount: i64) {
+        let count = self
+            .runtime
+            .as_ref()
+            .and_then(|r| r.usability_snapshot())
+            .map_or(0, |snapshot| {
+                chat_display_lines(&snapshot.chat_lines, self.options.width).len()
+            });
+        self.chat_scroll = (self.chat_scroll as i64)
+            .saturating_add(amount)
+            .clamp(0, count.saturating_sub(8) as i64) as usize;
+    }
+
     fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta) {
         if self.screen == ScreenState::Playing && self.chat_open {
             let y = match delta {
                 MouseScrollDelta::LineDelta(_, y) => y,
                 MouseScrollDelta::PixelDelta(p) => p.y as f32,
             };
-            let count = self
-                .runtime
-                .as_ref()
-                .and_then(|r| r.usability_snapshot())
-                .map_or(0, |s| {
-                    chat_display_lines(&s.chat_lines, self.options.width).len()
-                });
             let step = if self.modifiers_shift { 1 } else { 7 };
             if y.is_finite() && y != 0.0 {
-                self.chat_scroll = (self.chat_scroll as i64 + i64::from(y.signum() as i8) * step)
-                    .clamp(0, count.saturating_sub(8) as i64)
-                    as usize;
+                self.scroll_chat(i64::from(y.signum() as i8) * step);
             }
             return;
         }
@@ -1348,6 +1352,8 @@ impl PlayApp {
                 VirtualKeyCode::Return => {
                     self.send_chat_input();
                 }
+                VirtualKeyCode::PageUp => self.scroll_chat(7),
+                VirtualKeyCode::PageDown => self.scroll_chat(-7),
                 VirtualKeyCode::V if self.modifiers_ctrl => self.paste_chat_from_clipboard(),
                 _ => {}
             }

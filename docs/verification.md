@@ -281,3 +281,9 @@ A regression covers word wrapping, explicit newlines, unbroken ASCII/Unicode and
 ## Long-chat wrapping cost
 
 Native wrapping no longer drains and shifts the remaining character vector on every display row. It keeps a read offset into an immutable character vector, preserving existing wrap decisions while avoiding quadratic data movement for narrow chat layouts and long unbroken server messages. A regression wraps 32767 characters at one column and verifies complete reconstruction. Existing wrap/component regressions and full workspace tests pass. Chat layout is still rebuilt for drawing; caching, source font-width parity and interactive performance profiling remain incomplete.
+
+## Chat keyboard paging
+
+Open native chat now handles PageUp/PageDown using GuiChat's visible-line-count-minus-one movement: seven rows for the current eight-row display. Wheel and keyboard input share one bounded scroll method, with saturation before clamping to retained wrapped display rows. Keys are handled only in the open-chat branch and do not enter movement input.
+
+Full workspace tests pass, and key routing was reviewed against the existing pressed/released handling. Native interactive paging has not been manually exercised. Configurable visible row count, sent-input history, caret editing, tab completion and full native keyboard parity remain incomplete.
