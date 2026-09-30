@@ -113,3 +113,11 @@ The equipment codec test checks golden prefix bytes, null/item roundtrip and tru
 S03PacketTimeUpdate is decoded and encoded as two signed big-endian longs and registered for live delivery. WorldSnapshot owns time state in world/time.rs. Negative world time stops daylight cycling and is negated using Java long wrapping semantics; -1 represents the server frozen-zero sentinel and becomes frozen time 1, matching WorldClient. Positive updates resume cycling. Main-thread runtime and CLI ticks increment total world age regardless of the cycle flag and advance day time only while cycling. New worlds reset time state.
 
 One codec test verifies golden bytes and truncated input; two world tests cover frozen/running transitions, sentinel behavior and long overflow. Full workspace tests pass. Sky rendering, daylight brightness and live-server time assertions remain incomplete; the new state does not establish visual day/night parity.
+
+## Celestial angle and daylight rendering handoff
+
+WorldTime exposes the local MCP919 overworld celestial-angle and moon-phase calculations. The `--only celestial` oracle compares actual WorldProviderSurface results against Rust for every tick of one day at four partial-tick offsets: 96,000 observations, with zero float-bit differences. This specifically follows the inspected local MCP source and compiled reference, not a guessed alternative smoothing formula.
+
+render/daylight.rs computes World-style sun brightness and sky subtraction using the existing MathHelper cosine table and source float operation order. A focused test checks noon/midnight values. The native frontend now uses live world time and render interpolation to scale its existing sky background and subtract daylight darkness from mesh sky-light values, leaving block light unchanged. Dimension configurations without sky light retain the previous rendering path.
+
+The whole workspace passes. Visual output has not been manually inspected. Current background and terrain lighting remain simplified; celestial geometry, fog, biome sky colors, vanilla lightmap, weather packet integration and Nether/End visuals are not complete. Only celestial-angle bit equality is proven by the new exhaustive oracle.

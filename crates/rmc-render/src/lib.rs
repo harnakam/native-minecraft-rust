@@ -1,5 +1,7 @@
 //! Rendering facade, debug chunk visualization, and naive chunk mesh generation.
 
+pub mod daylight;
+
 use rmc_game::camera::CameraState;
 use rmc_game::player::Vec3;
 use rmc_game::simulation::SimulationSnapshot;

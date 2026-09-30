@@ -842,6 +842,19 @@ impl PlayApp {
 
         if let Some(runtime) = &self.runtime {
             if let (Some(output), Some(world_render)) = (runtime.output(), runtime.world_render()) {
+                let daylight = runtime.daylight(output.render.interpolation_alpha);
+                if let Some(light) = daylight {
+                    let scale = |color: [u8; 3]| {
+                        color.map(|channel| (f32::from(channel) * light.sky_color_multiplier) as u8)
+                    };
+                    fill_gradient(
+                        frame,
+                        width,
+                        height,
+                        scale([92, 132, 182]),
+                        scale([21, 24, 31]),
+                    );
+                }
                 let mut depth = vec![f32::INFINITY; (width * height) as usize];
                 render_world_meshes(
                     frame,
@@ -853,6 +866,7 @@ impl PlayApp {
                     output.render.camera.pitch,
                     world_render,
                     &self.assets,
+                    daylight.map_or(0, |d| d.skylight_subtracted),
                 );
                 render_tracked_players(
                     frame,
@@ -2540,6 +2554,7 @@ fn render_world_meshes(
     camera_pitch: f32,
     world_render: &WorldRenderSnapshot,
     assets: &GameAssets,
+    skylight_subtracted: u8,
 ) {
     let basis = camera_basis(camera_yaw, camera_pitch);
     for mesh in &world_render.chunk_meshes {
@@ -2552,6 +2567,7 @@ fn render_world_meshes(
             basis,
             mesh,
             assets,
+            skylight_subtracted,
         );
     }
 }
@@ -2607,13 +2623,18 @@ fn render_chunk_mesh(
     basis: CameraBasis,
     mesh: &ChunkMesh,
     assets: &GameAssets,
+    skylight_subtracted: u8,
 ) {
     for triangle in mesh.indices.chunks_exact(3) {
         let a = &mesh.vertices[triangle[0] as usize];
         let b = &mesh.vertices[triangle[1] as usize];
         let c = &mesh.vertices[triangle[2] as usize];
         let texture = assets.block_texture(a.block_state_id, a.face);
-        let light = light_factor(a.normal, a.sky_light, a.block_light);
+        let light = light_factor(
+            a.normal,
+            a.sky_light.saturating_sub(skylight_subtracted),
+            a.block_light,
+        );
         let fallback = fallback_block_color(a.block_state_id, light);
         let projected = [
             project_point(camera_position, basis, a.position, a.uv),

@@ -474,6 +474,12 @@ impl LiveRuntime {
         self.last_world_render.as_ref()
     }
 
+    pub fn daylight(&self, partial_ticks: f32) -> Option<rmc_render::daylight::Daylight> {
+        self.world.config().has_sky_light.then(|| {
+            rmc_render::daylight::Daylight::calculate(self.world.time(), partial_ticks, 0.0, 0.0)
+        })
+    }
+
     pub fn loaded_chunk_count(&self) -> usize {
         self.world.metrics().loaded_chunks
     }

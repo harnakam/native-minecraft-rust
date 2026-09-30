@@ -15,6 +15,21 @@ impl Default for WorldTime {
     }
 }
 impl WorldTime {
+    /// Overworld WorldProvider.calculateCelestialAngle from the local MCP919 source.
+    pub fn celestial_angle(&self, partial_ticks: f32) -> f32 {
+        let mut angle = ((self.world_time % 24000) as f32 + partial_ticks) / 24000.0 - 0.25;
+        if angle < 0.0 {
+            angle += 1.0;
+        }
+        if angle > 1.0 {
+            angle -= 1.0;
+        }
+        1.0 - (((f64::from(angle) * std::f64::consts::PI).cos() + 1.0) / 2.0) as f32
+    }
+
+    pub fn moon_phase(&self) -> i32 {
+        (((self.world_time / 24000 % 8) as i32 + 8) % 8) as i32
+    }
     pub(crate) fn receive(&mut self, total: i64, time: i64) {
         self.total_world_time = total;
         self.daylight_cycle = time >= 0;
