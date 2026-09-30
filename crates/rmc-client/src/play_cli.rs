@@ -2717,6 +2717,20 @@ fn parse_chat_component(json: &str) -> Result<serde_json::Value, serde_json::Err
                 validate_component_structure(item)?;
             }
         } else if let Some(object) = value.as_object() {
+            for key in [
+                "bold",
+                "italic",
+                "underlined",
+                "strikethrough",
+                "obfuscated",
+            ] {
+                if object
+                    .get(key)
+                    .is_some_and(|value| gson_component_string(value).is_none())
+                {
+                    return Err(error());
+                }
+            }
             if let Some(selected) = object.get("text").or_else(|| object.get("translate")) {
                 if gson_component_string(selected).is_none() {
                     return Err(error());
@@ -2769,6 +2783,20 @@ fn parse_chat_component(json: &str) -> Result<serde_json::Value, serde_json::Err
                 let mut object = serde_json::Map::new();
                 for (key, value) in fields {
                     object.insert(key, convert(&value)?);
+                }
+                for key in [
+                    "bold",
+                    "italic",
+                    "underlined",
+                    "strikethrough",
+                    "obfuscated",
+                ] {
+                    if let Some(text) = object.get(key).and_then(gson_component_string) {
+                        object.insert(
+                            key.to_owned(),
+                            serde_json::Value::Bool(text.eq_ignore_ascii_case("true")),
+                        );
+                    }
                 }
                 let selected = if object.contains_key("text") {
                     Some("text")
@@ -4743,6 +4771,27 @@ mod inventory_layout_tests {
         .unwrap();
         assert_eq!(chat_component_text(&prioritized), "");
         assert_eq!(tab_component_formatted(&prioritized), "");
+    }
+
+    #[test]
+    fn component_style_flags_use_gson_boolean_coercion() {
+        let value = parse_chat_component(r#"{"text":"A","bold":"TRUE","italic":[true],"extra":[{"text":"B","bold":"false","italic":1,"underlined":"true","strikethrough":"True"}]}"#).unwrap();
+        let runs = tab_styled_runs(&tab_component_formatted(&value), [255; 3], 100);
+        assert!(runs
+            .iter()
+            .any(|(text, style)| text == "A" && style.bold && style.italic));
+        assert!(runs.iter().any(|(text, style)| text == "B"
+            && !style.bold
+            && !style.italic
+            && style.underline
+            && style.strike));
+        for invalid in [
+            r#"{"text":"A","bold":null}"#,
+            r#"{"text":"A","italic":[]}"#,
+            r#"{"text":"A","underlined":{}}"#,
+        ] {
+            assert!(parse_chat_component(invalid).is_err(), "{invalid}");
+        }
     }
 
     #[test]

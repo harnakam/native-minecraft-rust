@@ -864,3 +864,16 @@ conversion. Native plain/styled tests cover nested numeric arrays, boolean keys
 and a singleton chat translation key. Executed MCP919 serializer/plain-text
 comparison confirms eight acceptance/rejection and output cases. Full workspace
 tests pass; error types and network ingress behavior remain incomplete.
+
+
+### Gson style boolean coercion
+
+The display parser now normalizes bold/italic/underlined/strikethrough/obfuscated
+fields using Gson-style primitive or singleton-array string coercion followed by
+case-insensitive true comparison. Explicit false values therefore override
+inherited style even when encoded as strings or numbers; malformed null, array
+and object fields are rejected. Executed MCP919 serializer iteration confirms
+parent A flags true/true/false/false, child B false/false/true/true and three
+invalid-field rejections, matching native regression results. Workspace tests
+pass. Obfuscated flag coercion is supported, but animated obfuscated glyph
+rendering remains incomplete, as do exact exception/ingress behavior and fonts.
