@@ -2687,6 +2687,16 @@ fn draw_tab_italic_glyph(
     }
 }
 
+fn gson_component_string(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(value) => Some(value.clone()),
+        serde_json::Value::Bool(value) => Some(value.to_string()),
+        serde_json::Value::Number(value) => Some(value.to_string()),
+        serde_json::Value::Array(values) if values.len() == 1 => gson_component_string(&values[0]),
+        _ => None,
+    }
+}
+
 fn parse_chat_component(json: &str) -> Result<serde_json::Value, serde_json::Error> {
     // Validate syntax and the normal serde nesting bound before recursive raw
     // traversal. Values used for display retain Gson's numeric token spelling.
@@ -2707,6 +2717,11 @@ fn parse_chat_component(json: &str) -> Result<serde_json::Value, serde_json::Err
                 validate_component_structure(item)?;
             }
         } else if let Some(object) = value.as_object() {
+            if let Some(selected) = object.get("text").or_else(|| object.get("translate")) {
+                if gson_component_string(selected).is_none() {
+                    return Err(error());
+                }
+            }
             if !object.contains_key("text") && !object.contains_key("translate") {
                 if let Some(score) = object.get("score") {
                     let score = score.as_object().ok_or_else(error)?;
@@ -2754,6 +2769,18 @@ fn parse_chat_component(json: &str) -> Result<serde_json::Value, serde_json::Err
                 let mut object = serde_json::Map::new();
                 for (key, value) in fields {
                     object.insert(key, convert(&value)?);
+                }
+                let selected = if object.contains_key("text") {
+                    Some("text")
+                } else if object.contains_key("translate") {
+                    Some("translate")
+                } else {
+                    None
+                };
+                if let Some(key) = selected {
+                    if let Some(text) = object.get(key).and_then(gson_component_string) {
+                        object.insert(key.to_owned(), serde_json::Value::String(text));
+                    }
                 }
                 serde_json::Value::Object(object)
             }
@@ -4716,6 +4743,37 @@ mod inventory_layout_tests {
         .unwrap();
         assert_eq!(chat_component_text(&prioritized), "");
         assert_eq!(tab_component_formatted(&prioritized), "");
+    }
+
+    #[test]
+    fn component_text_and_translation_use_gson_string_coercion() {
+        for (input, expected) in [
+            (r#"{"text":[[1e+03]],"bold":true}"#, "1e+03"),
+            (r#"{"translate":true}"#, "true"),
+            (
+                r#"{"translate":["chat.type.text"],"with":["Alex","hello"]}"#,
+                "<Alex> hello",
+            ),
+        ] {
+            let value = parse_chat_component(input).unwrap();
+            assert_eq!(chat_component_text(&value), expected);
+            assert_eq!(
+                tab_styled_runs(&tab_component_formatted(&value), [255; 3], 100)
+                    .iter()
+                    .map(|(text, _)| text.as_str())
+                    .collect::<String>(),
+                expected
+            );
+        }
+        for invalid in [
+            r#"{"text":[]}"#,
+            r#"{"text":[1,2]}"#,
+            r#"{"text":{}}"#,
+            r#"{"translate":null}"#,
+        ] {
+            assert!(parse_chat_component(invalid).is_err(), "{invalid}");
+        }
+        assert!(parse_chat_component(r#"{"text":"chosen","translate":null}"#).is_ok());
     }
 
     #[test]

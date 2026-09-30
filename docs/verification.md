@@ -852,3 +852,15 @@ on a text component. Exception classes differ and ingress/disconnect handling
 remains incomplete. Text/translate value coercion, styles and empty component
 arrays still require further comparison. Probe files and reference assets are
 ignored and are not published. The full workspace suite passes.
+
+
+### Gson text and translation string coercion
+
+Selected text/translate values now use Gson-compatible primitive or recursively
+single-element-array coercion before native display. Empty/multiple arrays,
+objects and null are rejected; lower-priority translate remains ignored when
+text is selected. Numeric token spelling is retained by coercing after raw-token
+conversion. Native plain/styled tests cover nested numeric arrays, boolean keys
+and a singleton chat translation key. Executed MCP919 serializer/plain-text
+comparison confirms eight acceptance/rejection and output cases. Full workspace
+tests pass; error types and network ingress behavior remain incomplete.
