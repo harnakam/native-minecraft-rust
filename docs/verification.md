@@ -253,3 +253,9 @@ Run `python scripts/verify_border_oracle.py --java-home <Java8 home> --cargo <ca
 The authored border oracle now also calls actual MCP919 minX/maxX/minZ/maxZ/getClosestDistance on stationary borders, avoiding clock ambiguity for these values. Five center positions, two world-size limits, four diameters and three query positions produce 120 scenarios and 600 double-bit comparisons. All 600 match Rust exactly, including world-limit clamps, degenerate zero diameter and negative outside distance. The existing 189 transition observations were rerun successfully in the same probe.
 
 The same verify_border_oracle.py command runs both groups. This establishes equality only for the listed finite stationary scenarios; moving bounds, nonfinite/signed-zero corner cases, full collision lists, warning strength and visual output remain outside this comparison.
+
+## Spectator wheel flight-speed control
+
+The native wheel handler now routes spectator scroll to the runtime, shell and simulation instead of hotbar selection. Simulation follows Minecraft.runTick's closed spectator-menu branch: normalize event direction, add direction times 0.005F to fly speed and clamp to 0..0.2. This is a local capability adjustment and does not manufacture a PlayerAbilities packet. The existing fly-speed-dependent acceleration uses the changed value.
+
+A regression verifies non-spectator rejection, sign normalization, increased actual forward motion, both speed limits and no unsolicited ability packet. Full workspace tests pass. Spectator GUI/menu selection, GUI-open input gating and official-client input/flight differential validation remain incomplete; this only implements the closed-menu speed behavior.

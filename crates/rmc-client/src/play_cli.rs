@@ -1170,6 +1170,12 @@ impl PlayApp {
         };
 
         if delta.abs() >= f32::EPSILON {
+            if let Some(runtime) = self.runtime.as_mut() {
+                if runtime.is_spectator() {
+                    runtime.adjust_spectator_fly_speed(delta.signum() as i8);
+                    return;
+                }
+            }
             self.runtime_input.mouse_scroll(delta.signum() as i8);
         }
     }

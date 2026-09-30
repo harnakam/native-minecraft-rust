@@ -153,6 +153,10 @@ impl ClientShell {
         }
     }
 
+    pub fn adjust_spectator_fly_speed(&mut self, delta: i8) {
+        self.simulation.adjust_spectator_fly_speed(delta);
+    }
+
     pub fn apply_player_packet(
         &mut self,
         packet: &rmc_net::codec::play::PlayClientboundPacket,

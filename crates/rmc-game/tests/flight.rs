@@ -86,3 +86,44 @@ fn landing_ends_flight_and_preserves_authoritative_capability_bits() {
     tick(&mut sim, false);
     assert_eq!(sim.take_ability_changes()[0].flags, 13);
 }
+
+#[test]
+fn spectator_scroll_changes_real_motion_and_clamps_without_ability_packet() {
+    use rmc_net::codec::play::ChangeGameStatePacket;
+    let mut baseline = LocalSimulationLayer::new(SimulationConfig::vanilla());
+    let mut faster = LocalSimulationLayer::new(SimulationConfig::vanilla());
+    assert_eq!(baseline.adjust_spectator_fly_speed(1), None);
+    for sim in [&mut baseline, &mut faster] {
+        sim.apply_player_packet(
+            &PlayClientboundPacket::ChangeGameState(ChangeGameStatePacket {
+                reason: 3,
+                value: 3.0,
+            }),
+            Some(1),
+        );
+    }
+    assert_eq!(
+        faster.adjust_spectator_fly_speed(10),
+        Some(0.05_f32 + 0.005_f32)
+    );
+    assert!(faster.take_ability_changes().is_empty());
+    for sim in [&mut baseline, &mut faster] {
+        sim.tick(
+            MovementInput {
+                forward: 1.0,
+                ..Default::default()
+            },
+            CameraState::default(),
+            0,
+        );
+    }
+    assert!(faster.player().position.z > baseline.player().position.z);
+    for _ in 0..100 {
+        faster.adjust_spectator_fly_speed(1);
+    }
+    assert_eq!(faster.adjust_spectator_fly_speed(1), Some(0.2));
+    for _ in 0..100 {
+        faster.adjust_spectator_fly_speed(-1);
+    }
+    assert_eq!(faster.adjust_spectator_fly_speed(-1), Some(0.0));
+}

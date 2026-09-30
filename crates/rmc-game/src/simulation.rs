@@ -271,6 +271,14 @@ impl LocalSimulationLayer {
         }
     }
 
+    pub fn adjust_spectator_fly_speed(&mut self, delta: i8) -> Option<f32> {
+        if self.game_mode != 3 || delta == 0 {
+            return None;
+        }
+        self.flying_speed = (self.flying_speed + f32::from(delta.signum()) * 0.005).clamp(0.0, 0.2);
+        Some(self.flying_speed)
+    }
+
     pub fn apply_player_packet(
         &mut self,
         packet: &rmc_net::codec::play::PlayClientboundPacket,

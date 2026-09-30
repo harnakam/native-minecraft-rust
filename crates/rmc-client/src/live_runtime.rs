@@ -474,6 +474,10 @@ impl LiveRuntime {
         matches!(self.game_mode & 7, 0 | 2)
     }
 
+    pub fn adjust_spectator_fly_speed(&mut self, delta: i8) {
+        self.shell.adjust_spectator_fly_speed(delta);
+    }
+
     pub fn is_spectator(&self) -> bool {
         self.game_mode == 3
     }
