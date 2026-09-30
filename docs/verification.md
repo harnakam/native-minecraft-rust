@@ -797,3 +797,17 @@ component arguments retained through loaded formats. No language text is shipped
 This is startup English lookup only: language switching, resource pack overlays,
 MCP numeric-format normalization and live reload remain incomplete. No manual
 native window/language rendering verification is claimed.
+
+
+### Language numeric format normalization
+
+The local language loader now applies MCP919 StringTranslate's numeric format
+normalization: lowercase d/f conversions with optional indexed digits and
+digit/dot width fields become %s, retaining the optional index. No new dependency
+is added. A regression failed before implementation and now covers widths,
+precision, leading-zero/oversized indices, percent adjacency, unchanged unsupported
+flags/case and UTF-8 surrounding text. A Java 8 probe reads the compiled MCP919
+private numericVariablePattern and confirms five grouped fixture outputs.
+This normalization runs before the existing plain/styled translation formatter.
+Language switching, pack overlays, reload and invalid-format exception propagation
+remain incomplete; assets/probe classes are not published.

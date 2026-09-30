@@ -125,11 +125,53 @@ impl GameAssets {
     }
 }
 
+fn normalize_language_numeric_formats(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut output = String::new();
+    let mut copied = 0;
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if bytes[cursor] != b'%' {
+            cursor += 1;
+            continue;
+        }
+        let start = cursor;
+        let digits_start = start + 1;
+        let mut end = digits_start;
+        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            end += 1;
+        }
+        let indexed = end > digits_start && bytes.get(end) == Some(&b'$');
+        let index_end = if indexed { end + 1 } else { digits_start };
+        end = index_end;
+        while bytes
+            .get(end)
+            .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'.')
+        {
+            end += 1;
+        }
+        if matches!(bytes.get(end), Some(b'd' | b'f')) {
+            output.push_str(&value[copied..start]);
+            output.push('%');
+            if indexed {
+                output.push_str(&value[digits_start..index_end]);
+            }
+            output.push('s');
+            cursor = end + 1;
+            copied = cursor;
+        } else {
+            cursor = start + 1;
+        }
+    }
+    output.push_str(&value[copied..]);
+    output
+}
+
 pub(crate) fn parse_language_table(text: &str) -> BTreeMap<String, String> {
     text.lines()
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
         .filter_map(|line| line.split_once('='))
-        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .map(|(key, value)| (key.to_owned(), normalize_language_numeric_formats(value)))
         .collect()
 }
 
@@ -635,6 +677,21 @@ fn should_extract_asset(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::should_extract_asset;
+    #[test]
+    fn language_numeric_formats_follow_mcp_replacement_pattern() {
+        let cases = [
+            ("%d / %.2f / %3$08.2f", "%s / %s / %3$s"),
+            ("%%d / %01$d / %..f", "%%s / %01$s / %s"),
+            ("%s %D %+d %1$-2f", "%s %D %+d %1$-2f"),
+            ("%0$d %2147483648$f", "%0$s %2147483648$s"),
+            ("日本語 %2$.3f", "日本語 %2$s"),
+        ];
+        for (input, expected) in cases {
+            let table = super::parse_language_table(&format!("key={input}"));
+            assert_eq!(table["key"], expected);
+        }
+    }
+
     #[test]
     fn imports_only_supported_local_language_file() {
         assert!(should_extract_asset("assets/minecraft/lang/en_US.lang"));
