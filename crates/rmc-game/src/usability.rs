@@ -42,6 +42,7 @@ pub struct TabListEntrySnapshot {
     pub name: String,
     pub display_name_json: Option<String>,
     pub team_formatted_name: String,
+    pub tab_score: Option<(i32, String)>,
     pub latency: i32,
     pub game_mode: i32,
     pub property_count: usize,
@@ -339,6 +340,17 @@ impl UsabilityState {
                 name: entry.name.clone(),
                 display_name_json: entry.display_name_json.clone(),
                 team_formatted_name: self.rendered_score_name(&entry.name),
+                tab_score: self.display_slots.get(&0).and_then(|objective| {
+                    self.objectives.get(objective).map(|state| {
+                        (
+                            self.scores
+                                .get(&(objective.clone(), entry.name.clone()))
+                                .copied()
+                                .unwrap_or(0),
+                            state.render_type.clone(),
+                        )
+                    })
+                }),
                 latency: entry.latency,
                 game_mode: entry.game_mode,
                 property_count: entry.property_count,
@@ -806,6 +818,56 @@ mod tests {
                 .map(|line| line.rendered_name.clone()),
             Some("[R] Rush".to_owned())
         );
+    }
+
+    #[test]
+    fn tab_score_tracks_display_slot_zero_updates_and_objective_removal() {
+        let mut state = UsabilityState::new();
+        state.apply_play_packet(&PlayClientboundPacket::PlayerListItem(
+            PlayerListItemPacket {
+                action: PlayerListItemAction::AddPlayer,
+                entries: vec![PlayerListEntry {
+                    uuid: [1; 16],
+                    name: Some("Alex".into()),
+                    properties: vec![],
+                    game_mode: Some(0),
+                    latency: Some(1),
+                    display_name_json: None,
+                }],
+            },
+        ));
+        let mut objective = ScoreboardObjectivePacket {
+            objective_name: "points".into(),
+            mode: ScoreboardObjectiveMode::Create,
+            objective_value: "Points".into(),
+            render_type: "integer".into(),
+        };
+        state.apply_play_packet(&PlayClientboundPacket::ScoreboardObjective(
+            objective.clone(),
+        ));
+        state.apply_play_packet(&PlayClientboundPacket::DisplayScoreboard(
+            DisplayScoreboardPacket {
+                position: 0,
+                score_name: "points".into(),
+            },
+        ));
+        assert_eq!(
+            state.snapshot().tab_list[0].tab_score,
+            Some((0, "integer".into()))
+        );
+        state.apply_play_packet(&PlayClientboundPacket::UpdateScore(UpdateScorePacket {
+            score_name: "Alex".into(),
+            action: UpdateScoreAction::Change,
+            objective_name: "points".into(),
+            value: -42,
+        }));
+        assert_eq!(
+            state.snapshot().tab_list[0].tab_score,
+            Some((-42, "integer".into()))
+        );
+        objective.mode = ScoreboardObjectiveMode::Remove;
+        state.apply_play_packet(&PlayClientboundPacket::ScoreboardObjective(objective));
+        assert_eq!(state.snapshot().tab_list[0].tab_score, None);
     }
 
     #[test]

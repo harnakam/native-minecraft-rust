@@ -243,6 +243,7 @@ mod tests {
                 uuid: [1; 16],
                 name: "Rush".to_owned(),
                 team_formatted_name: "Rush".into(),
+                tab_score: None,
                 display_name_json: Some("{\"text\":\"[MVP+] Rush\"}".to_owned()),
                 latency: 32,
                 game_mode: 1,

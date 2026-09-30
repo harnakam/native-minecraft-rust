@@ -480,3 +480,17 @@ Full-workspace tests passed; follow-up targeted tests cover the update flag.
 Legacy formatting codes/styles, Minecraft typography, server-side live team
 visual comparison, and complete Tab-screen compatibility remain unverified or
 incomplete. No Minecraft assets or reference source are included.
+
+
+### Native integer Tab scores
+
+Tab snapshots resolve display slot 0, objective render type, and each player's
+profile-name score from received scoreboard state. Missing scores resolve to
+zero as in Minecraft's score lookup. Native cells display integer objectives in
+yellow, reserve space before the ping indicator, and omit scores for spectators.
+Tests cover display slot selection, score updates (including a negative value),
+objective removal, actual framebuffer changes, and spectator omission.
+The workspace suite and the final targeted state test pass. Heart-rendered
+objectives are retained in state but their animated heart rendering is not yet
+implemented. Exact width/layout, live official-server score delivery, fonts,
+and manual display parity remain incomplete. No game assets are published.

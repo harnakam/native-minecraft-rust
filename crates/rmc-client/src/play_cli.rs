@@ -2613,6 +2613,13 @@ fn draw_tab_snapshot(
                             .unwrap_or_else(|_| json.clone())
                     })
                     .unwrap_or_else(|| entry.team_formatted_name.clone());
+                let ping_width = if icons.is_some() { 13 } else { 60 };
+                let score = entry
+                    .tab_score
+                    .as_ref()
+                    .filter(|(_, kind)| kind == "integer" && entry.game_mode != 3)
+                    .map(|(value, _)| value.to_string());
+                let score_width = score.as_ref().map_or(0, |text| native_text_width(text) + 8);
                 let mut cell = vec![0; column_width as usize * 16 * 4];
                 for pixel in cell.chunks_exact_mut(4) {
                     pixel.copy_from_slice(&[18, 22, 28, 255]);
@@ -2625,8 +2632,7 @@ fn draw_tab_snapshot(
                     0,
                     &truncate_text(
                         &name,
-                        ((column_width - if icons.is_some() { 17 } else { 64 }).max(0) / 8)
-                            as usize,
+                        ((column_width - ping_width - score_width - 4).max(0) / 8) as usize,
                     ),
                     if entry.game_mode == 3 {
                         [144, 144, 144]
@@ -2635,6 +2641,21 @@ fn draw_tab_snapshot(
                     },
                     1,
                 );
+                if let Some(score) = score {
+                    let score_x = column_width - ping_width - native_text_width(&score) - 2;
+                    if score_x > 4 {
+                        draw_text_scaled(
+                            &mut cell,
+                            column_width as u32,
+                            16,
+                            score_x,
+                            0,
+                            &score,
+                            [255, 255, 85],
+                            1,
+                        );
+                    }
+                }
                 if let Some(icons) = icons {
                     draw_tab_ping(
                         &mut cell,
@@ -3912,6 +3933,41 @@ mod inventory_layout_tests {
             );
             assert_eq!(frame[0], 0);
         }
+    }
+
+    #[test]
+    fn native_tab_integer_scores_draw_and_spectators_hide_them() {
+        use rmc_net::codec::play::{
+            PlayClientboundPacket, PlayerListEntry, PlayerListItemAction, PlayerListItemPacket,
+        };
+        let mut state = rmc_game::usability::UsabilityState::new();
+        state.apply_play_packet(&PlayClientboundPacket::PlayerListItem(
+            PlayerListItemPacket {
+                action: PlayerListItemAction::AddPlayer,
+                entries: vec![PlayerListEntry {
+                    uuid: [1; 16],
+                    name: Some("Alex".into()),
+                    properties: vec![],
+                    game_mode: Some(0),
+                    latency: Some(1),
+                    display_name_json: None,
+                }],
+            },
+        ));
+        let mut snapshot = state.snapshot();
+        let mut before = vec![0; 400 * 100 * 4];
+        draw_tab_snapshot(&mut before, 400, 100, &snapshot, None);
+        snapshot.tab_list[0].tab_score = Some((42, "integer".into()));
+        let mut after = vec![0; 400 * 100 * 4];
+        draw_tab_snapshot(&mut after, 400, 100, &snapshot, None);
+        assert_ne!(before, after);
+        snapshot.tab_list[0].game_mode = 3;
+        after.fill(0);
+        draw_tab_snapshot(&mut after, 400, 100, &snapshot, None);
+        snapshot.tab_list[0].tab_score = None;
+        before.fill(0);
+        draw_tab_snapshot(&mut before, 400, 100, &snapshot, None);
+        assert_eq!(before, after);
     }
 
     #[test]
