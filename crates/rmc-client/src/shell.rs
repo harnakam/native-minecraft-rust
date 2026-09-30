@@ -111,6 +111,15 @@ impl ClientShell {
                 self.input.selected_hotbar_slot = packet.slot as u8;
             }
         }
+        if matches!(
+            packet,
+            rmc_net::codec::play::PlayClientboundPacket::Respawn(_)
+        ) {
+            self.input = InputSnapshot::default();
+            self.camera.yaw = 0.0;
+            self.camera.pitch = 0.0;
+            self.packet_emitter = rmc_game::player::WalkingPacketEmitter::default();
+        }
         self.simulation.apply_player_packet(packet, entity_id);
     }
 

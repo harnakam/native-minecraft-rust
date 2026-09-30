@@ -60,3 +60,78 @@ fn hardcore_death_does_not_send_a_survival_respawn() {
     }
     assert!(state.request_respawn().is_none());
 }
+
+#[test]
+fn respawn_creates_fresh_local_movement_and_inventory_state() {
+    use rmc_game::{
+        camera::CameraState,
+        input::MovementInput,
+        inventory::InventoryState,
+        simulation::{LocalSimulationLayer, SimulationConfig},
+    };
+    use rmc_net::codec::play::{EntityEffectPacket, PlayerAbilitiesPacket};
+    let mut sim = LocalSimulationLayer::new(SimulationConfig::vanilla());
+    sim.apply_player_packet(
+        &PlayClientboundPacket::EntityEffect(EntityEffectPacket {
+            entity_id: 1,
+            effect_id: 8,
+            amplifier: 2,
+            duration: 100,
+            hide_particles: 0,
+        }),
+        Some(1),
+    );
+    sim.apply_player_packet(
+        &PlayClientboundPacket::PlayerAbilities(PlayerAbilitiesPacket {
+            flags: 6,
+            flying_speed: 0.2,
+            walking_speed: 0.4,
+        }),
+        Some(1),
+    );
+    sim.tick(
+        MovementInput {
+            forward: 1.0,
+            sprint: true,
+            jump: true,
+            ..MovementInput::default()
+        },
+        CameraState::default(),
+        8,
+    );
+    sim.apply_player_packet(
+        &PlayClientboundPacket::Respawn(RespawnPacket {
+            dimension: 0,
+            difficulty: 1,
+            game_mode: 0,
+            level_type: "default".into(),
+        }),
+        Some(1),
+    );
+    assert_eq!(sim.effect_amplifier(8), None);
+    assert_eq!(sim.velocity(), rmc_game::player::Vec3::ZERO);
+    assert_eq!(sim.player().selected_hotbar_slot, 0);
+    assert!(!sim.player().sprinting);
+    sim.tick(
+        MovementInput {
+            jump: true,
+            ..MovementInput::default()
+        },
+        CameraState::default(),
+        0,
+    );
+    assert!((sim.player().position.y - f64::from(0.42_f32)).abs() < 1e-9);
+    let mut inventory = InventoryState::new();
+    inventory.open_player_inventory();
+    inventory.sync_selected_hotbar_slot(8);
+    inventory.queue_pickup_click(0, 36, 0);
+    inventory.reset_for_respawn();
+    assert!(inventory.open_window().is_none());
+    assert_eq!(inventory.selected_hotbar_slot(), 0);
+    assert!(inventory
+        .inventory_window()
+        .slots
+        .iter()
+        .all(Option::is_none));
+    assert!(inventory.pending_transactions().is_empty());
+}

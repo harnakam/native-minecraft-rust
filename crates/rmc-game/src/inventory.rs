@@ -124,6 +124,10 @@ impl InventoryState {
         }
     }
 
+    pub fn reset_for_respawn(&mut self) {
+        *self = Self::new();
+    }
+
     pub fn selected_hotbar_slot(&self) -> u8 {
         self.selected_hotbar_slot
     }

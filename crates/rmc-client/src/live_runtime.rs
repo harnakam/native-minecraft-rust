@@ -249,6 +249,7 @@ pub struct LiveRuntime {
     combat: CombatState,
     mining: MiningState,
     game_mode: u8,
+    dimension: Option<i32>,
     world: WorldSnapshot,
     entity_tracker: EntityTracker,
     mesh_pipeline: ChunkMeshPipeline,
@@ -323,6 +324,7 @@ impl LiveRuntime {
             combat: CombatState::new(CombatConfig::vanilla()),
             mining: MiningState::default(),
             game_mode: 0,
+            dimension: None,
             world: WorldSnapshot::new(WorldConfig::overworld()),
             entity_tracker: EntityTracker::default(),
             mesh_pipeline: ChunkMeshPipeline::with_config(mesh_config),
@@ -780,6 +782,7 @@ impl LiveRuntime {
             }
             SessionAction::JoinedGame(packet) => {
                 self.game_mode = packet.game_mode;
+                self.dimension = Some(i32::from(packet.dimension));
                 self.mining.reset();
                 self.summary.joined_game = true;
                 self.position_initialized = false;
@@ -796,9 +799,17 @@ impl LiveRuntime {
                 self.mining.reset();
                 self.position_initialized = false;
                 self.pending_simulation_events.clear();
-                self.world = WorldSnapshot::new(world_config_for_dimension(packet.dimension));
+                self.usability.inventory_mut().reset_for_respawn();
+                if self.dimension != Some(packet.dimension) {
+                    self.world = WorldSnapshot::new(world_config_for_dimension(packet.dimension));
+                    self.mesh_pipeline = ChunkMeshPipeline::with_config(self.mesh_config);
+                    self.last_world_render = None;
+                }
+                self.dimension = Some(packet.dimension);
                 self.entity_tracker.clear();
-                self.mesh_pipeline = ChunkMeshPipeline::with_config(self.mesh_config);
+                self.last_output = None;
+                self.last_targeted_entity = None;
+                self.last_usability_snapshot = None;
             }
             // The protocol driver already emits these acknowledgements exactly once.
             SessionAction::ReplyKeepAlive { .. } | SessionAction::TeleportCorrectionRequired(_) => {
@@ -1222,6 +1233,17 @@ mod tests {
             std::thread::sleep(Duration::from_millis(2));
         }
         assert_eq!(requests, 1);
+        runtime
+            .world
+            .apply_block_change(&rmc_net::codec::play::BlockChangePacket {
+                position: rmc_net::codec::play::BlockPosition::new(0, 64, 0),
+                block_state_id: 16,
+            })
+            .unwrap();
+        runtime
+            .usability
+            .inventory_mut()
+            .sync_selected_hotbar_slot(8);
         let respawn = PlayClientboundPacket::Respawn(RespawnPacket {
             dimension: 0,
             difficulty: 1,
@@ -1257,6 +1279,25 @@ mod tests {
         }
         assert_eq!(runtime.combat_snapshot().health, 20.0);
         assert!(!runtime.combat_snapshot().respawn_requested);
+        assert_eq!(
+            runtime
+                .world
+                .block_state_or_air(rmc_world::BlockPos::new(0, 64, 0)),
+            16
+        );
+        assert_eq!(runtime.usability.inventory().selected_hotbar_slot(), 0);
+        assert!(!runtime.position_initialized);
+        runtime
+            .handle_session_action(SessionAction::Respawned(RespawnPacket {
+                dimension: -1,
+                difficulty: 1,
+                game_mode: 0,
+                level_type: "default".into(),
+            }))
+            .unwrap();
+        assert_eq!(runtime.world.metrics().loaded_chunks, 0);
+        assert!(!runtime.world.config().has_sky_light);
+        assert_eq!(runtime.dimension, Some(-1));
     }
 
     #[test]

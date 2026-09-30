@@ -312,11 +312,10 @@ impl LocalSimulationLayer {
                     }
                 }
             }
-            Packet::Respawn(_) => {
-                self.alive = true;
-                self.effects.clear();
-                self.jump_ticks = 0;
-                self.in_web = false;
+            Packet::Respawn(packet) => {
+                *self = Self::new(self.config);
+                self.allow_flying = matches!(packet.game_mode, 1 | 3);
+                self.flying = packet.game_mode == 3;
             }
             _ => {}
         }
