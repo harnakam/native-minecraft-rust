@@ -164,10 +164,10 @@ impl<'a> PacketReader<'a> {
             .map_err(|_| BufferError::InvalidUtf8)?
             .to_owned();
 
-        if string.chars().count() > max_chars {
+        if string.encode_utf16().count() > max_chars {
             return Err(BufferError::DecodedStringTooLong {
                 max_chars,
-                actual: string.chars().count(),
+                actual: string.encode_utf16().count(),
             });
         }
 
@@ -476,7 +476,7 @@ impl PacketWriter {
     }
 
     pub fn write_string(&mut self, value: &str, max_chars: usize) -> Result<(), BufferError> {
-        let actual_chars = value.chars().count();
+        let actual_chars = value.encode_utf16().count();
 
         if actual_chars > max_chars {
             return Err(BufferError::DecodedStringTooLong {

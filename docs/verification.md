@@ -299,3 +299,9 @@ A regression checks adjacent deduplication, oldest-bound clamping, traversal and
 Native typing and clipboard insertion now share a filter based on ChatAllowedCharacters: reject characters below U+0020, DEL and section sign. GuiChat's 100-character input limit is measured in UTF-16 code units, so supplementary characters consume two units rather than one Rust scalar. Insertion stops before exceeding the limit and keeps input valid UTF-8. Launcher text fields retain their existing separate filtering.
 
 A regression checks filtered pasted controls/section sign, exact UTF-16 limits, supplementary-character boundaries and subsequent insertion. Full workspace tests pass. Rust does not retain isolated surrogate halves when a supplementary character would straddle the limit, unlike Java substring behavior; caret/selection-aware insertion, native clipboard interaction and complete Unicode font behavior remain incomplete.
+
+## Protocol string UTF-16 bounds
+
+PacketReader and PacketWriter now measure Minecraft string length in UTF-16 code units, matching PacketBuffer's Java String.length, instead of Rust Unicode scalar count. This applies to bounded strings throughout the codec. ChatMessageServerboundPacket::vanilla also truncates by the 100-unit limit, so programmatic/runtime submissions bypassing native input do not send more supplementary characters than Java accepts.
+
+A regression checks exact supplementary-character UTF-8 bytes, one-unit rejection/two-unit acceptance in both directions, 50-emoji chat construction/roundtrip and over-limit direct packet rejection. Full workspace tests pass. Invalid UTF-8 replacement behavior and isolated-surrogate truncation remain outside proven parity; Rust keeps complete valid scalars when truncation would split a surrogate pair. No complete text-protocol/client parity is claimed.

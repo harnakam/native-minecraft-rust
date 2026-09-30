@@ -1856,7 +1856,14 @@ pub struct ChatMessageServerboundPacket {
 
 impl ChatMessageServerboundPacket {
     pub fn vanilla(message: &str) -> Self {
-        let truncated = message.chars().take(MAX_SERVERBOUND_CHAT_CHARS).collect();
+        let mut units = 0;
+        let truncated = message
+            .chars()
+            .take_while(|character| {
+                units += character.len_utf16();
+                units <= MAX_SERVERBOUND_CHAT_CHARS
+            })
+            .collect();
         Self { message: truncated }
     }
 }
