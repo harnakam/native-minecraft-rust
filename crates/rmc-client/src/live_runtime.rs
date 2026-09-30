@@ -596,6 +596,19 @@ impl LiveRuntime {
         self.flush_if_pending()
     }
 
+    pub fn collect_window_slot(&mut self, window_id: u8, slot_id: i16) -> Result<(), String> {
+        if self.usability.inventory().pending_transactions().len() >= 128 {
+            return Err("Waiting for server inventory acknowledgements".to_owned());
+        }
+        let packet = self
+            .usability
+            .inventory_mut()
+            .queue_collect_click(window_id, slot_id, 0)
+            .map_err(str::to_owned)?;
+        self.queue_play_packet(&packet)?;
+        self.flush_if_pending()
+    }
+
     pub fn clone_window_slot(&mut self, window_id: u8, slot_id: i16) -> Result<(), String> {
         if self.usability.inventory().pending_transactions().len() >= 128 {
             return Err("Waiting for server inventory acknowledgements".to_owned());
@@ -1328,6 +1341,141 @@ mod tests {
         assert_eq!(runtime.world.metrics().loaded_chunks, 0);
         assert!(!runtime.world.config().has_sky_light);
         assert_eq!(runtime.dimension, Some(-1));
+    }
+
+    #[test]
+    #[ignore = "requires user-authorized official offline server with VanillaProbe operator"]
+    fn official_server_confirms_double_click_collection() {
+        let mut config = LiveRuntimeConfig::offline("VanillaProbe");
+        config.server_host = "127.0.0.1".into();
+        config.server_port = std::env::var("RMC_VANILLA_PORT").unwrap().parse().unwrap();
+        let mut runtime = LiveRuntime::connect(config).unwrap();
+        fn advance(runtime: &mut LiveRuntime) {
+            runtime
+                .step(
+                    Duration::from_millis(50),
+                    &InputFrame::default(),
+                    &RuntimeActionInput::default(),
+                )
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        for _ in 0..300 {
+            advance(&mut runtime);
+            if runtime.output().is_some() {
+                break;
+            }
+        }
+        assert!(runtime.output().is_some());
+        for command in [
+            "/clear VanillaProbe",
+            "/replaceitem entity VanillaProbe slot.inventory.0 minecraft:stone 10",
+            "/replaceitem entity VanillaProbe slot.inventory.1 minecraft:stone 20",
+            "/replaceitem entity VanillaProbe slot.inventory.2 minecraft:stone 30",
+        ] {
+            runtime.send_chat_message(command).unwrap();
+        }
+        for _ in 0..100 {
+            advance(&mut runtime);
+            if runtime
+                .usability
+                .inventory()
+                .inventory_window()
+                .slot(11)
+                .and_then(|s| s.as_ref())
+                .is_some_and(|s| s.item_id == 1 && s.count == 30)
+            {
+                break;
+            }
+        }
+        runtime.open_player_inventory().unwrap();
+        runtime.click_window_slot(0, 9, 0).unwrap();
+        for _ in 0..100 {
+            advance(&mut runtime);
+            if runtime
+                .usability
+                .inventory()
+                .pending_transactions()
+                .is_empty()
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            runtime
+                .usability
+                .inventory()
+                .carried_item()
+                .as_ref()
+                .unwrap()
+                .count,
+            10
+        );
+        runtime.collect_window_slot(0, 9).unwrap();
+        for _ in 0..100 {
+            advance(&mut runtime);
+            if runtime
+                .usability
+                .inventory()
+                .pending_transactions()
+                .is_empty()
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            runtime
+                .usability
+                .inventory()
+                .carried_item()
+                .as_ref()
+                .unwrap()
+                .count,
+            60
+        );
+        runtime.click_window_slot(0, 13, 0).unwrap();
+        for _ in 0..100 {
+            advance(&mut runtime);
+            if runtime
+                .usability
+                .inventory()
+                .pending_transactions()
+                .is_empty()
+            {
+                break;
+            }
+        }
+        let chat_count = runtime.usability.snapshot().chat_lines.len();
+        runtime
+            .send_chat_message(
+                r#"/testfor VanillaProbe {Inventory:[{Slot:13b,id:"minecraft:stone",Count:60b}]}"#,
+            )
+            .unwrap();
+        let mut confirmed = false;
+        for _ in 0..100 {
+            advance(&mut runtime);
+            confirmed = runtime
+                .usability
+                .snapshot()
+                .chat_lines
+                .iter()
+                .skip(chat_count)
+                .any(|line| line.message_json.contains("commands.testfor.success"));
+            if confirmed {
+                break;
+            }
+        }
+        assert!(
+            confirmed,
+            "official server did not confirm collected stack quantity"
+        );
+        runtime.close_open_window().unwrap();
+        if std::env::var_os("RMC_STOP_TEST_SERVER").is_some() {
+            runtime.send_chat_message("/stop").unwrap();
+        }
+        println!(
+            "official server confirms mode-6 collection: 10+20+30 stone => 60 in inventory slot 13"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # A Native Minecraft 1.8.9 Client Written in Rust
 
-A native Rust multiplayer client targeting Minecraft 1.8.9 (protocol 47). This is an independent implementation informed by local MCP919 behavioral analysis. It is **not yet a complete vanilla-compatible client**. Singleplayer is outside the current scope.
+A native Rust multiplayer client targeting Minecraft 1.8.9 (protocol 47). This is an independent implementation informed by local MCP919 behavioral analysis. It is **not yet a complete vanilla-compatible client**. Singleplayer is not implemented and remains part of the full-compatibility roadmap.
 
 ## Run
 

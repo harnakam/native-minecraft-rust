@@ -1117,3 +1117,24 @@ tests and the full workspace suite pass. Underline/strike shadow positioning,
 title shadow offsets, extended default atlas mapping, forced Unicode mode
 and manual visual parity remain incomplete. Per-character mask composition
 has not been performance profiled. No game assets are published.
+
+### Title per-glyph Unicode shadows
+
+Chat and title share glyph shadow offsets. Actual-jar Unicode scaled title
+shadow pixel/color comparison and ASCII regression tests pass. Decoration
+lines and forced Unicode mode remain incomplete; composition is not profiled.
+
+### Inventory mode-6 collection vertical slice
+
+MCP919 Container.slotClick and GuiContainer were inspected. Player inventory
+and unrestricted storage collect partial stacks before full stacks, honor
+direction, item/damage/NBT equality and stack limits, skip crafting output
+and send a null returned stack. Existing prediction rollback is reused.
+GUI matching left clicks within 250 ms suppress the second pickup and submit
+collection on release over the same slot through LiveRuntime. E/Escape clears
+pending click state. Tests cover priority, direction, occupied-slot no-op and
+rejection rollback. The official 1.8.9 server test picked up 10 stone, collected
+20+30, placed 60 into slot 13 and received /testfor server-side NBT success.
+Dedicated tests and full workspace tests pass. Manual mouse interaction,
+Shift double-click, special-container rules and drag remain unverified or
+unimplemented. M1 remains in progress.

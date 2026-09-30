@@ -380,6 +380,8 @@ struct PlayApp {
     runtime: Option<LiveRuntime>,
     runtime_input: RuntimeInputState,
     mouse_position: PhysicalPosition<f32>,
+    last_inventory_click: Option<(u8, i16, Instant)>,
+    pending_collect: Option<(u8, i16)>,
     last_frame_at: Instant,
     launched_at: Instant,
     mouse_captured: bool,
@@ -435,6 +437,8 @@ impl PlayApp {
                 close_window_pressed: false,
             },
             mouse_position: PhysicalPosition::new(0.0, 0.0),
+            last_inventory_click: None,
+            pending_collect: None,
             last_frame_at: Instant::now(),
             launched_at: Instant::now(),
             mouse_captured: false,
@@ -1150,6 +1154,21 @@ impl PlayApp {
                     }
                     return;
                 }
+                if !pressed && button == MouseButton::Left {
+                    if let Some((window_id, slot_id)) = self.pending_collect.take() {
+                        if self.window_slot_at(self.mouse_position.x, self.mouse_position.y)
+                            == Some((window_id, slot_id))
+                        {
+                            if let Some(runtime) = &mut self.runtime {
+                                if let Err(error) = runtime.collect_window_slot(window_id, slot_id)
+                                {
+                                    self.status_line = error;
+                                }
+                            }
+                        }
+                        return;
+                    }
+                }
                 if pressed
                     && matches!(
                         button,
@@ -1160,6 +1179,27 @@ impl PlayApp {
                     if let Some((window_id, slot_id)) =
                         self.window_slot_at(self.mouse_position.x, self.mouse_position.y)
                     {
+                        let now = Instant::now();
+                        let double_click = button == MouseButton::Left
+                            && !self.modifiers_shift
+                            && slot_id >= 0
+                            && !(window_id == 0 && slot_id == 0)
+                            && self.last_inventory_click.is_some_and(|(id, slot, time)| {
+                                id == window_id
+                                    && slot == slot_id
+                                    && now.duration_since(time) < Duration::from_millis(250)
+                            });
+                        self.last_inventory_click =
+                            if button == MouseButton::Left && !self.modifiers_shift {
+                                Some((window_id, slot_id, now))
+                            } else {
+                                None
+                            };
+                        if double_click {
+                            self.last_inventory_click = None;
+                            self.pending_collect = Some((window_id, slot_id));
+                            return;
+                        }
                         if let Some(runtime) = &mut self.runtime {
                             let button_id = if button == MouseButton::Right { 1 } else { 0 };
                             let result = if button == MouseButton::Middle {
@@ -1438,6 +1478,8 @@ impl PlayApp {
                 return;
             }
             if matches!(key, VirtualKeyCode::E | VirtualKeyCode::Escape) && self.window_is_open() {
+                self.last_inventory_click = None;
+                self.pending_collect = None;
                 if let Some(runtime) = &mut self.runtime {
                     if let Err(error) = runtime.close_open_window() {
                         self.status_line = error;
@@ -2522,18 +2564,22 @@ fn bitmap_ascii_advance(font: &ImageAsset, ch: char) -> Option<i32> {
     Some((right as i32 + 1) * 2)
 }
 
-fn native_shadow_offset(text: &str) -> i32 {
-    let Some(Some(font)) = HUD_BITMAP_FONT.get() else {
-        return 1;
-    };
-    if font.width() != 128 || font.height() != 128 {
-        return 1;
-    }
-    if tab_styled_runs(text, [255; 3], usize::MAX)
-        .iter()
-        .all(|(text, _)| text.chars().all(|ch| (' '..='~').contains(&ch)))
+fn native_glyph_shadow_offset(ch: char) -> i32 {
+    if HUD_BITMAP_FONT
+        .get()
+        .and_then(Option::as_ref)
+        .and_then(|font| bitmap_ascii_advance(font, ch))
+        .is_some()
     {
         2
+    } else if HUD_UNICODE_FONT
+        .get()
+        .and_then(Option::as_ref)
+        .and_then(|font| unicode_font_render_advance(font, ch))
+        .is_some()
+    {
+        // Vanilla cancels the one-unit normal-mode shadow offset for Unicode glyphs.
+        0
     } else {
         1
     }
@@ -3917,24 +3963,7 @@ fn blend_styled_chat_pass(
     for (text, mut style) in glyphs {
         let ch = text.chars().next().unwrap();
         let shadow_offset = if shadow {
-            if HUD_BITMAP_FONT
-                .get()
-                .and_then(Option::as_ref)
-                .and_then(|font| bitmap_ascii_advance(font, ch))
-                .is_some()
-            {
-                2
-            } else if HUD_UNICODE_FONT
-                .get()
-                .and_then(Option::as_ref)
-                .and_then(|font| unicode_font_render_advance(font, ch))
-                .is_some()
-            {
-                // Vanilla subtracts the normal-mode one-unit offset for Unicode glyphs.
-                0
-            } else {
-                1
-            }
+            native_glyph_shadow_offset(ch)
         } else {
             0
         };
@@ -4144,16 +4173,7 @@ fn draw_styled_title_line(
     scale: i32,
     alpha: u8,
 ) {
-    draw_styled_title_pass(
-        frame,
-        width,
-        height,
-        text,
-        y + scale * native_shadow_offset(text),
-        scale,
-        alpha,
-        true,
-    );
+    draw_styled_title_pass(frame, width, height, text, y, scale, alpha, true);
     draw_styled_title_pass(frame, width, height, text, y, scale, alpha, false);
 }
 
@@ -4186,13 +4206,18 @@ fn draw_styled_title_pass(
         .iter()
         .map(|(text, style)| run_width(text, *style))
         .sum::<i32>();
-    let mut x = width as i32 / 2 - total * scale / 2
-        + if shadow {
-            scale * native_shadow_offset(text)
+    let mut x = width as i32 / 2 - total * scale / 2;
+    let glyphs = runs.into_iter().flat_map(|(text, style)| {
+        text.chars()
+            .map(|ch| (ch.to_string(), style))
+            .collect::<Vec<_>>()
+    });
+    for (text, mut style) in glyphs {
+        let offset = if shadow {
+            native_glyph_shadow_offset(text.chars().next().unwrap()) * scale
         } else {
             0
         };
-    for (text, mut style) in runs {
         if shadow {
             style.color = title_shadow_color(style.color);
         }
@@ -4227,8 +4252,8 @@ fn draw_styled_title_pass(
                 }
                 for dy in 0..scale {
                     for dx in 0..scale {
-                        let tx = x + (px - 4) * scale + dx;
-                        let ty = y + py * scale + dy;
+                        let tx = x + (px - 4) * scale + dx + offset;
+                        let ty = y + py * scale + dy + offset;
                         if tx < 0 || ty < 0 || tx >= width as i32 || ty >= height as i32 {
                             continue;
                         }
@@ -5406,8 +5431,8 @@ mod inventory_layout_tests {
         assert_eq!(native_bold_advance('A', true), 2);
         assert_eq!(native_bold_advance('A', false), 0);
         assert_eq!(native_bold_advance('日', true), 1);
-        assert_eq!(native_shadow_offset("\u{a7}cA"), 2);
-        assert_eq!(native_shadow_offset("日"), 1);
+        assert_eq!(native_glyph_shadow_offset('A'), 2);
+        assert_eq!(native_glyph_shadow_offset('日'), 1);
         let mut shadow_frame = vec![0; 64 * 40 * 4];
         let mut shadow_mask = vec![0; 64 * 20 * 4];
         blend_styled_chat_line(&mut shadow_frame, 64, 40, 12, 4, "A", 255, &mut shadow_mask);
@@ -5589,6 +5614,28 @@ mod inventory_layout_tests {
             false,
         );
         assert_eq!(plain_title, split_title);
+        let mut title_shadow = vec![0; 128 * 32 * 4];
+        draw_styled_title_pass(
+            &mut title_shadow,
+            128,
+            32,
+            "\u{0488}\u{0488}",
+            0,
+            2,
+            255,
+            true,
+        );
+        for (actual, foreground) in title_shadow
+            .chunks_exact(4)
+            .zip(plain_title.chunks_exact(4))
+        {
+            for channel in 0..3 {
+                assert_eq!(
+                    actual[channel],
+                    (foreground[channel] as u32 * 63 / 255) as u8
+                );
+            }
+        }
         assert!(plain_title.chunks_exact(4).any(|pixel| pixel[0] > 0));
         assert!(plain_chat.chunks_exact(4).any(|pixel| pixel[0] > 0));
         assert_eq!(native_bold_advance(ch, true), 2);

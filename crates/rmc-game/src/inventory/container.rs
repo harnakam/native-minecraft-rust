@@ -3,6 +3,90 @@ use super::{item_has_subtypes, item_stack_limit, predict_pickup, InventoryState}
 use rmc_net::codec::play::PlayServerboundPacket;
 
 impl InventoryState {
+    /// Container.slotClick mode 6: partial stacks first, then full stacks.
+    pub fn queue_collect_click(
+        &mut self,
+        window_id: u8,
+        slot_id: i16,
+        button: i8,
+    ) -> Result<PlayServerboundPacket, &'static str> {
+        if !matches!(button, 0 | 1) || self.slot(window_id, slot_id).is_none() {
+            return Err("Invalid collect click");
+        }
+        let before = if window_id == 0 {
+            self.inventory_window.clone()
+        } else {
+            self.open_window.as_ref().unwrap().clone()
+        };
+        if window_id != 0
+            && !matches!(
+                before.metadata.as_ref().map(|m| m.inventory_type.as_str()),
+                Some(
+                    "minecraft:chest"
+                        | "minecraft:container"
+                        | "minecraft:hopper"
+                        | "minecraft:dispenser"
+                        | "minecraft:dropper"
+                )
+            )
+        {
+            return Err("Collect requires container-specific take/merge rules");
+        }
+        let previous_cursor = self.carried_item.clone();
+        let mut after = before.clone();
+        if before.slot(slot_id).unwrap().is_none() {
+            if let Some(cursor) = self.carried_item.as_mut() {
+                let limit = item_stack_limit(cursor.item_id);
+                let mut indices: Vec<usize> = (0..after.slots.len()).collect();
+                if button == 1 {
+                    indices.reverse();
+                }
+                for pass in 0..2 {
+                    for &index in &indices {
+                        if cursor.count >= limit {
+                            break;
+                        }
+                        // ContainerPlayer disallows merging from its crafting result.
+                        if window_id == 0 && index == 0 {
+                            continue;
+                        }
+                        let Some(stack) = after.slots[index].as_mut() else {
+                            continue;
+                        };
+                        if stack.item_id != cursor.item_id
+                            || stack.damage != cursor.damage
+                            || !stack.tags_equal(cursor)
+                            || (pass == 0 && stack.count == item_stack_limit(stack.item_id))
+                        {
+                            continue;
+                        }
+                        let amount = stack.count.min(limit - cursor.count);
+                        cursor.count += amount;
+                        stack.count -= amount;
+                        if stack.count == 0 {
+                            after.slots[index] = None;
+                        }
+                    }
+                }
+            }
+        }
+        let packet = self.queue_click(window_id, slot_id, button, 6, None);
+        if after != before || self.carried_item != previous_cursor {
+            if let PlayServerboundPacket::ClickWindow(click) = &packet {
+                self.pickup_predictions
+                    .insert((window_id, click.action_number), (before, previous_cursor));
+            }
+            if window_id == 0 {
+                self.inventory_window = after;
+                self.sync_player_inventory_to_open();
+            } else {
+                self.open_window = Some(after);
+                self.sync_open_player_inventory();
+            }
+        }
+        Ok(packet)
+    }
+
     /// Shift-click transfer for player storage and unrestricted chest storage.
     pub fn queue_transfer_click(
         &mut self,
@@ -352,5 +436,77 @@ impl InventoryState {
             self.sync_open_player_inventory();
         }
         packet
+    }
+}
+
+#[cfg(test)]
+mod collect_tests {
+    use super::*;
+    use rmc_net::codec::play::{ConfirmTransactionClientboundPacket, ItemStack};
+
+    fn state() -> InventoryState {
+        let mut state = InventoryState::new();
+        state.carried_item = Some(ItemStack::simple(1, 10, 0));
+        state.inventory_window.slots[9] = Some(ItemStack::simple(1, 64, 0));
+        state.inventory_window.slots[10] = Some(ItemStack::simple(1, 20, 0));
+        state.inventory_window.slots[11] = Some(ItemStack::simple(1, 30, 0));
+        state.inventory_window.slots[12] = Some(ItemStack::simple(1, 7, 1));
+        state.inventory_window.slots[0] = Some(ItemStack::simple(1, 6, 0));
+        state
+    }
+
+    #[test]
+    fn collects_partial_stacks_before_full_and_rolls_back_rejection() {
+        let mut state = state();
+        let before = state.inventory_window.clone();
+        let packet = state.queue_collect_click(0, 13, 0).unwrap();
+        let PlayServerboundPacket::ClickWindow(click) = packet else {
+            panic!("wrong packet")
+        };
+        assert_eq!(click.mode, 6);
+        assert_eq!(click.clicked_item, None);
+        assert_eq!(state.carried_item.as_ref().unwrap().count, 64);
+        assert_eq!(state.inventory_window.slots[9].as_ref().unwrap().count, 60);
+        assert_eq!(state.inventory_window.slots[10], None);
+        assert_eq!(state.inventory_window.slots[11], None);
+        assert_eq!(state.inventory_window.slots[12].as_ref().unwrap().count, 7);
+        assert_eq!(state.inventory_window.slots[0].as_ref().unwrap().count, 6);
+        let update = state.apply_confirm_transaction(&ConfirmTransactionClientboundPacket {
+            window_id: 0,
+            action_number: click.action_number,
+            accepted: false,
+        });
+        assert_eq!(update.rejected_transactions, vec![(0, click.action_number)]);
+        assert_eq!(state.inventory_window, before);
+        assert_eq!(state.carried_item.as_ref().unwrap().count, 10);
+    }
+
+    #[test]
+    fn collection_keeps_distinct_nbt_stacks_separate() {
+        let mut state = state();
+        let tags = vec![10, 0, 0, 3, 0, 1, b'x', 0, 0, 0, 1, 0];
+        state.carried_item.as_mut().unwrap().nbt = Some(tags.clone());
+        state.inventory_window.slots[10].as_mut().unwrap().nbt = Some(tags);
+        let other = vec![10, 0, 0, 3, 0, 1, b'x', 0, 0, 0, 2, 0];
+        state.inventory_window.slots[11].as_mut().unwrap().nbt = Some(other);
+        state.queue_collect_click(0, 13, 0).unwrap();
+        assert_eq!(state.carried_item.as_ref().unwrap().count, 30);
+        assert_eq!(state.inventory_window.slots[10], None);
+        assert_eq!(state.inventory_window.slots[11].as_ref().unwrap().count, 30);
+        assert_eq!(state.inventory_window.slots[9].as_ref().unwrap().count, 64);
+    }
+
+    #[test]
+    fn reverse_direction_and_occupied_target_follow_source_guard() {
+        let mut state = state();
+        state.carried_item.as_mut().unwrap().count = 40;
+        state.queue_collect_click(0, 13, 1).unwrap();
+        assert_eq!(state.inventory_window.slots[11].as_ref().unwrap().count, 6);
+        assert_eq!(state.inventory_window.slots[10].as_ref().unwrap().count, 20);
+        let mut state = super::collect_tests::state();
+        let before = state.inventory_window.clone();
+        state.queue_collect_click(0, 10, 0).unwrap();
+        assert_eq!(state.inventory_window, before);
+        assert_eq!(state.carried_item.as_ref().unwrap().count, 10);
     }
 }
