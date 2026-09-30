@@ -311,3 +311,19 @@ A regression checks exact supplementary-character UTF-8 bytes, one-unit rejectio
 A local Java 8 probe confirmed that C01-style substring(0,100) of 99 ASCII characters followed by a supplementary character leaves an isolated high surrogate; PacketBuffer.writeString's String.getBytes(UTF_8) encodes it as ASCII question mark (byte 63), yielding 100 message bytes. ChatMessageServerboundPacket::vanilla now produces that same wire replacement rather than dropping the partial character entirely. Rust stores the replacement question mark, not Java's isolated-surrogate intermediate String.
 
 A regression verifies exact packet ID, length prefix, total bytes and final replacement byte. Full workspace tests pass. Native input still avoids isolated-surrogate insertion at its own GUI limit, and general malformed UTF-8/UTF-16 behavior remains outside proven parity. The temporary Java probe is local and ignored; no reference code or assets are committed.
+
+
+### Java UTF-8 replacement decoding
+
+MCP919 `PacketBuffer.readStringFromBuffer` constructs a Java String with UTF-8,
+which replaces malformed input rather than reporting a decoding error. An
+independently authored local Java 8 probe checked ten byte sequences: surrogate
+encodings and incomplete prefixes, overlong three/four-byte encodings,
+out-of-range code points, interrupted sequences, and illegal two-byte leaders.
+The Rust packet reader now reproduces those observed replacement strings,
+including Java's single replacement for an encoded surrogate. The regression
+also checks UTF-16 limits after replacement and rejects truncated packet bodies.
+NBT's separate string decoder is unchanged. This is a bounded set of Java
+observations, not exhaustive evidence for all malformed byte streams or complete
+client compatibility. The probe and Java binaries remain ignored local files;
+no Minecraft assets or reference source are included.

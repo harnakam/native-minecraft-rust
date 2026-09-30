@@ -41,3 +41,42 @@ fn chat_boundary_matches_java_isolated_surrogate_wire_replacement() {
     assert_eq!(&bytes[..2], &[1, 100]);
     assert_eq!(*bytes.last().unwrap(), 63);
 }
+
+#[test]
+fn packet_strings_replace_malformed_utf8_like_java_8() {
+    let cases: &[(&[u8], &str)] = &[
+        (&[0xed, 0xa0, 0x80], "\u{fffd}"),
+        (&[0xed, 0xbf, 0xbf], "\u{fffd}"),
+        (&[0xed, 0xa0], "\u{fffd}"),
+        (&[0xe0, 0x80, 0x80], "\u{fffd}\u{fffd}\u{fffd}"),
+        (
+            &[0xf0, 0x80, 0x80, 0x80],
+            "\u{fffd}\u{fffd}\u{fffd}\u{fffd}",
+        ),
+        (
+            &[0xf4, 0x90, 0x80, 0x80],
+            "\u{fffd}\u{fffd}\u{fffd}\u{fffd}",
+        ),
+        (&[0xe1, 0x80, 0x41], "\u{fffd}A"),
+        (&[0xf1, 0x80, 0x80, 0x41], "\u{fffd}A"),
+        (&[0xc0, 0x80], "\u{fffd}\u{fffd}"),
+        (&[0xed, 0xa0, 0x41], "\u{fffd}A"),
+    ];
+    for &(input, expected) in cases {
+        let mut bytes = vec![input.len() as u8];
+        bytes.extend_from_slice(input);
+        let mut reader = PacketReader::new(&bytes);
+        assert_eq!(reader.read_string(10).unwrap(), expected, "{input:x?}");
+        assert_eq!(reader.remaining(), 0);
+    }
+    assert_eq!(
+        PacketReader::new(&[3, 0xed, 0xa0, 0x80])
+            .read_string(1)
+            .unwrap(),
+        "\u{fffd}"
+    );
+    assert!(PacketReader::new(&[3, 0xe0, 0x80, 0x80])
+        .read_string(1)
+        .is_err());
+    assert!(PacketReader::new(&[3, 0xed, 0xa0]).read_string(10).is_err());
+}

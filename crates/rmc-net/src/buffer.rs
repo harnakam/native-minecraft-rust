@@ -160,9 +160,7 @@ impl<'a> PacketReader<'a> {
         let bytes = &self.input[self.offset..self.offset + len];
         self.offset += len;
 
-        let string = str::from_utf8(bytes)
-            .map_err(|_| BufferError::InvalidUtf8)?
-            .to_owned();
+        let string = decode_java_utf8(bytes);
 
         if string.encode_utf16().count() > max_chars {
             return Err(BufferError::DecodedStringTooLong {
@@ -620,4 +618,37 @@ mod tests {
         assert_eq!(reader.read_uuid_bytes().expect("uuid should decode"), uuid);
         reader.finish().expect("reader should be exhausted");
     }
+}
+
+// PacketBuffer uses Java's UTF-8 replacement decoder. Rust's lossy decoder
+// differs for UTF-8 encodings of UTF-16 surrogates: Java consumes that whole
+// malformed sequence (or its valid prefix) as one replacement character.
+fn decode_java_utf8(mut bytes: &[u8]) -> String {
+    let mut result = String::with_capacity(bytes.len());
+    while !bytes.is_empty() {
+        match str::from_utf8(bytes) {
+            Ok(valid) => {
+                result.push_str(valid);
+                break;
+            }
+            Err(error) => {
+                let valid = error.valid_up_to();
+                result.push_str(str::from_utf8(&bytes[..valid]).expect("validated UTF-8 prefix"));
+                bytes = &bytes[valid..];
+                result.push('\u{fffd}');
+                let consumed =
+                    if bytes.len() >= 2 && bytes[0] == 0xed && (0xa0..=0xbf).contains(&bytes[1]) {
+                        if bytes.get(2).is_some_and(|b| (0x80..=0xbf).contains(b)) {
+                            3
+                        } else {
+                            2
+                        }
+                    } else {
+                        error.error_len().unwrap_or(bytes.len())
+                    };
+                bytes = &bytes[consumed..];
+            }
+        }
+    }
+    result
 }
