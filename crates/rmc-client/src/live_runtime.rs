@@ -1741,6 +1741,37 @@ mod tests {
             runtime.world.time(),
             runtime.world.weather()
         );
+        for command in [
+            "/worldborder center 4 -4",
+            "/worldborder set 64",
+            "/worldborder warning distance 7",
+            "/worldborder warning time 11",
+        ] {
+            runtime.send_chat_message(command).unwrap();
+        }
+        let mut border_received = false;
+        for _ in 0..100 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            let border = runtime.world.border_mut();
+            border_received = border.center == [4.5, -3.5]
+                && border.diameter_at(rmc_world::border::current_millis()) == 64.0
+                && border.warning_distance == 7
+                && border.warning_time == 11;
+            if border_received {
+                break;
+            }
+        }
+        assert!(
+            border_received,
+            "official server border updates did not reach runtime: {:?}",
+            runtime.world.border_mut()
+        );
+        runtime
+            .send_chat_message("/worldborder set 60000000")
+            .unwrap();
+        runtime
+            .send_chat_message("/worldborder center 0 0")
+            .unwrap();
         let total_time = runtime.world.time().total_world_time;
         for _ in 0..3 {
             advance(&mut runtime, &RuntimeActionInput::default());
@@ -1768,7 +1799,7 @@ mod tests {
             "official server did not initialize the respawn position"
         );
         assert!(runtime.summary.disconnect_reason_json.is_none());
-        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, furnace progress, experience/time/weather synchronization, server-confirmed stone mining, death and respawn passed");
+        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, furnace progress, experience/time/weather/border synchronization, server-confirmed stone mining, death and respawn passed");
         if std::env::var("RMC_STOP_TEST_SERVER").as_deref() == Ok("1") {
             runtime.send_chat_message("/stop").unwrap();
             for _ in 0..100 {
