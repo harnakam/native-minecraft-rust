@@ -4253,6 +4253,28 @@ mod inventory_layout_tests {
     }
 
     #[test]
+    fn tab_json_number_text_matches_observed_gson_precision_cases() {
+        for (input, expected) in [
+            ("1e+03", "1e+03"),
+            ("1.2300", "1.2300"),
+            ("-0", "0"),
+            ("0.0000", "0.0000"),
+            (
+                "123456789012345678901234567890",
+                "123456789012345678901234567890",
+            ),
+        ] {
+            let value: serde_json::Value = serde_json::from_str(input).unwrap();
+            let formatted = tab_component_formatted(&value);
+            let text = tab_styled_runs(&formatted, [255; 3], 100)
+                .into_iter()
+                .map(|(text, _)| text)
+                .collect::<String>();
+            assert_eq!(text, expected);
+        }
+    }
+
+    #[test]
     fn tab_json_primitive_components_and_text_properties_are_visible() {
         for (json, expected) in [
             ("42", "42"),

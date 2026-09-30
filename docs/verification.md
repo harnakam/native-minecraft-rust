@@ -612,3 +612,19 @@ Numeric lexical fidelity is still incomplete: serde_json's parsed number string
 may normalize exponent/decimal spelling whereas Gson preserves input spelling.
 Invalid/null components, complete translations, obfuscation, Minecraft fonts,
 and manual visual parity remain incomplete. No game assets/source are published.
+
+
+### Gson numeric precision observations
+
+An independently authored local Java probe using the MCP919 Gson 2.2.4 jar
+observed getAsString results for 1e+03, 1.2300, -0, 0.0000, and a 30-digit integer.
+The first Rust regression failed because 1e+03 became 1000.0. Enabling the existing
+serde_json arbitrary_precision feature retains the tested exponent spelling,
+trailing decimal zeros, and large integer precision; -0 becomes 0 as observed in
+Gson. No dependency/version or lockfile change is required. The feature applies
+to the client crate's serde_json use, with the workspace suite used as regression
+coverage.
+This still does not preserve every numeric lexeme: serde_json's local exponent
+scanner lowercases E and inserts a plus when absent. A raw-token component parser
+is still needed for exact Gson lexical parity. The Java probe/jar remain local
+ignored files; no reference binaries or game assets are published.
