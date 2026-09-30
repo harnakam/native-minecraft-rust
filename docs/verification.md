@@ -964,3 +964,17 @@ A regression failed on boolean color before the fix. An executed MCP919 probe
 confirms four rejections and four identical inherited-color code sequences,
 matching the native tests. Full workspace tests pass. Exact exception classes
 and ingress/disconnect handling still remain incomplete.
+
+
+### Styled native chat history
+
+Normal chat history now uses formatted component rows and shared native styled
+glyph drawing, including inherited colors, bold/italic, underline/strike and
+obfuscation. Character wrapping retains each character's resolved style across
+spaces/newlines, and history fading blends glyph coverage with its resolved
+color. Row spacing/background now accommodate the existing 16-pixel native
+styled glyph surface. Regressions cover style retention after wrapping, red/green
+framebuffer output, and the actual draw_chat_history path from JSON ChatLine.
+Full workspace tests pass. Minecraft pixel-width wrapping, shadows, local font
+metrics, click/hover interaction and manual visual parity remain incomplete.
+No assets/reference source are published.

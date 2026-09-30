@@ -3569,6 +3569,130 @@ fn chat_display_rows(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec
     rows
 }
 
+fn wrap_formatted_chat_text(text: &str, columns: usize) -> Vec<String> {
+    let mut styled = Vec::new();
+    for (text, style) in tab_styled_runs(text, [255; 3], usize::MAX) {
+        styled.extend(text.chars().map(|ch| (ch, style)));
+    }
+    let plain: String = styled.iter().map(|(ch, _)| *ch).collect();
+    let mut cursor = 0;
+    wrap_chat_text(&plain, columns)
+        .into_iter()
+        .map(|row| {
+            let mut formatted = String::new();
+            for ch in row.chars() {
+                let style = styled[cursor].1;
+                let code = (0..16)
+                    .find(|index| {
+                        tab_styled_runs(
+                            &format!("\u{a7}{}x", char::from_digit(*index, 16).unwrap()),
+                            [255; 3],
+                            1,
+                        )[0]
+                        .1
+                        .color
+                            == style.color
+                    })
+                    .unwrap_or(15);
+                formatted.push('\u{a7}');
+                formatted.push(char::from_digit(code, 16).unwrap());
+                for (enabled, code) in [
+                    (style.bold, 'l'),
+                    (style.italic, 'o'),
+                    (style.underline, 'n'),
+                    (style.obfuscated, 'k'),
+                    (style.strike, 'm'),
+                ] {
+                    if enabled {
+                        formatted.push('\u{a7}');
+                        formatted.push(code);
+                    }
+                }
+                formatted.push(ch);
+                cursor += 1;
+            }
+            if styled
+                .get(cursor)
+                .is_some_and(|(ch, _)| *ch == ' ' || *ch == '\n')
+            {
+                cursor += 1;
+            }
+            formatted
+        })
+        .collect()
+}
+
+fn chat_formatted_rows(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec<(String, u64)> {
+    let columns = (width.saturating_sub(24).min(470) / 6).max(1) as usize;
+    let mut rows = Vec::new();
+    for line in lines.iter().filter(|line| line.position != 2) {
+        let formatted = parse_chat_component(&line.message_json)
+            .map(|value| tab_component_formatted(&value))
+            .unwrap_or_else(|_| line.message_json.clone());
+        rows.extend(
+            wrap_formatted_chat_text(&formatted, columns)
+                .into_iter()
+                .map(|row| (row, line.age_ticks)),
+        );
+    }
+    if rows.len() > 100 {
+        rows.drain(..rows.len() - 100);
+    }
+    rows
+}
+
+fn blend_styled_chat_line(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    mut x: i32,
+    y: i32,
+    text: &str,
+    alpha: u8,
+    mask: &mut [u8],
+) {
+    for (text, style) in tab_styled_runs(text, [255; 3], usize::MAX) {
+        mask.fill(0);
+        let mut formatted = String::new();
+        for (enabled, code) in [
+            (style.bold, 'l'),
+            (style.italic, 'o'),
+            (style.underline, 'n'),
+            (style.obfuscated, 'k'),
+            (style.strike, 'm'),
+        ] {
+            if enabled {
+                formatted.push('\u{a7}');
+                formatted.push(code);
+            }
+        }
+        formatted.push_str(&text);
+        draw_tab_name(mask, width, &formatted, [255; 3], usize::MAX);
+        for py in 0..16i32 {
+            for px in 0..width as i32 {
+                let coverage = mask[(py as usize * width as usize + px as usize) * 4] as u32
+                    * alpha as u32
+                    / 255;
+                let tx = x + px - 4;
+                let ty = y + py;
+                if coverage == 0 || tx < 0 || tx >= width as i32 || ty < 0 || ty >= height as i32 {
+                    continue;
+                }
+                let target = (ty as usize * width as usize + tx as usize) * 4;
+                for channel in 0..3 {
+                    frame[target + channel] = ((frame[target + channel] as u32 * (255 - coverage)
+                        + style.color[channel] as u32 * coverage)
+                        / 255) as u8;
+                }
+            }
+        }
+        x += text
+            .chars()
+            .map(|ch| native_text_width(&ch.to_string()) + i32::from(style.bold))
+            .sum::<i32>();
+    }
+}
+
 fn chat_alpha(age_ticks: u64, open: bool) -> u8 {
     if open {
         return 255;
@@ -3588,7 +3712,7 @@ fn draw_chat_history(
     scroll: usize,
     open: bool,
 ) {
-    let rows = chat_display_rows(lines, width);
+    let rows = chat_formatted_rows(lines, width);
     let offset = if open {
         scroll.min(rows.len().saturating_sub(8))
     } else {
@@ -3600,8 +3724,8 @@ fn draw_chat_history(
         if alpha <= 3 {
             continue;
         }
-        let y = height as i32 - 50 - row as i32 * 12;
-        for py in (y - 2).max(0)..(y + 10).min(height as i32) {
+        let y = height as i32 - 50 - row as i32 * 16;
+        for py in (y - 2).max(0)..(y + 14).min(height as i32) {
             for px in 8..(width as i32 - 8).min(488) {
                 let index = (py as usize * width as usize + px as usize) * 4;
                 for channel in 0..3 {
@@ -3610,7 +3734,7 @@ fn draw_chat_history(
                 }
             }
         }
-        blend_chat_text(frame, width, height, 12, y, text, alpha, 1, &mut text_mask);
+        blend_styled_chat_line(frame, width, height, 12, y, text, alpha, &mut text_mask);
     }
 }
 
@@ -4940,6 +5064,42 @@ mod inventory_layout_tests {
                 .collect::<Vec<_>>(),
             vec![true, false, true, false]
         );
+    }
+
+    #[test]
+    fn formatted_chat_wrap_keeps_style_and_history_draws_colors() {
+        let rows = wrap_formatted_chat_text("\u{a7}c\u{a7}labc def\n\u{a7}aghi", 3);
+        assert_eq!(
+            rows.iter()
+                .map(|row| tab_styled_runs(row, [255; 3], 100)
+                    .iter()
+                    .map(|(text, _)| text.as_str())
+                    .collect::<String>())
+                .collect::<Vec<_>>(),
+            vec!["abc", "def", "ghi"]
+        );
+        assert!(tab_styled_runs(&rows[1], [255; 3], 100)
+            .iter()
+            .all(|(_, style)| style.bold && style.color == [255, 85, 85]));
+        let mut frame = vec![0; 320 * 200 * 4];
+        let mut mask = vec![0; 320 * 20 * 4];
+        blend_styled_chat_line(
+            &mut frame,
+            320,
+            200,
+            12,
+            100,
+            "\u{a7}cRed\u{a7}aGreen",
+            255,
+            &mut mask,
+        );
+        assert!(frame.chunks_exact(4).any(|pixel| pixel[0] > pixel[1]));
+        assert!(frame.chunks_exact(4).any(|pixel| pixel[1] > pixel[0]));
+        frame.fill(0);
+        let lines = vec![rmc_game::usability::ChatLine { age_ticks:0, position:0, message_json:r#"{"text":"Red","color":"red","extra":[{"text":"Green","color":"green","bold":true}]}"#.into() }];
+        draw_chat_history(&mut frame, 320, 200, &lines, 0, true);
+        assert!(frame.chunks_exact(4).any(|pixel| pixel[0] > pixel[1]));
+        assert!(frame.chunks_exact(4).any(|pixel| pixel[1] > pixel[0]));
     }
 
     #[test]
