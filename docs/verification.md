@@ -494,3 +494,21 @@ The workspace suite and the final targeted state test pass. Heart-rendered
 objectives are retained in state but their animated heart rendering is not yet
 implemented. Exact width/layout, live official-server score delivery, fonts,
 and manual display parity remain incomplete. No game assets are published.
+
+
+### Official Tab score and team synchronization
+
+The expanded isolated official 1.8.9 integration test now creates a dummy
+objective, assigns it to the list display slot, and sets VanillaProbe's score.
+It verifies runtime snapshots receive 42 and then -7 through the actual server
+connection. It creates a team, joins the player, and applies the red color;
+the expected source-formatted name is section-sign c + VanillaProbe +
+section-sign r. Leaving the team restores the profile name, and removing the
+objective clears the Tab score. Setup removes names from any interrupted run;
+cleanup removes the created objective and team.
+The ignored test passed together with its inventory, furnace, XP/time/weather,
+border/title, mining, death, and respawn checks. It issued /stop and the owned
+server process saved its state and exited successfully. This proves runtime
+synchronization for these commands; native visual style/font comparison,
+heart-rendered scores, and server/plugin S47 header/footer delivery remain
+unverified. Reference binaries/worlds stay in ignored local directories.

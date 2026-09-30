@@ -1807,6 +1807,64 @@ mod tests {
             (title.fade_in, title.stay, title.fade_out) == (10, 70, 20)
         });
 
+        fn await_tab(
+            runtime: &mut LiveRuntime,
+            expected: impl Fn(&rmc_game::usability::TabListEntrySnapshot) -> bool,
+        ) {
+            for _ in 0..100 {
+                advance(runtime, &RuntimeActionInput::default());
+                if runtime
+                    .usability
+                    .snapshot()
+                    .tab_list
+                    .iter()
+                    .any(|entry| entry.name == "VanillaProbe" && expected(entry))
+                {
+                    return;
+                }
+            }
+            panic!(
+                "official tab update not received: {:?}",
+                runtime.usability.snapshot().tab_list
+            );
+        }
+        // Clean up state from an interrupted prior run before creating it.
+        for command in [
+            "/scoreboard objectives remove native_tab",
+            "/scoreboard teams remove native_team",
+            "/scoreboard objectives add native_tab dummy",
+            "/scoreboard objectives setdisplay list native_tab",
+            "/scoreboard players set VanillaProbe native_tab 42",
+            "/scoreboard teams add native_team",
+            "/scoreboard teams join native_team VanillaProbe",
+            "/scoreboard teams option native_team color red",
+        ] {
+            runtime.send_chat_message(command).unwrap();
+        }
+        await_tab(&mut runtime, |entry| {
+            entry.tab_score == Some((42, "integer".into()))
+                && entry.team_formatted_name == "\u{a7}cVanillaProbe\u{a7}r"
+        });
+        runtime
+            .send_chat_message("/scoreboard players set VanillaProbe native_tab -7")
+            .unwrap();
+        await_tab(&mut runtime, |entry| {
+            entry.tab_score == Some((-7, "integer".into()))
+        });
+        runtime
+            .send_chat_message("/scoreboard teams leave VanillaProbe")
+            .unwrap();
+        await_tab(&mut runtime, |entry| {
+            entry.team_formatted_name == "VanillaProbe"
+        });
+        runtime
+            .send_chat_message("/scoreboard objectives remove native_tab")
+            .unwrap();
+        await_tab(&mut runtime, |entry| entry.tab_score.is_none());
+        runtime
+            .send_chat_message("/scoreboard teams remove native_team")
+            .unwrap();
+
         for command in [
             "/worldborder center 4 -4",
             "/worldborder set 64",
@@ -1865,7 +1923,7 @@ mod tests {
             "official server did not initialize the respawn position"
         );
         assert!(runtime.summary.disconnect_reason_json.is_none());
-        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, furnace progress, experience/time/weather/border/title synchronization, server-confirmed stone mining, death and respawn passed");
+        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, furnace progress, experience/time/weather/border/title/tab-score/team synchronization, server-confirmed stone mining, death and respawn passed");
         if std::env::var("RMC_STOP_TEST_SERVER").as_deref() == Ok("1") {
             runtime.send_chat_message("/stop").unwrap();
             for _ in 0..100 {
