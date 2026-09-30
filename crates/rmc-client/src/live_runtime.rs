@@ -1746,6 +1746,67 @@ mod tests {
             runtime.world.time(),
             runtime.world.weather()
         );
+        // Exercise the official command parser and compressed S45 wire path.
+        fn await_title(
+            runtime: &mut LiveRuntime,
+            expected: impl Fn(&rmc_game::title::TitleState) -> bool,
+        ) {
+            for _ in 0..100 {
+                advance(runtime, &RuntimeActionInput::default());
+                if expected(&runtime.usability.snapshot().title) {
+                    return;
+                }
+            }
+            panic!(
+                "official title update not received: {:?}",
+                runtime.usability.snapshot().title
+            );
+        }
+        runtime
+            .send_chat_message("/title VanillaProbe clear")
+            .unwrap();
+        runtime
+            .send_chat_message("/title VanillaProbe times 4 30 6")
+            .unwrap();
+        await_title(&mut runtime, |title| {
+            (title.fade_in, title.stay, title.fade_out) == (4, 30, 6)
+        });
+        runtime
+            .send_chat_message(r#"/title VanillaProbe subtitle {"text":"Native subtitle"}"#)
+            .unwrap();
+        await_title(&mut runtime, |title| {
+            title.subtitle_json.contains("Native subtitle") && title.remaining_ticks == 0
+        });
+        runtime
+            .send_chat_message(r#"/title VanillaProbe title {"text":"Native title"}"#)
+            .unwrap();
+        await_title(&mut runtime, |title| {
+            title.title_json.contains("Native title")
+                && title.subtitle_json.contains("Native subtitle")
+                && title.remaining_ticks > 0
+        });
+        // A second timing packet restarts the current notification.
+        runtime
+            .send_chat_message("/title VanillaProbe times 2 50 8")
+            .unwrap();
+        await_title(&mut runtime, |title| {
+            (title.fade_in, title.stay, title.fade_out) == (2, 50, 8) && title.remaining_ticks > 40
+        });
+        runtime
+            .send_chat_message("/title VanillaProbe clear")
+            .unwrap();
+        await_title(&mut runtime, |title| {
+            title.remaining_ticks == 0
+                && title.title_json.is_empty()
+                && title.subtitle_json.is_empty()
+        });
+        runtime
+            .send_chat_message("/title VanillaProbe reset")
+            .unwrap();
+        await_title(&mut runtime, |title| {
+            (title.fade_in, title.stay, title.fade_out) == (10, 70, 20)
+        });
+
         for command in [
             "/worldborder center 4 -4",
             "/worldborder set 64",
@@ -1804,7 +1865,7 @@ mod tests {
             "official server did not initialize the respawn position"
         );
         assert!(runtime.summary.disconnect_reason_json.is_none());
-        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, furnace progress, experience/time/weather/border synchronization, server-confirmed stone mining, death and respawn passed");
+        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, furnace progress, experience/time/weather/border/title synchronization, server-confirmed stone mining, death and respawn passed");
         if std::env::var("RMC_STOP_TEST_SERVER").as_deref() == Ok("1") {
             runtime.send_chat_message("/stop").unwrap();
             for _ in 0..100 {

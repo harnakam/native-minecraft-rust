@@ -390,3 +390,24 @@ Remaining gaps: official-server title command delivery, manual visual parity,
 Minecraft font metrics and shadows/styles, complete component translation, and
 exact tick-order network dispatch. No Minecraft assets or reference source are
 published.
+
+
+### Official title delivery and session routing repair
+
+The first official-server test exposed a missing connection in the previous
+S45 change: the driver decoded the packet, but HeadlessSession discarded its HUD
+routing action. Direct usability/framebuffer tests had not covered that boundary.
+Title packets now produce SessionAction::UsabilityPacket, reaching LiveRuntime's
+existing HUD update path. A regression covers this routing for all five actions.
+
+The isolated official 1.8.9 server at 127.0.0.1:25570 then passed the expanded
+ignored integration test. Through actual /title commands and the compressed
+connection, it verifies 4/30/6 timing configuration, subtitle receipt without
+starting a timer, title plus retained subtitle with an active timer, active
+time replacement to 2/50/8, CLEAR of both text fields and timer, and RESET of
+timing defaults. The test also passed its existing inventory, furnace, XP,
+time/weather, border, mining, death, and respawn checks. The same live server was
+reused after the failed attempt; no restart was used to mask the routing failure.
+The test issued /stop, the server saved players/worlds/chunks, and the owned
+server process exited successfully. Title state reached the runtime in real
+communication; manual rendering parity and exact visual fade remain unverified.

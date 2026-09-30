@@ -191,6 +191,9 @@ impl HeadlessSession {
                 self.snapshot.dimension = Some(i32::from(packet.dimension));
                 Some(SessionAction::JoinedGame(packet.clone()))
             }
+            PlayClientboundPacket::Title(packet) => Some(SessionAction::UsabilityPacket(
+                PlayClientboundPacket::Title(packet.clone()),
+            )),
             PlayClientboundPacket::ChatMessage(packet) => Some(SessionAction::UsabilityPacket(
                 PlayClientboundPacket::ChatMessage(packet.clone()),
             )),
@@ -282,7 +285,6 @@ impl HeadlessSession {
             | PlayClientboundPacket::EntityEquipment(_)
             | PlayClientboundPacket::ResourcePackSend(_)
             | PlayClientboundPacket::WorldBorder(_)
-            | PlayClientboundPacket::Title(_)
             | PlayClientboundPacket::ServerDifficulty(_)
             | PlayClientboundPacket::TimeUpdate(_)
             | PlayClientboundPacket::EntityMetadata(_)
@@ -373,6 +375,36 @@ mod tests {
         PlayClientboundPacket, PlayDisconnectPacket, PlayerPositionAndLookPacket,
         PositionLookFlags, UpdateHealthPacket,
     };
+
+    #[test]
+    fn title_packets_are_forwarded_to_hud_state() {
+        use crate::codec::play::TitlePacket;
+        let mut session = HeadlessSession::new();
+        session.begin_login(47, "localhost", 25570).unwrap();
+        session
+            .apply_login_packet(&LoginClientboundPacket::LoginSuccess(LoginSuccess {
+                uuid_string: "00000000-0000-0000-0000-000000000000".into(),
+                username: "Probe".into(),
+            }))
+            .unwrap();
+        for title in [
+            TitlePacket::Title("{}".into()),
+            TitlePacket::Subtitle("{}".into()),
+            TitlePacket::Times {
+                fade_in: 4,
+                stay: 30,
+                fade_out: 6,
+            },
+            TitlePacket::Clear,
+            TitlePacket::Reset,
+        ] {
+            let packet = PlayClientboundPacket::Title(title);
+            assert_eq!(
+                session.apply_play_packet(&packet).unwrap(),
+                vec![SessionAction::UsabilityPacket(packet)]
+            );
+        }
+    }
 
     #[test]
     fn transitions_from_handshake_to_play() {
