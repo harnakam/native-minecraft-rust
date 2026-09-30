@@ -1046,3 +1046,14 @@ retains its existing one-pixel spacing. The isolated real-atlas test checks
 bold pixels against the composited original glyph and x+2 copy and verifies
 ASCII/fallback advance selection. Dedicated and workspace tests pass. Unicode
 font paths, exact italic geometry and selectable GUI scale remain incomplete.
+
+
+### Bitmap shadow scale consistency
+
+All-bitmap ASCII chat/title lines now use a two-pixel native shadow offset,
+scaled again by title scale, matching the current doubled glyph rendering.
+System-font and mixed fallback lines retain the prior one-pixel offset. The
+real-atlas integration test checks the composited chat glyph/shadow pixels
+against source alpha at the original and x+2/y+2 positions. Dedicated and full
+workspace tests pass. Mixed bitmap/Unicode per-glyph offsets, selectable GUI
+scale and full Unicode rendering remain incomplete.

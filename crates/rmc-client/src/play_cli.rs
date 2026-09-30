@@ -2521,6 +2521,23 @@ fn bitmap_ascii_advance(font: &ImageAsset, ch: char) -> Option<i32> {
     Some((right as i32 + 1) * 2)
 }
 
+fn native_shadow_offset(text: &str) -> i32 {
+    let Some(Some(font)) = HUD_BITMAP_FONT.get() else {
+        return 1;
+    };
+    if font.width() != 128 || font.height() != 128 {
+        return 1;
+    }
+    if tab_styled_runs(text, [255; 3], usize::MAX)
+        .iter()
+        .all(|(text, _)| text.chars().all(|ch| (' '..='~').contains(&ch)))
+    {
+        2
+    } else {
+        1
+    }
+}
+
 fn native_bold_advance(ch: char, bold: bool) -> i32 {
     if !bold {
         return 0;
@@ -3766,7 +3783,18 @@ fn blend_styled_chat_line(
     alpha: u8,
     mask: &mut [u8],
 ) {
-    blend_styled_chat_pass(frame, width, height, x + 1, y + 1, text, alpha, mask, true);
+    let offset = native_shadow_offset(text);
+    blend_styled_chat_pass(
+        frame,
+        width,
+        height,
+        x + offset,
+        y + offset,
+        text,
+        alpha,
+        mask,
+        true,
+    );
     blend_styled_chat_pass(frame, width, height, x, y, text, alpha, mask, false);
 }
 
@@ -3988,7 +4016,16 @@ fn draw_styled_title_line(
     scale: i32,
     alpha: u8,
 ) {
-    draw_styled_title_pass(frame, width, height, text, y + scale, scale, alpha, true);
+    draw_styled_title_pass(
+        frame,
+        width,
+        height,
+        text,
+        y + scale * native_shadow_offset(text),
+        scale,
+        alpha,
+        true,
+    );
     draw_styled_title_pass(frame, width, height, text, y, scale, alpha, false);
 }
 
@@ -4021,7 +4058,12 @@ fn draw_styled_title_pass(
         .iter()
         .map(|(text, style)| run_width(text, *style))
         .sum::<i32>();
-    let mut x = width as i32 / 2 - total * scale / 2 + if shadow { scale } else { 0 };
+    let mut x = width as i32 / 2 - total * scale / 2
+        + if shadow {
+            scale * native_shadow_offset(text)
+        } else {
+            0
+        };
     for (text, mut style) in runs {
         if shadow {
             style.color = title_shadow_color(style.color);
@@ -5233,6 +5275,31 @@ mod inventory_layout_tests {
         assert_eq!(native_bold_advance('A', true), 2);
         assert_eq!(native_bold_advance('A', false), 0);
         assert_eq!(native_bold_advance('日', true), 1);
+        assert_eq!(native_shadow_offset("\u{a7}cA"), 2);
+        assert_eq!(native_shadow_offset("日"), 1);
+        let mut shadow_frame = vec![0; 64 * 40 * 4];
+        let mut shadow_mask = vec![0; 64 * 20 * 4];
+        blend_styled_chat_line(&mut shadow_frame, 64, 40, 12, 4, "A", 255, &mut shadow_mask);
+        for py in 0..18u32 {
+            for px in 0..18u32 {
+                let front = if px < 16 && py < 16 {
+                    font.pixel(65 % 16 * 8 + px / 2, 65 / 16 * 8 + py / 2)[3] as u32
+                } else {
+                    0
+                };
+                let back = if px >= 2 && py >= 2 {
+                    font.pixel(65 % 16 * 8 + (px - 2) / 2, 65 / 16 * 8 + (py - 2) / 2)[3] as u32
+                } else {
+                    0
+                };
+                let expected = ((63 * back / 255) * (255 - front) + 255 * front) / 255;
+                assert_eq!(
+                    shadow_frame[((py as usize + 4) * 64 + px as usize + 12) * 4],
+                    expected as u8
+                );
+            }
+        }
+
         frame.fill(0);
         draw_tab_name(&mut frame, 64, "\u{a7}lA", [255; 3], 100);
         for py in 0..16u32 {
