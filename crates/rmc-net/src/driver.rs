@@ -235,6 +235,18 @@ impl HeadlessDriver {
                     }
 
                     let packet = PlayClientboundPacket::decode_packet(&frame.packet_bytes)?;
+                    if let PlayClientboundPacket::ResourcePackSend(request) = &packet {
+                        self.queue_play_packet_inner(
+                            &PlayServerboundPacket::ResourcePackStatus(
+                                crate::codec::play::ResourcePackStatusPacket {
+                                    hash: request.hash.clone(),
+                                    action: 1,
+                                },
+                            ),
+                            codec,
+                            &mut trace_sink,
+                        )?;
+                    }
                     events.push(DriverEvent::InboundPlayPacket(packet.clone()));
                     let actions = self.session.apply_play_packet(&packet)?;
                     self.apply_actions(actions, codec, &mut trace_sink, &mut events)?;
@@ -398,6 +410,7 @@ impl HeadlessDriver {
             | PlayServerboundPacket::PlayerAbilities(_)
             | PlayServerboundPacket::ClientStatus(_)
             | PlayServerboundPacket::ClientSettings(_)
+            | PlayServerboundPacket::ResourcePackStatus(_)
             | PlayServerboundPacket::CustomPayload(_) => {}
             PlayServerboundPacket::PlayerPosition(packet) => {
                 self.local_pose.x = packet.x;
@@ -602,6 +615,56 @@ mod tests {
             &events[0],
             DriverEvent::SessionAction(SessionAction::EnterPlay { .. })
         ));
+    }
+
+    #[test]
+    fn resource_pack_request_gets_explicit_declined_response() {
+        let mut driver = driver();
+        driver.bootstrap_login(None, None).unwrap();
+        driver
+            .feed_wire_bytes(
+                &frame_login(
+                    &LoginClientboundPacket::LoginSuccess(LoginSuccess {
+                        uuid_string: "00000000-0000-0000-0000-000000000000".into(),
+                        username: "Player".into(),
+                    }),
+                    crate::compression::CompressionState::Disabled,
+                ),
+                None,
+                None,
+            )
+            .unwrap();
+        driver.drain_outbound_frames();
+        let request =
+            PlayClientboundPacket::ResourcePackSend(crate::codec::play::ResourcePackSendPacket {
+                url: "https://example.invalid/pack.zip".into(),
+                hash: "abc".into(),
+            });
+        let events = driver
+            .feed_wire_bytes(
+                &frame_play(&request, crate::compression::CompressionState::Disabled),
+                None,
+                None,
+            )
+            .unwrap();
+        assert!(matches!(&events[0], DriverEvent::InboundPlayPacket(packet) if packet == &request));
+        let outbound = driver.drain_outbound_frames();
+        assert_eq!(outbound.len(), 1);
+        let mut decoder = FrameDecoder::new(crate::compression::CompressionState::Disabled);
+        decoder.queue_bytes(&outbound[0]);
+        let frame = decoder.try_next_frame(None).unwrap().unwrap();
+        assert_eq!(frame.packet_bytes, vec![0x19, 3, b'a', b'b', b'c', 1]);
+        assert_eq!(
+            PlayServerboundPacket::decode_packet(&frame.packet_bytes).unwrap(),
+            PlayServerboundPacket::ResourcePackStatus(
+                crate::codec::play::ResourcePackStatusPacket {
+                    hash: "abc".into(),
+                    action: 1
+                }
+            )
+        );
+        assert!(PlayServerboundPacket::decode_packet(&[0x19, 0, 4]).is_err());
+        assert!(PlayClientboundPacket::decode_packet(&[0x48, 0]).is_err());
     }
 
     #[test]

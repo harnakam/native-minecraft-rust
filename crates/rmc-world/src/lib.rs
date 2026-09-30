@@ -687,6 +687,7 @@ impl WorldSnapshot {
             | PlayClientboundPacket::EntityEffect(_)
             | PlayClientboundPacket::RemoveEntityEffect(_)
             | PlayClientboundPacket::EntityProperties(_)
+            | PlayClientboundPacket::ResourcePackSend(_)
             | PlayClientboundPacket::Disconnect(_) => None,
         };
 

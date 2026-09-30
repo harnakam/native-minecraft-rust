@@ -1560,6 +1560,7 @@ fn render_serverbound_packet_line(
         }
         PlayServerboundPacket::Animation(_)
         | PlayServerboundPacket::ClientSettings(_)
+        | PlayServerboundPacket::ResourcePackStatus(_)
         | PlayServerboundPacket::CustomPayload(_) => {}
     }
 
@@ -1586,6 +1587,7 @@ fn packet_label(packet: &PlayServerboundPacket) -> &'static str {
         PlayServerboundPacket::PlayerAbilities(_) => "PlayerAbilities",
         PlayServerboundPacket::ClientStatus(_) => "ClientStatus",
         PlayServerboundPacket::ClientSettings(_) => "ClientSettings",
+        PlayServerboundPacket::ResourcePackStatus(_) => "ResourcePackStatus",
         PlayServerboundPacket::CustomPayload(_) => "CustomPayload",
     }
 }

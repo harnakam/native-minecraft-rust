@@ -1268,6 +1268,7 @@ fn packet_name(packet: &PlayServerboundPacket) -> &'static str {
         PlayServerboundPacket::PlayerAbilities(_) => "PlayerAbilities",
         PlayServerboundPacket::ClientStatus(_) => "ClientStatus",
         PlayServerboundPacket::ClientSettings(_) => "ClientSettings",
+        PlayServerboundPacket::ResourcePackStatus(_) => "ResourcePackStatus",
         PlayServerboundPacket::CustomPayload(_) => "CustomPayload",
     }
 }
@@ -1351,6 +1352,7 @@ fn render_shell_packet_lines(output: &ShellAdvanceOutput) -> Vec<String> {
 
 fn render_shell_packet_line(tick_index: u64, packet: &PlayServerboundPacket) -> String {
     match packet {
+        PlayServerboundPacket::ResourcePackStatus(p) => format!("ResourcePackStatus hash={} action={}", p.hash, p.action),
         PlayServerboundPacket::KeepAlive(keep_alive) => {
             format!(
                 "tick={tick_index} packet={} id={}",

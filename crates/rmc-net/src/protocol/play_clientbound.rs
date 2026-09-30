@@ -1136,6 +1136,7 @@ pub const HELD_ITEM_CHANGE: PacketSpec = PacketSpec {
     }],
 };
 pub const PACKETS: &[PacketSpec] = &[
+    RESOURCE_PACK_SEND,
     CHANGE_GAME_STATE,
     EXPLOSION,
     HELD_ITEM_CHANGE,
@@ -1225,6 +1226,28 @@ pub const EXPLOSION: PacketSpec = PacketSpec {
             name: "motion",
             encoding: "Float x3",
             notes: "Velocity added to local player motion.",
+        },
+    ],
+};
+
+pub const RESOURCE_PACK_SEND: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x48,
+    name: "Resource Pack Send",
+    java_class: "net.minecraft.network.play.server.S48PacketResourcePackSend",
+    java_handler: "INetHandlerPlayClient.handleResourcePack",
+    compression: PLAY_COMPRESSION,
+    fields: &[
+        FieldSpec {
+            name: "url",
+            encoding: "String (32767)",
+            notes: "MCP919 wire field.",
+        },
+        FieldSpec {
+            name: "hash",
+            encoding: "String (40)",
+            notes: "MCP919 wire field.",
         },
     ],
 };

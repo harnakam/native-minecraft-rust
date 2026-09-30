@@ -163,3 +163,9 @@ A framebuffer regression verifies the five-pixel bar position and near-full prog
 ## Game-state mode rounding
 
 MCP919 NetHandlerPlayClient converts reason-3 values with MathHelper.floor_float(value + 0.5F), then GameType.getByID. Both runtime and simulation previously truncated the float directly. They now share game_mode::from_game_state, preserving Java cast saturation and wrapping floor subtraction, with unknown IDs falling back to survival. A boundary regression covers half-integer transitions, negative values and nonfinite values. This prevents movement capabilities and HUD mode from disagreeing about fractional game-state updates. Workspace tests pass; fractional values have not been exercised against an official server.
+
+## Resource-pack request and disabled-mode response
+
+S48 ResourcePackSend (0x48) now decodes bounded URL/hash strings (32767/40), and C19 ResourcePackStatus (0x19) encodes hash and enum ordinal (0 loaded, 1 declined, 2 failed, 3 accepted). Both directions are in the frozen protocol registry. The driver exposes the inbound request and sends exactly one DECLINED response with the received hash, following vanilla's disabled-resource-pack branch. It does not download URLs or report a successful application. Trace/report packet naming includes the status packet.
+
+A driver regression feeds a framed request after login, checks the inbound event and exact response bytes, and rejects malformed/truncated packets and invalid status ordinals. Workspace tests pass. Only disabled-mode resource-pack behavior is implemented: consent UI, per-server preference, downloads/cache/hash checking, local level packs, actual resource reload and successful-load/failure lifecycle remain incomplete. This path has not been tested with an official server resource-pack offer.

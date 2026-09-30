@@ -468,6 +468,7 @@ pub const CLIENT_STATUS: PacketSpec = PacketSpec {
     }],
 };
 pub const PACKETS: &[PacketSpec] = &[
+    RESOURCE_PACK_STATUS,
     CLIENT_STATUS,
     PLAYER_ABILITIES,
     KEEP_ALIVE,
@@ -507,6 +508,28 @@ pub const PLAYER_ABILITIES: PacketSpec = PacketSpec {
             name: "speeds",
             encoding: "Float x2",
             notes: "Fly speed then walk speed.",
+        },
+    ],
+};
+
+pub const RESOURCE_PACK_STATUS: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Serverbound,
+    id: 0x19,
+    name: "Resource Pack Status",
+    java_class: "net.minecraft.network.play.client.C19PacketResourcePackStatus",
+    java_handler: "INetHandlerPlayServer.handleResourcePackStatus",
+    compression: PLAY_COMPRESSION,
+    fields: &[
+        FieldSpec {
+            name: "hash",
+            encoding: "String (40)",
+            notes: "MCP919 wire field.",
+        },
+        FieldSpec {
+            name: "action",
+            encoding: "VarInt",
+            notes: "MCP919 wire field.",
         },
     ],
 };

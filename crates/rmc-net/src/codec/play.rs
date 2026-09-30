@@ -5,6 +5,19 @@ pub mod metadata;
 use crate::buffer::{BufferError, PacketReader, PacketWriter};
 use crate::codec::{split_packet_bytes, CodecError, EncodedPacket};
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResourcePackSendPacket {
+    pub url: String,
+    pub hash: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResourcePackStatusPacket {
+    pub hash: String,
+    /// 0 loaded, 1 declined, 2 failed download, 3 accepted.
+    pub action: i32,
+}
+
 pub const MAX_CUSTOM_PAYLOAD_BYTES: usize = 32_767;
 pub const MAX_EXPLOSION_RECORDS: usize = 262_144;
 pub const MAX_DESTROYED_ENTITIES: usize = 8_192;
@@ -733,6 +746,7 @@ pub enum PlayClientboundPacket {
     WindowItems(WindowItemsPacket),
     WindowProperty(WindowPropertyPacket),
     EntityEquipment(EntityEquipmentPacket),
+    ResourcePackSend(ResourcePackSendPacket),
     TimeUpdate(TimeUpdatePacket),
     EntityMetadata(EntityMetadataPacket),
     SetExperience(SetExperiencePacket),
@@ -781,6 +795,10 @@ impl PlayClientboundPacket {
             0x02 => Self::ChatMessage(ChatMessagePacket {
                 message_json: reader.read_chat()?,
                 position: reader.read_i8()?,
+            }),
+            0x48 => Self::ResourcePackSend(ResourcePackSendPacket {
+                url: reader.read_string(32767)?,
+                hash: reader.read_string(40)?,
             }),
             0x03 => Self::TimeUpdate(TimeUpdatePacket {
                 total_world_time: reader.read_i64()?,
@@ -1645,6 +1663,11 @@ impl PlayClientboundPacket {
                 writer.write_bytes(&packet.metadata);
                 0x1C
             }
+            Self::ResourcePackSend(packet) => {
+                writer.write_string(&packet.url, 32767)?;
+                writer.write_string(&packet.hash, 40)?;
+                0x48
+            }
             Self::TimeUpdate(packet) => {
                 writer.write_i64(packet.total_world_time);
                 writer.write_i64(packet.world_time);
@@ -2063,6 +2086,7 @@ pub enum PlayServerboundPacket {
     ClickWindow(ClickWindowPacket),
     ConfirmTransaction(ConfirmTransactionServerboundPacket),
     ClientStatus(i32),
+    ResourcePackStatus(ResourcePackStatusPacket),
     PlayerAbilities(PlayerAbilitiesPacket),
     ClientSettings(ClientSettingsPacket),
     CustomPayload(CustomPayloadPacket),
@@ -2078,6 +2102,17 @@ impl PlayServerboundPacket {
         let mut reader = PacketReader::new(body);
 
         let packet = match packet_id {
+            0x19 => {
+                let hash = reader.read_string(40)?;
+                let action = reader.read_var_i32()?;
+                if !(0..=3).contains(&action) {
+                    return Err(CodecError::InvalidEnumValue {
+                        enum_name: "ResourcePackStatus",
+                        actual: action,
+                    });
+                }
+                Self::ResourcePackStatus(ResourcePackStatusPacket { hash, action })
+            }
             0x13 => Self::PlayerAbilities(PlayerAbilitiesPacket {
                 flags: reader.read_u8()?,
                 flying_speed: reader.read_f32()?,
@@ -2196,6 +2231,17 @@ impl PlayServerboundPacket {
         let mut writer = PacketWriter::new();
 
         let packet_id = match self {
+            Self::ResourcePackStatus(packet) => {
+                if !(0..=3).contains(&packet.action) {
+                    return Err(CodecError::InvalidEnumValue {
+                        enum_name: "ResourcePackStatus",
+                        actual: packet.action,
+                    });
+                }
+                writer.write_string(&packet.hash, 40)?;
+                writer.write_var_i32(packet.action);
+                0x19
+            }
             Self::PlayerAbilities(packet) => {
                 writer.write_u8(packet.flags);
                 writer.write_f32(packet.flying_speed);
