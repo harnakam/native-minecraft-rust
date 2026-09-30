@@ -282,6 +282,7 @@ impl HeadlessSession {
             | PlayClientboundPacket::EntityEquipment(_)
             | PlayClientboundPacket::ResourcePackSend(_)
             | PlayClientboundPacket::WorldBorder(_)
+            | PlayClientboundPacket::Title(_)
             | PlayClientboundPacket::ServerDifficulty(_)
             | PlayClientboundPacket::TimeUpdate(_)
             | PlayClientboundPacket::EntityMetadata(_)

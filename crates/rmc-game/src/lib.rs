@@ -13,3 +13,5 @@ pub mod usability;
 pub mod math;
 pub mod mining;
 mod mining_properties;
+
+pub mod title;

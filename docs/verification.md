@@ -363,3 +363,30 @@ The whole workspace test suite passes. Official-server position-2 delivery and
 manual visual parity have not been verified. Native fonts, complete translation,
 record-playing color cycling, mounting messages, and exact per-tick network
 dispatch remain incomplete.
+
+
+### S45 title notifications
+
+Added the protocol-47 title packet (0x45) to the frozen registry and driver decode
+path. All five action layouts are supported: title/subtitle JSON components,
+three signed big-endian Int timing fields, clear, and reset. Codec regressions
+cover exact timing bytes, all action round trips, truncated bodies, unknown
+actions, and trailing bytes. TitleState follows MCP919 GuiIngame.displayTitle and
+NetHandlerPlayClient.handleTitle: subtitle alone does not start a timer; title
+starts the combined duration; nonnegative time updates preserve negative fields
+and restart an active timer. Java int duration arithmetic is retained.
+
+The source RESET handler calls displayTitle with two non-null empty strings,
+whose title branch clears only the title and restarts the old duration, then
+restores default times (10/70/20). The existing subtitle survives that call; this
+source behavior is explicitly tested rather than substituted with a generic
+clear. CLEAR and all-negative TIMES clear both lines and stop the timer.
+Native title/subtitle rendering is connected to the usability snapshot, with
+4x/2x centered text and source fade alpha including interpolation. A regression
+feeds encoded/decoded title packets through usability state into the actual
+framebuffer and verifies CLEAR removes drawing. Whole-workspace tests pass.
+
+Remaining gaps: official-server title command delivery, manual visual parity,
+Minecraft font metrics and shadows/styles, complete component translation, and
+exact tick-order network dispatch. No Minecraft assets or reference source are
+published.

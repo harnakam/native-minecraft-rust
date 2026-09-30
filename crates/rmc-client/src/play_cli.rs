@@ -983,6 +983,10 @@ impl PlayApp {
                     }
                 }
                 if let Some(snapshot) = runtime.usability_snapshot() {
+                    let title_partial = runtime
+                        .output()
+                        .map_or(0.0, |output| output.render.interpolation_alpha);
+                    draw_title_overlay(frame, width, height, &snapshot.title, title_partial);
                     if let Some(message) = &snapshot.action_bar {
                         let partial_ticks = runtime
                             .output()
@@ -2774,7 +2778,7 @@ fn draw_chat_history(
                 }
             }
         }
-        blend_chat_text(frame, width, height, 12, y, text, alpha, &mut text_mask);
+        blend_chat_text(frame, width, height, 12, y, text, alpha, 1, &mut text_mask);
     }
 }
 
@@ -2786,11 +2790,22 @@ fn blend_chat_text(
     y: i32,
     text: &str,
     alpha: u8,
+    scale: i32,
     text_mask: &mut [u8],
 ) {
     text_mask.fill(0);
-    draw_text_scaled(text_mask, width, 20, x, 0, text, [255, 255, 255], 1);
-    for py in 0..20 {
+    let mask_height = text_mask.len() / (width.max(1) as usize * 4);
+    draw_text_scaled(
+        text_mask,
+        width,
+        mask_height as u32,
+        x,
+        0,
+        text,
+        [255, 255, 255],
+        scale,
+    );
+    for py in 0..mask_height as i32 {
         let target_y = y + py;
         if target_y < 0 || target_y >= height as i32 {
             continue;
@@ -2845,8 +2860,52 @@ fn draw_action_bar(
         height as i32 - 72,
         &text,
         alpha,
+        1,
         &mut mask,
     );
+}
+
+fn draw_title_overlay(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    title: &rmc_game::title::TitleState,
+    partial_ticks: f32,
+) {
+    let alpha = title.alpha(partial_ticks);
+    if alpha <= 8 || width == 0 {
+        return;
+    }
+    for (json, scale, y) in [
+        (&title.title_json, 4, height as i32 / 2 - 40),
+        (&title.subtitle_json, 2, height as i32 / 2 + 10),
+    ] {
+        if json.is_empty() {
+            continue;
+        }
+        let text = serde_json::from_str(json)
+            .map(|value| chat_component_text(&value))
+            .unwrap_or_else(|_| json.clone());
+        let text_width = if let Some(font) = ui_font() {
+            text.chars()
+                .map(|ch| font.metrics(ch, 14.0 * scale as f32).advance_width)
+                .sum::<f32>() as i32
+        } else {
+            text.chars().count() as i32 * 8 * scale
+        };
+        let mut mask = vec![0; width as usize * (20 * scale) as usize * 4];
+        blend_chat_text(
+            frame,
+            width,
+            height,
+            width as i32 / 2 - text_width / 2,
+            y,
+            &text,
+            alpha,
+            scale,
+            &mut mask,
+        );
+    }
 }
 
 fn draw_chat_input_overlay(frame: &mut [u8], width: u32, height: u32, value: &str) {
@@ -3603,6 +3662,32 @@ mod inventory_layout_tests {
         let rows = wrap_chat_text(&text, 1);
         assert_eq!(rows.len(), 32767);
         assert_eq!(rows.concat(), text);
+    }
+
+    #[test]
+    fn title_wire_actions_reach_native_framebuffer_and_clear_removes_display() {
+        use rmc_net::codec::play::{PlayClientboundPacket, TitlePacket};
+        let mut state = rmc_game::usability::UsabilityState::new();
+        for action in [
+            TitlePacket::Subtitle("{\"text\":\"Subtitle\"}".into()),
+            TitlePacket::Title("{\"text\":\"Title\"}".into()),
+        ] {
+            let bytes = PlayClientboundPacket::Title(action)
+                .encode_packet()
+                .unwrap()
+                .packet_bytes();
+            state.apply_play_packet(&PlayClientboundPacket::decode_packet(&bytes).unwrap());
+        }
+        state.advance_chat_ticks(10);
+        let initial = vec![100u8; 320 * 200 * 4];
+        let mut frame = initial.clone();
+        draw_title_overlay(&mut frame, 320, 200, &state.snapshot().title, 0.0);
+        assert_ne!(frame, initial);
+        assert!(frame.chunks_exact(4).all(|pixel| pixel[3] == 100));
+        state.apply_play_packet(&PlayClientboundPacket::Title(TitlePacket::Clear));
+        frame.copy_from_slice(&initial);
+        draw_title_overlay(&mut frame, 320, 200, &state.snapshot().title, 0.0);
+        assert_eq!(frame, initial);
     }
 
     #[test]

@@ -220,6 +220,7 @@ mod tests {
     fn renders_pvp_overlay_lines() {
         let hud = PvPHud::from_snapshot(&UsabilitySnapshot {
             action_bar: None,
+            title: Default::default(),
             experience: Default::default(),
             chat_lines: vec![ChatLine {
                 age_ticks: 0,

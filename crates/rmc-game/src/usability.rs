@@ -122,6 +122,7 @@ pub struct UsabilitySnapshot {
     pub experience: Experience,
     pub chat_lines: Vec<ChatLine>,
     pub action_bar: Option<ActionBarMessage>,
+    pub title: crate::title::TitleState,
     pub sidebar: Option<SidebarSnapshot>,
     pub tab_list: Vec<TabListEntrySnapshot>,
     pub window: Option<WindowSnapshot>,
@@ -172,6 +173,7 @@ pub struct UsabilityState {
     settings: ClientSettingsState,
     chat_lines: Vec<ChatLine>,
     action_bar: Option<ActionBarMessage>,
+    title: crate::title::TitleState,
     tab_list: BTreeMap<[u8; 16], TabListEntryState>,
     objectives: BTreeMap<String, ObjectiveState>,
     display_slots: BTreeMap<u8, String>,
@@ -189,6 +191,7 @@ impl Default for UsabilityState {
 
 impl UsabilityState {
     pub fn advance_chat_ticks(&mut self, ticks: usize) {
+        self.title.advance(ticks);
         if let Some(message) = &mut self.action_bar {
             message.remaining_ticks = message.remaining_ticks.saturating_sub(ticks.min(255) as u8);
             if message.remaining_ticks == 0 {
@@ -225,6 +228,7 @@ impl UsabilityState {
             settings: ClientSettingsState::default(),
             chat_lines: Vec::new(),
             action_bar: None,
+            title: Default::default(),
             tab_list: BTreeMap::new(),
             objectives: BTreeMap::new(),
             display_slots: BTreeMap::new(),
@@ -272,6 +276,7 @@ impl UsabilityState {
         };
 
         match packet {
+            PlayClientboundPacket::Title(packet) => self.title.receive(packet),
             PlayClientboundPacket::SetExperience(packet) => {
                 self.experience = Experience {
                     progress: packet.progress,
@@ -353,6 +358,7 @@ impl UsabilityState {
             experience: self.experience,
             chat_lines: self.chat_lines.clone(),
             action_bar: self.action_bar.clone(),
+            title: self.title.clone(),
             sidebar: self.sidebar_snapshot(),
             tab_list,
             window,
