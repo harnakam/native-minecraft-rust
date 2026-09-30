@@ -23,6 +23,10 @@ fn main() {
         "ice",
         "soul_sand",
         "slime",
+        "water_depth1",
+        "water_depth3",
+        "water_depth5",
+        "lava_depth3",
         "water",
         "water_jump",
         "shallow_water",
@@ -44,9 +48,24 @@ fn main() {
         for x in -32..64 {
             for z in -32..64 {
                 put(&mut world, x, 63, z, floor, 0);
-                if matches!(name, "water" | "lava") {
+                if matches!(
+                    name,
+                    "water"
+                        | "lava"
+                        | "water_depth1"
+                        | "water_depth3"
+                        | "water_depth5"
+                        | "lava_depth3"
+                ) {
                     for y in 64..66 {
-                        put(&mut world, x, y, z, if name == "water" { 9 } else { 11 }, 0);
+                        put(
+                            &mut world,
+                            x,
+                            y,
+                            z,
+                            if name.starts_with("water") { 9 } else { 11 },
+                            0,
+                        );
                     }
                 }
                 if matches!(name, "water_jump" | "shallow_water" | "flowing_water") {
@@ -96,6 +115,9 @@ fn main() {
             }
         }
         let mut sim = LocalSimulationLayer::new(SimulationConfig::vanilla());
+        if name.contains("depth") {
+            sim.set_depth_strider(name.chars().last().unwrap().to_digit(10).unwrap() as i16);
+        }
         sim.apply_authoritative_state(AuthoritativePlayerState {
             position: Vec3::new(
                 8.5,

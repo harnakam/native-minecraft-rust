@@ -15,13 +15,13 @@ public final class RmcMovementOracle {
     }
     public static void main(String[] args) {
         Bootstrap.register();
-        String[] names={"walk","diagonal","sprint","jump","ice","soul_sand","slime","water","water_jump","shallow_water","flowing_water","water_edge","falling_water","lava","ladder","web","slab"};
+        String[] names={"walk","diagonal","sprint","jump","ice","soul_sand","slime","water_depth1","water_depth3","water_depth5","lava_depth3","water","water_jump","shallow_water","flowing_water","water_edge","falling_water","lava","ladder","web","slab"};
         for(String name:names) {
             RmcCollisionOracle.QueryWorld world=new RmcCollisionOracle.QueryWorld();
             int floor=name.equals("ice")?79:name.equals("soul_sand")?88:name.equals("slime")?165:1;
             for(int x=-32;x<64;x++) for(int z=-32;z<64;z++) {
                 world.states.put(new BlockPos(x,63,z),Block.getBlockById(floor).getStateFromMeta(0));
-                if(name.equals("water")||name.equals("lava")) for(int y=64;y<66;y++) world.states.put(new BlockPos(x,y,z),Block.getBlockById(name.equals("water")?9:11).getStateFromMeta(0));
+                if(name.equals("water")||name.equals("lava")||name.startsWith("water_depth")||name.equals("lava_depth3")) for(int y=64;y<66;y++) world.states.put(new BlockPos(x,y,z),Block.getBlockById(name.startsWith("water")?9:11).getStateFromMeta(0));
                 if(name.equals("water_jump")||name.equals("shallow_water")||name.equals("flowing_water")) {
                     int top=name.equals("shallow_water")?65:66;
                     int level=name.equals("flowing_water")?Math.max(0,Math.min(7,z-8)):0;
@@ -46,6 +46,11 @@ public final class RmcMovementOracle {
             Player player=new Player(world);
             player.setPosition(8.5,name.equals("soul_sand")?63.875:64.0,8.5);player.onGround=true;
             if(name.equals("slime")) {player.setPosition(8.5,68,8.5);player.onGround=false;player.motionY=-0.4;}
+            if(name.contains("depth")) {
+                net.minecraft.item.ItemStack boots=new net.minecraft.item.ItemStack(net.minecraft.init.Items.diamond_boots);
+                boots.addEnchantment(net.minecraft.enchantment.Enchantment.depthStrider, Integer.parseInt(name.substring(name.length()-1)));
+                player.inventory.armorInventory[0]=boots;
+            }
             player.rotationYaw=name.equals("diagonal")?37.25F:name.equals("sprint")||name.equals("ladder")?-90F:0F;
             for(int tick=1;tick<=80;tick++) {
                 player.moveForward=1.0F;

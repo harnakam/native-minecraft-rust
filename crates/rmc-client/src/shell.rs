@@ -78,6 +78,10 @@ mod tests {
 }
 
 impl ClientShell {
+    pub fn set_depth_strider(&mut self, level: i16) {
+        self.simulation.set_depth_strider(level);
+    }
+
     pub fn mining_effects(&self) -> (Option<u8>, Option<u8>) {
         (
             self.simulation.effect_amplifier(3),

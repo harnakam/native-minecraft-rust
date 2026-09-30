@@ -371,6 +371,20 @@ impl LiveRuntime {
             return Ok(());
         }
 
+        let depth_strider = self
+            .usability
+            .inventory()
+            .inventory_window()
+            .slots
+            .iter()
+            .skip(5)
+            .take(4)
+            .flatten()
+            .map(|item| item.enchantment_level(8))
+            .max()
+            .unwrap_or(0)
+            .clamp(0, 3);
+        self.shell.set_depth_strider(depth_strider as i16);
         let frame_events = self.pending_simulation_events.clone();
         self.pending_simulation_events.clear();
         let output =

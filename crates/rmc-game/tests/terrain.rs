@@ -156,3 +156,41 @@ fn ladder_clamps_descent_and_sneak_holds_position() {
     );
     assert_eq!(simulation.player().position.y, 64.5);
 }
+
+#[test]
+fn depth_strider_matches_mcp_water_tick_and_leaves_lava_unchanged() {
+    fn travel(liquid: u16, level: i16) -> (Vec3, Vec3) {
+        let mut world = WorldSnapshot::new(WorldConfig::overworld());
+        for x in 6..=10 {
+            for z in 6..=10 {
+                for y in 64..=65 {
+                    put(&mut world, x, y, z, liquid << 4);
+                }
+            }
+        }
+        let mut sim = player(Vec3::new(8.5, 64.0, 8.5));
+        sim.apply_authoritative_state(AuthoritativePlayerState {
+            position: Vec3::new(8.5, 64.0, 8.5),
+            velocity: Vec3::ZERO,
+            on_ground: true,
+        });
+        sim.set_depth_strider(level);
+        sim.tick_with_world(
+            MovementInput {
+                forward: 1.0,
+                ..MovementInput::default()
+            },
+            CameraState::default(),
+            0,
+            &world,
+        );
+        (sim.player().position, sim.velocity())
+    }
+    // Captured from the actual MCP919 EntityLivingBase travel method.
+    let (position, velocity) = travel(9, 1);
+    assert!((position.z - 8.545733332633972).abs() < 1e-12);
+    assert!((velocity.z - 0.03271457769911024).abs() < 1e-12);
+    assert_eq!(velocity.y, -0.02);
+    assert_eq!(travel(9, 3), travel(9, 5));
+    assert_eq!(travel(11, 0), travel(11, 3));
+}

@@ -153,6 +153,8 @@ pub struct LocalSimulationLayer {
     jump_ticks: u8,
     in_web: bool,
     fluid_acceleration: Option<f32>,
+    depth_strider: i16,
+    fluid_in_water: bool,
     food_level: i32,
     alive: bool,
     allow_flying: bool,
@@ -187,6 +189,8 @@ impl LocalSimulationLayer {
             jump_ticks: 0,
             in_web: false,
             fluid_acceleration: None,
+            depth_strider: 0,
+            fluid_in_water: false,
             food_level: 20,
             alive: true,
             allow_flying: false,
@@ -196,6 +200,10 @@ impl LocalSimulationLayer {
             air_movement_factor: 0.02,
             effects: std::collections::BTreeMap::new(),
         }
+    }
+
+    pub fn set_depth_strider(&mut self, level: i16) {
+        self.depth_strider = level.clamp(0, 3);
     }
 
     pub fn apply_event(&mut self, event: SimulationEvent) {
@@ -374,13 +382,15 @@ impl LocalSimulationLayer {
             environment.water_flow[1],
             environment.water_flow[2],
         ));
+        self.fluid_in_water = environment.water;
         self.fluid_acceleration = if !self.flying && (environment.water || environment.lava) {
             Some(0.02)
         } else {
             None
         };
         let friction = if environment.water && !self.flying {
-            f64::from(0.8_f32)
+            let level = self.water_enchantment_factor();
+            f64::from(0.8_f32 + (0.54600006_f32 - 0.8_f32) * level / 3.0_f32)
         } else if environment.lava && !self.flying {
             0.5
         } else if self.player.on_ground {
@@ -442,7 +452,13 @@ impl LocalSimulationLayer {
         if self.flying {
             self.velocity.y = motion_before_collision.y * 0.6;
         } else if environment.water || environment.lava {
-            self.velocity.y = self.velocity.y * friction - 0.02;
+            self.velocity.y = self.velocity.y
+                * if environment.water {
+                    f64::from(0.8_f32)
+                } else {
+                    0.5
+                }
+                - 0.02;
         } else {
             self.integrate_vertical_motion();
         }
@@ -527,6 +543,10 @@ impl LocalSimulationLayer {
         self.player.on_ground = state.on_ground;
     }
 
+    fn water_enchantment_factor(&self) -> f32 {
+        self.depth_strider as f32 * if self.player.on_ground { 1.0 } else { 0.5 }
+    }
+
     fn apply_horizontal_input(&mut self, movement: MovementInput, camera: CameraState) {
         self.player.sneaking = movement.sneak;
         let forward = movement.forward * if movement.sneak { 0.3_f32 } else { 1.0 };
@@ -548,7 +568,12 @@ impl LocalSimulationLayer {
             movement.strafe *= self.config.locomotion.sneak_multiplier as f32;
         }
         let acceleration = if let Some(fluid) = self.fluid_acceleration {
-            f64::from(fluid)
+            let level = if fluid == 0.02 && self.fluid_in_water {
+                self.water_enchantment_factor()
+            } else {
+                0.0
+            };
+            f64::from(fluid + (speed as f32 - fluid) * level / 3.0_f32)
         } else if self.player.on_ground {
             let friction = self.config.ground_friction as f32;
             f64::from(
