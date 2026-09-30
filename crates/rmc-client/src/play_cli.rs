@@ -2491,7 +2491,7 @@ fn draw_tab_overlay(
 }
 
 fn tab_banner_lines(json: &str, width: u32) -> Vec<String> {
-    let text = serde_json::from_str(json)
+    let text = parse_chat_component(json)
         .map(|value| chat_component_text(&value))
         .unwrap_or_else(|_| json.to_owned());
     if text.is_empty() {
@@ -2686,7 +2686,7 @@ fn draw_tab_italic_glyph(
     }
 }
 
-fn parse_tab_component(json: &str) -> Result<serde_json::Value, serde_json::Error> {
+fn parse_chat_component(json: &str) -> Result<serde_json::Value, serde_json::Error> {
     // Validate syntax and the normal serde nesting bound before recursive raw
     // traversal. Values used for display retain Gson's numeric token spelling.
     let _: serde_json::Value = serde_json::from_str(json)?;
@@ -2950,7 +2950,7 @@ fn draw_tab_snapshot(
                     .display_name_json
                     .as_ref()
                     .map(|json| {
-                        parse_tab_component(json)
+                        parse_chat_component(json)
                             .map(|value| tab_component_formatted(&value))
                             .unwrap_or_else(|_| json.clone())
                     })
@@ -3190,13 +3190,14 @@ fn append_chat_input(input: &mut String, text: &str) {
 fn chat_component_text(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Bool(value) => value.to_string(),
+        serde_json::Value::Number(value) => value.to_string(),
         serde_json::Value::Array(values) => values.iter().map(chat_component_text).collect(),
         serde_json::Value::Object(object) => {
             let mut text = object
                 .get("text")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_owned();
+                .map(chat_component_text)
+                .unwrap_or_default();
             if let Some(key) = object.get("translate").and_then(|v| v.as_str()) {
                 let args: Vec<String> = object
                     .get("with")
@@ -3255,7 +3256,7 @@ fn chat_display_rows(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec
         if line.position == 2 {
             continue;
         }
-        let text = serde_json::from_str(&line.message_json)
+        let text = parse_chat_component(&line.message_json)
             .map(|value| chat_component_text(&value))
             .unwrap_or_else(|_| line.message_json.clone());
         rows.extend(
@@ -3374,7 +3375,7 @@ fn draw_action_bar(
     if alpha <= 8 {
         return;
     }
-    let text = serde_json::from_str(&message.message_json)
+    let text = parse_chat_component(&message.message_json)
         .map(|value| chat_component_text(&value))
         .unwrap_or_else(|_| message.message_json.clone());
     let text_width = if let Some(font) = ui_font() {
@@ -3416,7 +3417,7 @@ fn draw_title_overlay(
         if json.is_empty() {
             continue;
         }
-        let text = serde_json::from_str(json)
+        let text = parse_chat_component(json)
             .map(|value| chat_component_text(&value))
             .unwrap_or_else(|_| json.clone());
         let text_width = if let Some(font) = ui_font() {
@@ -4296,6 +4297,20 @@ mod inventory_layout_tests {
     }
 
     #[test]
+    fn native_chat_consumers_keep_numeric_lexemes_and_boolean_text() {
+        let json = r#"{"text":1E3,"extra":[true,{"text":1.2300}]}"#;
+        let value = parse_chat_component(json).unwrap();
+        assert_eq!(chat_component_text(&value), "1E3true1.2300");
+        let lines = vec![rmc_game::usability::ChatLine {
+            age_ticks: 0,
+            position: 0,
+            message_json: json.into(),
+        }];
+        assert_eq!(chat_display_lines(&lines, 600), vec!["1E3true1.2300"]);
+        assert_eq!(tab_banner_lines(json, 600), vec!["1E3true1.2300"]);
+    }
+
+    #[test]
     fn raw_tab_components_preserve_gson_exponent_spelling_and_nested_numbers() {
         for (input, expected) in [
             ("1E3", "1E3"),
@@ -4304,7 +4319,7 @@ mod inventory_layout_tests {
             ("-0", "0"),
             ("-0.00", "-0.00"),
         ] {
-            let value = parse_tab_component(input).unwrap();
+            let value = parse_chat_component(input).unwrap();
             let formatted = tab_component_formatted(&value);
             assert_eq!(
                 tab_styled_runs(&formatted, [255; 3], 100)
@@ -4315,7 +4330,7 @@ mod inventory_layout_tests {
             );
         }
         let value =
-            parse_tab_component(r#"{"text":1E3,"color":"red","extra":[1e3,{"text":1.2300}]}"#)
+            parse_chat_component(r#"{"text":1E3,"color":"red","extra":[1e3,{"text":1.2300}]}"#)
                 .unwrap();
         let runs = tab_styled_runs(&tab_component_formatted(&value), [255; 3], 100);
         assert_eq!(
@@ -4325,8 +4340,8 @@ mod inventory_layout_tests {
             "1E31e31.2300"
         );
         assert!(runs.iter().all(|(_, style)| style.color == [255, 85, 85]));
-        assert!(parse_tab_component("[1e]").is_err());
-        assert!(parse_tab_component(&format!("{}0{}", "[".repeat(130), "]".repeat(130))).is_err());
+        assert!(parse_chat_component("[1e]").is_err());
+        assert!(parse_chat_component(&format!("{}0{}", "[".repeat(130), "]".repeat(130))).is_err());
     }
 
     #[test]

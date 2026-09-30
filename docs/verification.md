@@ -646,3 +646,16 @@ This path is currently wired to Tab display names; other component consumers
 still use their prior parsers. Full Gson lenient syntax, invalid component
 semantics, translations, obfuscation, fonts and manual parity remain incomplete.
 The independently authored Java probe and reference jars remain ignored locally.
+
+
+### Shared numeric component parsing across native HUD consumers
+
+The raw-token parser is now named parse_chat_component and is used by incoming
+chat rows, Tab banners/display names, action-bar text, and title/subtitle text.
+The plain-text component flattener accepts boolean and numeric primitives and
+primitive text properties instead of silently dropping them. A regression
+checks an exponent, boolean child and trailing decimal zeros through actual chat
+row/banner helpers. The workspace suite passes; a final client test rerun covers
+the title call-site adjustment. Full formatted chat/title rendering, translations,
+lenient Gson syntax, component validation, font and manual visual parity remain
+incomplete. No game assets/reference source are published.
