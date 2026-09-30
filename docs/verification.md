@@ -1083,3 +1083,14 @@ two-pixel HUD scale, local Unicode glyphs now duplicate at x+2 and advance
 by two additional pixels. The actual-jar Japanese glyph test checks every
 bold composited pixel against the original crop and its x+2 copy; it passes.
 Forced Unicode mode and per-glyph shadow placement remain incomplete.
+
+### Unicode measurement versus drawing advance
+
+MCP919 getCharWidth normalizes wide glyphs, while renderStringAtPos advances
+by the truncated renderUnicodeChar result without that normalization. The
+local official glyph table contains 17,367 differing entries. HUD glyph
+placement now uses a separate rendering advance; measurement and wrapping
+retain getCharWidth behavior. The actual-jar test checks U+0488 measured
+width 18 versus drawing advance 16 at current scale and repeated-glyph
+pixel placement. Dedicated and full workspace tests pass. Mixed styled-run
+composition and title masks still need separate rendering-advance review.

@@ -2575,6 +2575,31 @@ fn unicode_font_advance(font: &UnicodeFontAsset, ch: char) -> Option<i32> {
     Some(((i32::from(right) + 1 - i32::from(left)) / 2 + 1) * 2)
 }
 
+fn unicode_font_render_advance(font: &UnicodeFontAsset, ch: char) -> Option<i32> {
+    let size = *font.glyph_widths.get(ch as usize)?;
+    if size == 0 {
+        return Some(0);
+    }
+    // renderStringAtPos truncates renderUnicodeChar's float before advancing.
+    let span = i32::from(size & 15) + 1 - i32::from(size >> 4);
+    Some((span / 2 + 1) * 2)
+}
+
+fn native_render_advance(ch: char) -> i32 {
+    if let Some(width) = HUD_BITMAP_FONT
+        .get()
+        .and_then(Option::as_ref)
+        .and_then(|font| bitmap_ascii_advance(font, ch))
+    {
+        return width;
+    }
+    HUD_UNICODE_FONT
+        .get()
+        .and_then(Option::as_ref)
+        .and_then(|font| unicode_font_render_advance(font, ch))
+        .unwrap_or_else(|| native_glyph_width(ch))
+}
+
 fn draw_unicode_font_glyph(
     frame: &mut [u8],
     width: u32,
@@ -2833,7 +2858,6 @@ fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_v
     let mut x = 4;
     for (text, style) in tab_styled_runs(text, color, max_visible) {
         for ch in text.chars() {
-            let original_width = native_text_width(&ch.to_string());
             let ch = if style.obfuscated {
                 next_obfuscated_native_glyph(ch)
             } else {
@@ -2860,7 +2884,7 @@ fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_v
                     draw_text_scaled(frame, width, 16, x + 1, 0, &text, style.color, 1);
                 }
             }
-            let advance = original_width + native_bold_advance(ch, style.bold);
+            let advance = native_render_advance(ch) + native_bold_advance(ch, style.bold);
             for y in [
                 if style.underline { Some(14) } else { None },
                 if style.strike { Some(7) } else { None },
@@ -5446,6 +5470,18 @@ mod inventory_layout_tests {
         })
         .expect("local Unicode page unavailable");
         assert!(frame.chunks_exact(4).any(|pixel| pixel[0] > 0));
+        let probe = '҈';
+        assert_eq!(unicode_font_advance(&font, probe), Some(18));
+        assert_eq!(unicode_font_render_advance(&font, probe), Some(16));
+        let mut pair = vec![0; 64 * 16 * 4];
+        let mut single = vec![0; 64 * 16 * 4];
+        draw_tab_name(&mut pair, 64, "\u{0488}\u{0488}", [255; 3], 100);
+        draw_tab_name(&mut single, 64, "\u{0488}", [255; 3], 100);
+        for py in 0..16usize {
+            for px in 20..36usize {
+                assert_eq!(pair[(py * 64 + px) * 4], single[(py * 64 + px - 16) * 4]);
+            }
+        }
         assert_eq!(native_bold_advance(ch, true), 2);
         assert_eq!(native_bold_advance(ch, false), 0);
         let mut bold_frame = vec![0; 64 * 16 * 4];
