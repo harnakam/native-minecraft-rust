@@ -10,3 +10,5 @@ pub mod tick;
 pub mod usability;
 
 pub mod math;
+pub mod mining;
+mod mining_properties;

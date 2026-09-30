@@ -1011,6 +1011,7 @@ pub const HELD_ITEM_CHANGE: PacketSpec = PacketSpec {
     }],
 };
 pub const PACKETS: &[PacketSpec] = &[
+    CHANGE_GAME_STATE,
     HELD_ITEM_CHANGE,
     PLAYER_ABILITIES,
     ENTITY_EFFECT,
@@ -1047,3 +1048,25 @@ pub const PACKETS: &[PacketSpec] = &[
     TEAMS,
     DISCONNECT,
 ];
+
+pub const CHANGE_GAME_STATE: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x2B,
+    name: "Change Game State",
+    java_class: "net.minecraft.network.play.server.S2BPacketChangeGameState",
+    java_handler: "INetHandlerPlayClient.handleChangeGameState",
+    compression: PLAY_COMPRESSION,
+    fields: &[
+        FieldSpec {
+            name: "reason",
+            encoding: "UnsignedByte",
+            notes: "Reason 3 changes game mode.",
+        },
+        FieldSpec {
+            name: "value",
+            encoding: "Float",
+            notes: "Reason-dependent value.",
+        },
+    ],
+};

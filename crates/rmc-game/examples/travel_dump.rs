@@ -24,6 +24,11 @@ fn main() {
         "soul_sand",
         "slime",
         "water",
+        "water_jump",
+        "shallow_water",
+        "flowing_water",
+        "water_edge",
+        "falling_water",
         "lava",
         "ladder",
         "web",
@@ -44,11 +49,36 @@ fn main() {
                         put(&mut world, x, y, z, if name == "water" { 9 } else { 11 }, 0);
                     }
                 }
+                if matches!(name, "water_jump" | "shallow_water" | "flowing_water") {
+                    let top = if name == "shallow_water" { 65 } else { 66 };
+                    let level = if name == "flowing_water" {
+                        (z - 8).clamp(0, 7)
+                    } else {
+                        0
+                    };
+                    for y in 64..top {
+                        put(&mut world, x, y, z, 9, level);
+                    }
+                }
             }
         }
         if name == "ladder" {
             for y in 64..80 {
                 put(&mut world, 8, y, 8, 65, 5);
+                put(&mut world, 9, y, 8, 1, 0);
+            }
+        }
+        if name == "water_edge" {
+            for x in 0..16 {
+                for z in 0..=8 {
+                    put(&mut world, x, 64, z, 9, 0);
+                }
+                put(&mut world, x, 64, 9, 1, 0);
+            }
+        }
+        if name == "falling_water" {
+            for y in 64..70 {
+                put(&mut world, 8, y, 8, 9, 8);
                 put(&mut world, 9, y, 8, 1, 0);
             }
         }
@@ -95,7 +125,7 @@ fn main() {
             forward: 1.0,
             strafe: if name == "diagonal" { 1.0 } else { 0.0 },
             sprint: name == "sprint",
-            jump: name == "jump",
+            jump: matches!(name, "jump" | "water_jump" | "water_edge"),
             ..MovementInput::default()
         };
         for tick in 1..=80 {

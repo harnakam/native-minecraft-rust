@@ -15,16 +15,27 @@ public final class RmcMovementOracle {
     }
     public static void main(String[] args) {
         Bootstrap.register();
-        String[] names={"walk","diagonal","sprint","jump","ice","soul_sand","slime","water","lava","ladder","web","slab"};
+        String[] names={"walk","diagonal","sprint","jump","ice","soul_sand","slime","water","water_jump","shallow_water","flowing_water","water_edge","falling_water","lava","ladder","web","slab"};
         for(String name:names) {
             RmcCollisionOracle.QueryWorld world=new RmcCollisionOracle.QueryWorld();
             int floor=name.equals("ice")?79:name.equals("soul_sand")?88:name.equals("slime")?165:1;
             for(int x=-32;x<64;x++) for(int z=-32;z<64;z++) {
                 world.states.put(new BlockPos(x,63,z),Block.getBlockById(floor).getStateFromMeta(0));
                 if(name.equals("water")||name.equals("lava")) for(int y=64;y<66;y++) world.states.put(new BlockPos(x,y,z),Block.getBlockById(name.equals("water")?9:11).getStateFromMeta(0));
+                if(name.equals("water_jump")||name.equals("shallow_water")||name.equals("flowing_water")) {
+                    int top=name.equals("shallow_water")?65:66;
+                    int level=name.equals("flowing_water")?Math.max(0,Math.min(7,z-8)):0;
+                    for(int y=64;y<top;y++) world.states.put(new BlockPos(x,y,z),Block.getBlockById(9).getStateFromMeta(level));
+                }
             }
             if(name.equals("ladder")) for(int y=64;y<80;y++) {
                 world.states.put(new BlockPos(8,y,8),Block.getBlockById(65).getStateFromMeta(5));
+                world.states.put(new BlockPos(9,y,8),Block.getBlockById(1).getStateFromMeta(0));
+            }
+            if(name.equals("water_edge")) for(int x=0;x<16;x++) for(int z=0;z<=8;z++) world.states.put(new BlockPos(x,64,z),Block.getBlockById(9).getStateFromMeta(0));
+            if(name.equals("water_edge")) for(int x=0;x<16;x++) world.states.put(new BlockPos(x,64,9),Block.getBlockById(1).getStateFromMeta(0));
+            if(name.equals("falling_water")) for(int y=64;y<70;y++) {
+                world.states.put(new BlockPos(8,y,8),Block.getBlockById(9).getStateFromMeta(8));
                 world.states.put(new BlockPos(9,y,8),Block.getBlockById(1).getStateFromMeta(0));
             }
             if(name.equals("web")) for(int y=64;y<66;y++) for(int z=8;z<20;z++) world.states.put(new BlockPos(8,y,z),Block.getBlockById(30).getStateFromMeta(0));
@@ -40,7 +51,7 @@ public final class RmcMovementOracle {
                 player.moveForward=1.0F;
                 player.moveStrafing=name.equals("diagonal")?1.0F:0.0F;
                 player.setSprinting(name.equals("sprint"));
-                player.setJumping(name.equals("jump"));
+                player.setJumping(name.equals("jump")||name.equals("water_jump")||name.equals("water_edge"));
                 player.handleWaterMovement();
                 player.onLivingUpdate();
                 System.out.println("travel "+name+" "+tick+" "+player.posX+" "+player.posY+" "+player.posZ+" "+player.motionX+" "+player.motionY+" "+player.motionZ+" "+player.onGround);

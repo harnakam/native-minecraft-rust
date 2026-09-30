@@ -100,3 +100,30 @@ fn stairs_form_outer_and_inner_corners_from_neighbors() {
         .sum();
     assert_eq!(upper_volume, 0.75);
 }
+#[test]
+fn noncolliding_plant_is_selectable_and_liquid_is_not_a_solid_target() {
+    use rmc_net::codec::play::{BlockChangePacket, BlockPosition};
+    use rmc_world::{BlockPos, WorldConfig, WorldSnapshot};
+    let mut world = WorldSnapshot::new(WorldConfig::overworld());
+    world
+        .apply_block_change(&BlockChangePacket {
+            position: BlockPosition::new(0, 64, 0),
+            block_state_id: 37 << 4,
+        })
+        .unwrap();
+    assert!(world
+        .block_collision_boxes(BlockPos::new(0, 64, 0))
+        .is_empty());
+    assert!(world
+        .raycast([0.5, 64.5, -2.0], [0.0, 0.0, 1.0], 4.0)
+        .is_some());
+    world
+        .apply_block_change(&BlockChangePacket {
+            position: BlockPosition::new(0, 64, 0),
+            block_state_id: 9 << 4,
+        })
+        .unwrap();
+    assert!(world
+        .raycast([0.5, 64.5, -2.0], [0.0, 0.0, 1.0], 4.0)
+        .is_none());
+}

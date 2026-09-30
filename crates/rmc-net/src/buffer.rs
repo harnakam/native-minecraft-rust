@@ -15,6 +15,9 @@ pub enum BufferError {
     ByteArrayTooLong { max_len: usize, actual: usize },
     InvalidDataWatcherType(u8),
     InvalidNbtTag(u8),
+    NbtDepthLimit,
+    NbtLimit,
+    InvalidNbtRoot(u8),
     InvalidUtf8,
     TrailingBytes { remaining: usize },
 }
@@ -231,8 +234,16 @@ impl<'a> PacketReader<'a> {
 
         let start = self.offset;
         let tag_id = self.read_u8()?;
+        if tag_id != 10 {
+            return Err(BufferError::InvalidNbtRoot(tag_id));
+        }
         self.skip_nbt_string()?;
         self.skip_nbt_payload(tag_id)?;
+        crate::nbt::parse(&self.input[start..self.offset]).map_err(|error| match error {
+            crate::nbt::NbtError::Buffer(error) => error,
+            crate::nbt::NbtError::Limit => BufferError::NbtLimit,
+            crate::nbt::NbtError::InvalidString => BufferError::InvalidUtf8,
+        })?;
         Ok(Some(self.input[start..self.offset].to_vec()))
     }
 
@@ -317,6 +328,12 @@ impl<'a> PacketReader<'a> {
     }
 
     fn skip_nbt_payload(&mut self, tag_id: u8) -> Result<(), BufferError> {
+        self.skip_nbt_payload_depth(tag_id, 0)
+    }
+    fn skip_nbt_payload_depth(&mut self, tag_id: u8, depth: usize) -> Result<(), BufferError> {
+        if depth > 512 {
+            return Err(BufferError::NbtDepthLimit);
+        }
         match tag_id {
             0 => Ok(()),
             1 => {
@@ -348,9 +365,12 @@ impl<'a> PacketReader<'a> {
                 if len < 0 {
                     return Err(BufferError::NegativeLength(len));
                 }
+                if child_tag_id == 0 && len > 0 {
+                    return Err(BufferError::InvalidNbtTag(0));
+                }
 
                 for _ in 0..len as usize {
-                    self.skip_nbt_payload(child_tag_id)?;
+                    self.skip_nbt_payload_depth(child_tag_id, depth + 1)?;
                 }
 
                 Ok(())
@@ -364,7 +384,7 @@ impl<'a> PacketReader<'a> {
                     }
 
                     self.skip_nbt_string()?;
-                    self.skip_nbt_payload(child_tag_id)?;
+                    self.skip_nbt_payload_depth(child_tag_id, depth + 1)?;
                 }
 
                 Ok(())

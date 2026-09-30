@@ -31,12 +31,18 @@ def main():
     subprocess.run([str(javac), '-encoding', 'UTF-8', '-source', '8', '-target', '8',
                     '-cp', classpath, '-d', os.path.relpath(classes, root),
                     str(templates / 'RmcCollisionOracle.java'),
-                    str(templates / 'RmcMovementOracle.java')], cwd=root, check=True)
+                    str(templates / 'RmcMovementOracle.java'),
+                    str(templates / 'RmcMiningOracle.java'),
+                    str(templates / 'RmcMiningStateOracle.java'),
+                    str(templates / 'RmcSelectionOracle.java')], cwd=root, check=True)
     output = root / 'tmp/local-oracles'
     output.mkdir(parents=True, exist_ok=True)
     for name, class_name, package, example in (
         ('collision', 'RmcCollisionOracle', 'rmc-world', 'collision_dump'),
         ('travel', 'RmcMovementOracle', 'rmc-game', 'travel_dump'),
+        ('mining', 'RmcMiningOracle', 'rmc-game', 'mining_dump'),
+        ('minestate', 'RmcMiningStateOracle', 'rmc-game', 'minestate_dump'),
+        ('selection', 'RmcSelectionOracle', 'rmc-world', 'selection_dump'),
     ):
         reference, actual = output / f'{name}-java.txt', output / f'{name}-rust.txt'
         for command, destination in (

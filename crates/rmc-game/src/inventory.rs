@@ -595,7 +595,7 @@ fn predict_pickup(slot: Slot, cursor: Slot, button: i8, valid: bool, limit: u8) 
         if let (Some(slot), Some(cursor)) = (&slot, &cursor) {
             if slot.item_id == cursor.item_id
                 && slot.damage == cursor.damage
-                && slot.nbt == cursor.nbt
+                && slot.tags_equal(&cursor)
                 && u16::from(slot.count) + u16::from(cursor.count)
                     <= u16::from(item_stack_limit(cursor.item_id))
             {
@@ -632,7 +632,7 @@ fn predict_pickup(slot: Slot, cursor: Slot, button: i8, valid: bool, limit: u8) 
         (Some(mut slot), Some(mut cursor))
             if slot.item_id == cursor.item_id
                 && slot.damage == cursor.damage
-                && slot.nbt == cursor.nbt =>
+                && slot.tags_equal(&cursor) =>
         {
             let capacity = limit.saturating_sub(slot.count);
             let transfer = capacity.min(if button == 0 { cursor.count } else { 1 });

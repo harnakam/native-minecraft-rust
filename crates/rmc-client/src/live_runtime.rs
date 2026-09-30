@@ -2,6 +2,7 @@ use crate::shell::{ClientShell, ClientShellConfig, ShellAdvanceOutput};
 use rmc_game::combat::{CombatConfig, CombatSnapshot, CombatState};
 use rmc_game::input::InputFrame;
 use rmc_game::inventory::InventoryState;
+use rmc_game::mining::{MiningContext, MiningState, MiningTarget};
 use rmc_game::player::Vec3;
 use rmc_game::simulation::SimulationEvent;
 use rmc_game::usability::{UsabilitySnapshot, UsabilityState};
@@ -81,6 +82,7 @@ impl LiveRuntimeConfig {
 #[derive(Clone, Debug, Default)]
 pub struct RuntimeActionInput {
     pub attack_pressed: bool,
+    pub attack_held: bool,
     pub use_pressed: bool,
     pub use_released: bool,
     pub close_window_pressed: bool,
@@ -245,6 +247,8 @@ pub struct LiveRuntime {
     shell: ClientShell,
     usability: UsabilityState,
     combat: CombatState,
+    mining: MiningState,
+    game_mode: u8,
     world: WorldSnapshot,
     entity_tracker: EntityTracker,
     mesh_pipeline: ChunkMeshPipeline,
@@ -317,6 +321,8 @@ impl LiveRuntime {
             shell,
             usability,
             combat: CombatState::new(CombatConfig::vanilla()),
+            mining: MiningState::default(),
+            game_mode: 0,
             world: WorldSnapshot::new(WorldConfig::overworld()),
             entity_tracker: EntityTracker::default(),
             mesh_pipeline: ChunkMeshPipeline::with_config(mesh_config),
@@ -349,6 +355,12 @@ impl LiveRuntime {
         actions: &RuntimeActionInput,
     ) -> Result<(), String> {
         self.pump_network()?;
+        let no_actions = RuntimeActionInput::default();
+        let actions = if self.combat.snapshot().health <= 0.0 {
+            &no_actions
+        } else {
+            actions
+        };
 
         if self.summary.disconnect_reason_json.is_some() || self.summary.ended_by_eof {
             return Ok(());
@@ -397,7 +409,7 @@ impl LiveRuntime {
             &output,
             &self.entity_tracker,
             self.driver.session().snapshot().player_entity_id,
-            3.0,
+            if self.game_mode == 1 { 6.0 } else { 3.0 },
             &self.world,
         );
 
@@ -406,7 +418,74 @@ impl LiveRuntime {
                 for packet in self.combat.attack_entity(target.entity_id) {
                     self.queue_play_packet(&packet)?;
                 }
+            } else {
+                self.queue_play_packet(&PlayServerboundPacket::Animation(AnimationPacket))?;
             }
+        }
+
+        let camera = output.render.camera;
+        let direction = forward_vector(camera.yaw, camera.pitch);
+        let block_hit = if targeted_entity.is_none() {
+            self.world.raycast(
+                [camera.position.x, camera.position.y, camera.position.z],
+                [direction.x, direction.y, direction.z],
+                if self.game_mode == 1 { 5.0 } else { 4.5 },
+            )
+        } else {
+            None
+        };
+        let target = block_hit.map(|hit| MiningTarget {
+            position: BlockPosition::new(hit.position.x, hit.position.y, hit.position.z),
+            face: hit.face,
+            block_state: self.world.block_state_or_air(hit.position),
+        });
+        let held_item = self.usability.inventory().selected_hotbar_item();
+        let (haste, fatigue) = self.shell.mining_effects();
+        let aqua_affinity = self
+            .usability
+            .inventory()
+            .inventory_window()
+            .slots
+            .get(5..9)
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|item| item.as_ref())
+            .any(|item| item.enchantment_level(6) > 0);
+        let context = MiningContext {
+            game_mode: self.game_mode,
+            on_ground: output.simulation.player.on_ground,
+            underwater: self.world.eye_in_water([
+                camera.position.x,
+                camera.position.y,
+                camera.position.z,
+            ]),
+            aqua_affinity,
+            haste,
+            fatigue,
+            adventure_can_destroy: target.is_some_and(|target| {
+                rmc_game::mining::adventure_can_destroy(target.block_state, held_item.as_ref())
+            }),
+            held_item,
+        };
+        let mining = self.mining.update(
+            actions.attack_pressed && targeted_entity.is_none(),
+            actions.attack_held,
+            output.ticks_run,
+            target,
+            &context,
+        );
+        for packet in mining.packets {
+            self.queue_play_packet(&packet)?;
+        }
+        for position in mining.destroyed {
+            let changes = self
+                .world
+                .apply_block_change(&rmc_net::codec::play::BlockChangePacket {
+                    position,
+                    block_state_id: 0,
+                })
+                .map_err(|error| format!("failed to predict block removal: {error:?}"))?;
+            self.mesh_pipeline.apply_world_changes(&changes);
         }
 
         if actions.use_pressed {
@@ -506,6 +585,15 @@ impl LiveRuntime {
         self.combat.snapshot()
     }
 
+    pub fn request_respawn(&mut self) -> Result<bool, String> {
+        let Some(packet) = self.combat.request_respawn() else {
+            return Ok(false);
+        };
+        self.queue_play_packet(&packet)?;
+        self.flush_if_pending()?;
+        Ok(true)
+    }
+
     pub fn inventory_state(&self) -> &InventoryState {
         self.usability.inventory()
     }
@@ -596,6 +684,16 @@ impl LiveRuntime {
             for event in cycle.events {
                 match event {
                     DriverEvent::InboundPlayPacket(packet) => {
+                        if let PlayClientboundPacket::ChangeGameState(packet) = &packet {
+                            if packet.reason == 3 {
+                                let mode = packet.value as i32;
+                                self.game_mode = if (0..=3).contains(&mode) {
+                                    mode as u8
+                                } else {
+                                    0
+                                };
+                            }
+                        }
                         self.shell.apply_player_packet(
                             &packet,
                             self.driver.session().snapshot().player_entity_id,
@@ -667,6 +765,8 @@ impl LiveRuntime {
                 self.summary.reached_play = true;
             }
             SessionAction::JoinedGame(packet) => {
+                self.game_mode = packet.game_mode;
+                self.mining.reset();
                 self.summary.joined_game = true;
                 self.position_initialized = false;
                 self.world =
@@ -678,6 +778,8 @@ impl LiveRuntime {
                 self.summary.disconnect_reason_json = Some(reason_json);
             }
             SessionAction::Respawned(packet) => {
+                self.game_mode = packet.game_mode;
+                self.mining.reset();
                 self.position_initialized = false;
                 self.pending_simulation_events.clear();
                 self.world = WorldSnapshot::new(world_config_for_dimension(packet.dimension));
@@ -999,6 +1101,316 @@ mod tests {
             [packet.cursor_x, packet.cursor_y, packet.cursor_z],
             [0.5, 0.75, 0.0]
         );
+    }
+
+    #[test]
+    fn death_received_over_tcp_emits_one_respawn_and_resets_on_server_response() {
+        use rmc_net::codec::login::{LoginClientboundPacket, LoginSuccess};
+        use rmc_net::codec::play::{
+            JoinGamePacket, PlayerPositionAndLookPacket, PositionLookFlags, RespawnPacket,
+            UpdateHealthPacket,
+        };
+        use rmc_net::compression::CompressionState;
+        use rmc_net::framing::{encode_frame, FrameDecoder, FrameLimits};
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let mut config = LiveRuntimeConfig::offline("RespawnTest");
+        config.server_host = "127.0.0.1".into();
+        config.server_port = listener.local_addr().unwrap().port();
+        let mut runtime = LiveRuntime::connect(config).unwrap();
+        let (mut server, _) = listener.accept().unwrap();
+        server.set_nonblocking(true).unwrap();
+        let login = LoginClientboundPacket::LoginSuccess(LoginSuccess {
+            uuid_string: "00000000-0000-0000-0000-000000000000".into(),
+            username: "RespawnTest".into(),
+        })
+        .encode_packet()
+        .unwrap()
+        .packet_bytes();
+        let join = PlayClientboundPacket::JoinGame(JoinGamePacket {
+            entity_id: 1,
+            game_mode: 0,
+            hardcore: false,
+            dimension: 0,
+            difficulty: 1,
+            max_players: 20,
+            level_type: "default".into(),
+            reduced_debug_info: false,
+        })
+        .encode_packet()
+        .unwrap()
+        .packet_bytes();
+        let position = PlayClientboundPacket::PlayerPositionAndLook(PlayerPositionAndLookPacket {
+            x: 0.0,
+            y: 64.0,
+            z: 0.0,
+            yaw: 0.0,
+            pitch: 0.0,
+            flags: PositionLookFlags::from_bits(0),
+        })
+        .encode_packet()
+        .unwrap()
+        .packet_bytes();
+        let death = PlayClientboundPacket::UpdateHealth(UpdateHealthPacket {
+            health: 0.0,
+            food_level: 20,
+            saturation: 5.0,
+        })
+        .encode_packet()
+        .unwrap()
+        .packet_bytes();
+        for bytes in [login, join, position, death] {
+            server
+                .write_all(
+                    &encode_frame(
+                        &bytes,
+                        CompressionState::Disabled,
+                        None,
+                        FrameLimits::default(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        for _ in 0..60 {
+            runtime
+                .step(
+                    Duration::from_millis(50),
+                    &InputFrame::default(),
+                    &RuntimeActionInput::default(),
+                )
+                .unwrap();
+            if runtime.combat_snapshot().death_ticks >= 20 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(runtime.combat_snapshot().health, 0.0);
+        assert!(runtime.request_respawn().unwrap());
+        assert!(!runtime.request_respawn().unwrap());
+        let mut decoder = FrameDecoder::new(CompressionState::Disabled);
+        let mut bytes = [0; 8192];
+        let mut requests = 0;
+        for _ in 0..30 {
+            match server.read(&mut bytes) {
+                Ok(count) => decoder.queue_bytes(&bytes[..count]),
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("{error}"),
+            }
+            while let Some(frame) = decoder.try_next_frame(None).unwrap() {
+                if frame.packet_bytes == [0x16, 0] {
+                    requests += 1;
+                }
+            }
+            if requests > 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(requests, 1);
+        let respawn = PlayClientboundPacket::Respawn(RespawnPacket {
+            dimension: 0,
+            difficulty: 1,
+            game_mode: 0,
+            level_type: "default".into(),
+        })
+        .encode_packet()
+        .unwrap()
+        .packet_bytes();
+        server
+            .write_all(
+                &encode_frame(
+                    &respawn,
+                    CompressionState::Disabled,
+                    None,
+                    FrameLimits::default(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        for _ in 0..30 {
+            runtime
+                .step(
+                    Duration::from_millis(50),
+                    &InputFrame::default(),
+                    &RuntimeActionInput::default(),
+                )
+                .unwrap();
+            if !runtime.combat_snapshot().respawn_requested {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(runtime.combat_snapshot().health, 20.0);
+        assert!(!runtime.combat_snapshot().respawn_requested);
+    }
+
+    #[test]
+    #[ignore = "requires a user-authorized local official 1.8.9 offline server with VanillaProbe operator"]
+    fn official_server_confirms_mining_and_respawn() {
+        let mut config = LiveRuntimeConfig::offline("VanillaProbe");
+        config.server_host = "127.0.0.1".into();
+        config.server_port = std::env::var("RMC_VANILLA_PORT")
+            .expect("Set RMC_VANILLA_PORT for the isolated test server")
+            .parse()
+            .unwrap();
+        let mut runtime = LiveRuntime::connect(config).unwrap();
+        fn advance(runtime: &mut LiveRuntime, actions: &RuntimeActionInput) {
+            runtime
+                .step(Duration::from_millis(50), &InputFrame::default(), actions)
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        for _ in 0..300 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            if runtime.output().is_some() {
+                break;
+            }
+        }
+        assert!(
+            runtime.output().is_some(),
+            "server did not initialize position"
+        );
+        // Login position can precede the first health synchronization.
+        for _ in 0..20 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+        }
+        if runtime.combat_snapshot().health <= 0.0 {
+            for _ in 0..40 {
+                advance(&mut runtime, &RuntimeActionInput::default());
+            }
+            assert!(runtime.request_respawn().unwrap());
+            for _ in 0..100 {
+                advance(&mut runtime, &RuntimeActionInput::default());
+                if runtime.combat_snapshot().health > 0.0 && runtime.position_initialized {
+                    break;
+                }
+            }
+        }
+        runtime
+            .send_chat_message("/tp VanillaProbe 0.5 4 0.5 0 0")
+            .unwrap();
+        for _ in 0..200 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            if runtime
+                .world
+                .chunk(rmc_world::BlockPos::new(0, 0, 0).chunk_pos())
+                .is_some()
+            {
+                break;
+            }
+        }
+        for command in [
+            "/gamerule keepInventory true",
+            "/setblock 0 63 0 stone",
+            "/setblock 0 65 2 stone",
+            "/clear VanillaProbe",
+            "/give VanillaProbe diamond_pickaxe",
+            "/tp VanillaProbe 0.5 64 0.5 0 0",
+        ] {
+            runtime.send_chat_message(command).unwrap();
+        }
+        for _ in 0..200 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            let ready = runtime
+                .usability
+                .inventory()
+                .selected_hotbar_item()
+                .is_some_and(|item| item.item_id == 278)
+                && runtime
+                    .world
+                    .block_state_or_air(rmc_world::BlockPos::new(0, 65, 2))
+                    >> 4
+                    == 1
+                && runtime.output().is_some_and(|output| {
+                    (output.simulation.player.position.x - 0.5).abs() < 0.001
+                });
+            if ready {
+                break;
+            }
+        }
+        assert_eq!(
+            runtime
+                .usability
+                .inventory()
+                .selected_hotbar_item()
+                .unwrap()
+                .item_id,
+            278
+        );
+        assert_eq!(
+            runtime
+                .world
+                .block_state_or_air(rmc_world::BlockPos::new(0, 65, 2))
+                >> 4,
+            1
+        );
+        for tick in 0..40 {
+            advance(
+                &mut runtime,
+                &RuntimeActionInput {
+                    attack_pressed: tick == 0,
+                    attack_held: true,
+                    ..RuntimeActionInput::default()
+                },
+            );
+            if runtime
+                .world
+                .block_state_or_air(rmc_world::BlockPos::new(0, 65, 2))
+                == 0
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            runtime
+                .world
+                .block_state_or_air(rmc_world::BlockPos::new(0, 65, 2)),
+            0,
+            "client did not complete mining"
+        );
+        runtime
+            .send_chat_message("/testforblock 0 65 2 air")
+            .unwrap();
+        let mut confirmed = false;
+        for _ in 0..100 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            confirmed = runtime
+                .usability
+                .snapshot()
+                .chat_lines
+                .iter()
+                .any(|line| line.message_json.contains("commands.testforblock.success"));
+            if confirmed {
+                break;
+            }
+        }
+        assert!(
+            confirmed,
+            "official server did not confirm the block was air"
+        );
+        runtime.send_chat_message("/kill").unwrap();
+        for _ in 0..100 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            if runtime.combat_snapshot().death_ticks >= 20 {
+                break;
+            }
+        }
+        assert_eq!(runtime.combat_snapshot().health, 0.0);
+        assert!(runtime.request_respawn().unwrap());
+        for _ in 0..200 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            if runtime.combat_snapshot().health > 0.0 && runtime.position_initialized {
+                break;
+            }
+        }
+        assert_eq!(runtime.combat_snapshot().health, 20.0);
+        assert!(
+            runtime.position_initialized,
+            "official server did not initialize the respawn position"
+        );
+        assert!(runtime.summary.disconnect_reason_json.is_none());
+        println!("official 1.8.9: server-confirmed stone mining, death and respawn passed");
     }
 
     fn target_at(z: f64) -> EntityTracker {

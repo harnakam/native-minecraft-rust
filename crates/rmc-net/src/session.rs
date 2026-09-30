@@ -257,6 +257,7 @@ impl HeadlessSession {
                 })
             }
             PlayClientboundPacket::PlayerAbilities(_)
+            | PlayClientboundPacket::ChangeGameState(_)
             | PlayClientboundPacket::HeldItemChange(_)
             | PlayClientboundPacket::EntityEffect(_)
             | PlayClientboundPacket::RemoveEntityEffect(_)

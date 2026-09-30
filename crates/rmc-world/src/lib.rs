@@ -641,6 +641,7 @@ impl WorldSnapshot {
             | PlayClientboundPacket::Teams(_)
             | PlayClientboundPacket::PlayerAbilities(_)
             | PlayClientboundPacket::HeldItemChange(_)
+            | PlayClientboundPacket::ChangeGameState(_)
             | PlayClientboundPacket::EntityEffect(_)
             | PlayClientboundPacket::RemoveEntityEffect(_)
             | PlayClientboundPacket::EntityProperties(_)
@@ -884,3 +885,4 @@ mod tests {
 }
 
 pub mod environment;
+mod selection_properties;

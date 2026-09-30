@@ -90,6 +90,89 @@ pub struct BlockHit {
 }
 
 impl WorldSnapshot {
+    pub fn selection_boxes(&self, pos: BlockPos) -> Vec<Aabb> {
+        let state = self.block_state_or_air(pos);
+        let id = state >> 4;
+        let meta = state & 15;
+        if id == 36 {
+            return Vec::new();
+        }
+        if matches!(id, 50 | 75 | 76) {
+            let f = 0.15_f32;
+            let (min, max) = match meta {
+                1 => ([0.0, 0.2, 0.5 - f], [f * 2.0, 0.8, 0.5 + f]),
+                2 => ([1.0 - f * 2.0, 0.2, 0.5 - f], [1.0, 0.8, 0.5 + f]),
+                3 => ([0.5 - f, 0.2, 0.0], [0.5 + f, 0.8, f * 2.0]),
+                4 => ([0.5 - f, 0.2, 1.0 - f * 2.0], [0.5 + f, 0.8, 1.0]),
+                _ => (
+                    [0.5 - 0.1_f32, 0.0, 0.5 - 0.1_f32],
+                    [0.5 + 0.1_f32, 0.6, 0.5 + 0.1_f32],
+                ),
+            };
+            return vec![Aabb::new(min.map(f64::from), max.map(f64::from)).offset([
+                pos.x as f64,
+                pos.y as f64,
+                pos.z as f64,
+            ])];
+        }
+        let Some(bounds) = crate::selection_properties::bounds(state) else {
+            return Vec::new();
+        };
+        if matches!(
+            id,
+            53 | 67 | 108 | 109 | 114 | 128 | 134 | 135 | 136 | 156 | 163 | 164 | 180
+        ) {
+            let top = meta & 4 != 0;
+            let base = Aabb::new(
+                [0.0, if top { 0.5 } else { 0.0 }, 0.0],
+                [1.0, if top { 1.0 } else { 0.5 }, 1.0],
+            );
+            let y = if top { (0.0, 0.5) } else { (0.5, 1.0) };
+            let (x0, z0, x1, z1) = match meta & 3 {
+                0 => (0.5, 0.0, 1.0, 1.0),
+                1 => (0.0, 0.0, 0.5, 1.0),
+                2 => (0.0, 0.5, 1.0, 1.0),
+                _ => (0.0, 0.0, 1.0, 0.5),
+            };
+            return vec![
+                base.offset([pos.x as f64, pos.y as f64, pos.z as f64]),
+                Aabb::new([x0, y.0, z0], [x1, y.1, z1]).offset([
+                    pos.x as f64,
+                    pos.y as f64,
+                    pos.z as f64,
+                ]),
+            ];
+        }
+        if matches!(id, 54 | 64 | 71 | 146 | 193..=197) {
+            return self.block_collision_boxes(pos);
+        }
+        if matches!(id, 85 | 101 | 102 | 113 | 139 | 160 | 188..=192) {
+            let boxes = self.block_collision_boxes(pos);
+            if !boxes.is_empty() {
+                let min = std::array::from_fn(|axis| {
+                    boxes
+                        .iter()
+                        .map(|bounds| bounds.min[axis])
+                        .fold(f64::INFINITY, f64::min)
+                });
+                let mut max = std::array::from_fn(|axis| {
+                    boxes
+                        .iter()
+                        .map(|bounds| bounds.max[axis])
+                        .fold(f64::NEG_INFINITY, f64::max)
+                });
+                max[1] = pos.y as f64 + bounds.max[1];
+                if id == 139
+                    && ((min[0] == pos.x as f64 + 0.3125 && max[0] == pos.x as f64 + 0.6875)
+                        || (min[2] == pos.z as f64 + 0.3125 && max[2] == pos.z as f64 + 0.6875))
+                {
+                    max[1] = pos.y as f64 + 0.8125;
+                }
+                return vec![Aabb::new(min, max)];
+            }
+        }
+        vec![bounds.offset([pos.x as f64, pos.y as f64, pos.z as f64])]
+    }
     pub fn collision_boxes(&self, area: Aabb) -> Vec<Aabb> {
         let mut result = Vec::new();
         for x in area.min[0].floor() as i32..=area.max[0].floor() as i32 {
@@ -568,7 +651,7 @@ impl WorldSnapshot {
         for _ in 0..256 {
             let pos = BlockPos::new(cell[0], cell[1], cell[2]);
             let hit = self
-                .block_collision_boxes(pos)
+                .selection_boxes(pos)
                 .into_iter()
                 .filter_map(|bounds| bounds.ray_hit(origin, direction, reach))
                 .min_by(|a, b| a.0.total_cmp(&b.0));

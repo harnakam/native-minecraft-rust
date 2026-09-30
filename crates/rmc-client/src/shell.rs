@@ -78,6 +78,12 @@ mod tests {
 }
 
 impl ClientShell {
+    pub fn mining_effects(&self) -> (Option<u8>, Option<u8>) {
+        (
+            self.simulation.effect_amplifier(3),
+            self.simulation.effect_amplifier(4),
+        )
+    }
     pub fn new(config: ClientShellConfig) -> Self {
         Self {
             timer: FixedStepTimer::new(config.fixed_step),

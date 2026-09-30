@@ -5,6 +5,8 @@ import unittest
 
 import compare_collision
 import compare_travel
+import compare_mining
+import compare_minestate
 
 
 class OracleComparisonTests(unittest.TestCase):
@@ -35,6 +37,14 @@ class OracleComparisonTests(unittest.TestCase):
         self.assertFalse(compare_collision.same(cube, halves[:1]))
         self.assertFalse(compare_collision.same(cube, []))
         self.assertTrue(compare_collision.same([], [(0, 0, 0, 1, 0, 1)]))
+
+    def test_mining_allows_actual_zero_hardness_infinity_but_rejects_nan(self):
+        self.assertEqual(len(self.read(compare_mining.read, 'hardness normal 165 -1 Infinity\n')),1)
+        with self.assertRaises(ValueError):
+            self.read(compare_mining.read, 'hardness normal 1 -1 NaN\n')
+        valid='minestate stone 1 0.2 true false 0,0,64,0,1\n'
+        self.assertEqual(len(self.read(compare_minestate.read, valid)),1)
+        with self.assertRaises(ValueError):self.read(compare_minestate.read,valid+valid)
 
 
 if __name__ == '__main__':

@@ -39,6 +39,9 @@ pub struct CombatSnapshot {
     pub saturation: f32,
     pub hurt_ticks: u8,
     pub last_velocity: Vec3,
+    pub death_ticks: u32,
+    pub respawn_requested: bool,
+    pub hardcore: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -59,6 +62,9 @@ pub struct CombatState {
     saturation: f32,
     hurt_ticks: u8,
     last_velocity: Vec3,
+    death_ticks: u32,
+    respawn_requested: bool,
+    hardcore: bool,
 }
 
 impl CombatState {
@@ -73,6 +79,9 @@ impl CombatState {
             saturation: 5.0,
             hurt_ticks: 0,
             last_velocity: Vec3::ZERO,
+            death_ticks: 0,
+            respawn_requested: false,
+            hardcore: false,
         }
     }
 
@@ -86,10 +95,16 @@ impl CombatState {
             saturation: self.saturation,
             hurt_ticks: self.hurt_ticks,
             last_velocity: self.last_velocity,
+            death_ticks: self.death_ticks,
+            respawn_requested: self.respawn_requested,
+            hardcore: self.hardcore,
         }
     }
 
     pub fn tick_feedback(&mut self) {
+        if self.health <= 0.0 {
+            self.death_ticks = self.death_ticks.saturating_add(1);
+        }
         if let Some(using_item) = &mut self.using_item {
             using_item.use_ticks += 1;
         }
@@ -200,6 +215,10 @@ impl CombatState {
     pub fn apply_health_update(&mut self, packet: &UpdateHealthPacket) -> CombatUpdate {
         let took_damage = packet.health < self.health;
         self.health = packet.health;
+        if self.health > 0.0 {
+            self.death_ticks = 0;
+            self.respawn_requested = false;
+        }
         self.food_level = packet.food_level;
         self.saturation = packet.saturation;
 
@@ -215,6 +234,9 @@ impl CombatState {
     }
 
     pub fn apply_respawn(&mut self, _packet: &RespawnPacket) -> CombatUpdate {
+        self.health = 20.0;
+        self.death_ticks = 0;
+        self.respawn_requested = false;
         self.server_sprint_state = false;
         self.server_sneak_state = false;
         self.using_item = None;
@@ -250,6 +272,10 @@ impl CombatState {
         player_entity_id: Option<i32>,
     ) -> CombatUpdate {
         match packet {
+            PlayClientboundPacket::JoinGame(packet) => {
+                self.hardcore = packet.hardcore;
+                CombatUpdate::default()
+            }
             PlayClientboundPacket::UpdateHealth(packet) => self.apply_health_update(packet),
             PlayClientboundPacket::Respawn(packet) => self.apply_respawn(packet),
             PlayClientboundPacket::EntityVelocity(packet) => {
@@ -257,6 +283,14 @@ impl CombatState {
             }
             _ => CombatUpdate::default(),
         }
+    }
+
+    pub fn request_respawn(&mut self) -> Option<PlayServerboundPacket> {
+        if self.health > 0.0 || self.death_ticks < 20 || self.hardcore || self.respawn_requested {
+            return None;
+        }
+        self.respawn_requested = true;
+        Some(PlayServerboundPacket::ClientStatus(0))
     }
 }
 

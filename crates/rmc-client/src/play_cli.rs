@@ -199,6 +199,7 @@ struct RuntimeInputState {
     mouse_delta_x: f32,
     mouse_delta_y: f32,
     attack_pressed: bool,
+    attack_held: bool,
     use_pressed: bool,
     use_released: bool,
     close_window_pressed: bool,
@@ -229,6 +230,7 @@ impl RuntimeInputState {
         };
         let actions = RuntimeActionInput {
             attack_pressed: std::mem::take(&mut self.attack_pressed),
+            attack_held: self.attack_held,
             use_pressed: std::mem::take(&mut self.use_pressed),
             use_released: std::mem::take(&mut self.use_released),
             close_window_pressed: std::mem::take(&mut self.close_window_pressed),
@@ -386,6 +388,7 @@ impl PlayApp {
                 mouse_delta_x: 0.0,
                 mouse_delta_y: 0.0,
                 attack_pressed: false,
+                attack_held: false,
                 use_pressed: false,
                 use_released: false,
                 close_window_pressed: false,
@@ -437,7 +440,26 @@ impl PlayApp {
         }
 
         if let Some(runtime) = &mut self.runtime {
-            let (frame_input, actions) = self.runtime_input.consume_frame();
+            let (mut frame_input, mut actions) = self.runtime_input.consume_frame();
+            if self.chat_open
+                || !self.mouse_captured
+                || runtime.combat_snapshot().health <= 0.0
+                || runtime
+                    .usability_snapshot()
+                    .is_some_and(|snapshot| snapshot.window.is_some())
+            {
+                frame_input.pressed_inputs.clear();
+                frame_input
+                    .released_inputs
+                    .extend(std::mem::take(&mut self.runtime_input.held_keys));
+                frame_input.mouse_delta_x = 0.0;
+                frame_input.mouse_delta_y = 0.0;
+                frame_input.hotbar_scroll = 0;
+                self.runtime_input.attack_held = false;
+                actions.attack_pressed = false;
+                actions.attack_held = false;
+                actions.use_pressed = false;
+            }
             if let Err(error) = runtime.step(frame_delta, &frame_input, &actions) {
                 self.status_line = error;
                 self.runtime = None;
@@ -481,7 +503,8 @@ impl PlayApp {
                 .output()
                 .map(|output| output.render.camera.mouse_captured)
                 .unwrap_or(false);
-            let ui_blocking = self.chat_open
+            let ui_blocking = runtime.combat_snapshot().health <= 0.0
+                || self.chat_open
                 || runtime
                     .usability_snapshot()
                     .and_then(|snapshot| snapshot.window.as_ref())
@@ -889,6 +912,78 @@ impl PlayApp {
                     draw_chat_input_overlay(frame, width, height, &self.chat_input);
                 }
                 draw_runtime_overlay(frame, width, height, runtime);
+                let combat = runtime.combat_snapshot();
+                if combat.health <= 0.0 {
+                    for pixel in frame.chunks_exact_mut(4) {
+                        pixel[0] = (pixel[0] as u16 / 2 + 64).min(255) as u8;
+                        pixel[1] /= 2;
+                        pixel[2] /= 2;
+                    }
+                    draw_text_scaled(
+                        frame,
+                        width,
+                        height,
+                        width as i32 / 2 - 72,
+                        height as i32 / 4,
+                        "You died!",
+                        [255, 255, 255],
+                        2,
+                    );
+                    if !combat.hardcore {
+                        let ready = combat.death_ticks >= 20 && !combat.respawn_requested;
+                        let rect = death_button_rect(width as i32, height as i32, 0);
+                        draw_button(
+                            frame,
+                            width,
+                            height,
+                            rect,
+                            if ready { [58, 64, 72] } else { [32, 32, 32] },
+                            [150, 150, 150],
+                        );
+                        draw_text_scaled(
+                            frame,
+                            width,
+                            height,
+                            rect.x + 12,
+                            rect.y + 8,
+                            if combat.respawn_requested {
+                                "Waiting for server..."
+                            } else {
+                                "Respawn [Enter]"
+                            },
+                            if ready {
+                                [255, 255, 255]
+                            } else {
+                                [140, 140, 140]
+                            },
+                            1,
+                        );
+                    }
+                    let rect = death_button_rect(width as i32, height as i32, 1);
+                    draw_button(frame, width, height, rect, [58, 64, 72], [150, 150, 150]);
+                    draw_text_scaled(
+                        frame,
+                        width,
+                        height,
+                        rect.x + 12,
+                        rect.y + 8,
+                        "Leave server [Esc]",
+                        [255, 255, 255],
+                        1,
+                    );
+                    if !self.status_line.is_empty() {
+                        draw_text_scaled(
+                            frame,
+                            width,
+                            height,
+                            12,
+                            height as i32 - 24,
+                            &self.status_line,
+                            [255, 210, 180],
+                            1,
+                        );
+                    }
+                }
                 return;
             }
         }
@@ -930,6 +1025,32 @@ impl PlayApp {
                 }
             }
             ScreenState::Playing => {
+                if self
+                    .runtime
+                    .as_ref()
+                    .is_some_and(|runtime| runtime.combat_snapshot().health <= 0.0)
+                {
+                    if pressed && button == MouseButton::Left {
+                        let width = self.options.width as i32;
+                        let height = self.options.height as i32;
+                        if death_button_rect(width, height, 0)
+                            .contains(self.mouse_position.x, self.mouse_position.y)
+                        {
+                            if let Some(runtime) = self.runtime.as_mut() {
+                                if let Err(error) = runtime.request_respawn() {
+                                    self.status_line = error;
+                                }
+                            }
+                        } else if death_button_rect(width, height, 1)
+                            .contains(self.mouse_position.x, self.mouse_position.y)
+                        {
+                            self.runtime = None;
+                            self.screen = ScreenState::Menu;
+                            self.apply_cursor_capture(window, false);
+                        }
+                    }
+                    return;
+                }
                 if pressed
                     && matches!(button, MouseButton::Left | MouseButton::Right)
                     && !self.mouse_captured
@@ -954,6 +1075,7 @@ impl PlayApp {
 
                 match button {
                     MouseButton::Left => {
+                        self.runtime_input.attack_held = pressed;
                         if pressed {
                             self.runtime_input.attack_pressed = true;
                         }
@@ -1095,6 +1217,24 @@ impl PlayApp {
         pressed: bool,
         window: &winit::window::Window,
     ) {
+        if self
+            .runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.combat_snapshot().health <= 0.0)
+        {
+            if pressed && key == VirtualKeyCode::Return {
+                if let Some(runtime) = self.runtime.as_mut() {
+                    if let Err(error) = runtime.request_respawn() {
+                        self.status_line = error;
+                    }
+                }
+            } else if pressed && key == VirtualKeyCode::Escape {
+                self.runtime = None;
+                self.screen = ScreenState::Menu;
+                self.apply_cursor_capture(window, false);
+            }
+            return;
+        }
         if self.chat_open {
             if !pressed {
                 return;
@@ -2114,6 +2254,15 @@ fn draw_window_overlay(frame: &mut [u8], width: u32, height: u32, window: &Windo
                 );
             }
         }
+    }
+}
+
+fn death_button_rect(width: i32, height: i32, index: i32) -> UiRect {
+    UiRect {
+        x: width / 2 - 100,
+        y: height / 4 + 72 + index * 28,
+        width: 200,
+        height: 24,
     }
 }
 

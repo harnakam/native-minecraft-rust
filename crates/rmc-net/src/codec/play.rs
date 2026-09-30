@@ -51,6 +51,11 @@ pub struct PlayerAbilitiesPacket {
 pub struct HeldItemChangeClientboundPacket {
     pub slot: i8,
 }
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChangeGameStatePacket {
+    pub reason: u8,
+    pub value: f32,
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntityEffectPacket {
     pub entity_id: i32,
@@ -245,6 +250,40 @@ pub struct ItemStack {
 }
 
 impl ItemStack {
+    pub fn enchantment_level(&self, id: i32) -> i32 {
+        let Some(bytes) = self.nbt.as_deref() else {
+            return 0;
+        };
+        let Ok(root) = crate::nbt::parse(bytes) else {
+            return 0;
+        };
+        let Some(list) = root.get("ench").and_then(crate::nbt::Tag::list) else {
+            return 0;
+        };
+        for enchantment in list {
+            if enchantment
+                .get("id")
+                .and_then(crate::nbt::Tag::short)
+                .map(i32::from)
+                == Some(id)
+            {
+                return enchantment
+                    .get("lvl")
+                    .and_then(crate::nbt::Tag::short)
+                    .unwrap_or(0) as i32;
+            }
+        }
+        0
+    }
+    pub fn tags_equal(&self, other: &Self) -> bool {
+        match (&self.nbt, &other.nbt) {
+            (None, None) => true,
+            (Some(a), Some(b)) => {
+                matches!((crate::nbt::parse(a),crate::nbt::parse(b)),(Ok(a),Ok(b)) if a==b)
+            }
+            _ => false,
+        }
+    }
     pub fn simple(item_id: i16, count: u8, damage: i16) -> Self {
         Self {
             item_id,
@@ -616,6 +655,7 @@ pub enum PlayClientboundPacket {
     EntityVelocity(EntityVelocityPacket),
     PlayerAbilities(PlayerAbilitiesPacket),
     HeldItemChange(HeldItemChangeClientboundPacket),
+    ChangeGameState(ChangeGameStatePacket),
     EntityEffect(EntityEffectPacket),
     RemoveEntityEffect(RemoveEntityEffectPacket),
     EntityProperties(EntityPropertiesPacket),
@@ -824,6 +864,10 @@ impl PlayClientboundPacket {
                     attributes,
                 })
             }
+            0x2B => Self::ChangeGameState(ChangeGameStatePacket {
+                reason: reader.read_u8()?,
+                value: reader.read_f32()?,
+            }),
             0x09 => Self::HeldItemChange(HeldItemChangeClientboundPacket {
                 slot: reader.read_i8()?,
             }),
@@ -1221,6 +1265,11 @@ impl PlayClientboundPacket {
             Self::KeepAlive(packet) => {
                 writer.write_var_i32(packet.id);
                 0x00
+            }
+            Self::ChangeGameState(packet) => {
+                writer.write_u8(packet.reason);
+                writer.write_f32(packet.value);
+                0x2B
             }
             Self::HeldItemChange(packet) => {
                 writer.write_i8(packet.slot);

@@ -10,6 +10,7 @@ pub mod driver;
 pub mod framing;
 pub mod headless;
 pub mod microsoft;
+pub mod nbt;
 pub mod protocol;
 pub mod session;
 pub mod trace;

@@ -12,6 +12,35 @@ pub struct MovementEnvironment {
 }
 
 impl WorldSnapshot {
+    pub fn eye_in_water(&self, eye: [f64; 3]) -> bool {
+        let pos = BlockPos::new(
+            eye[0].floor() as i32,
+            eye[1].floor() as i32,
+            eye[2].floor() as i32,
+        );
+        let state = self.block_state_or_air(pos);
+        if !matches!(state >> 4, 8 | 9) {
+            return false;
+        }
+        let level = if state & 15 >= 8 { 0 } else { state & 15 };
+        let height = (level as f32 + 1.0) / 9.0 - 0.11111111_f32;
+        eye[1] < f64::from((pos.y + 1) as f32 - height)
+    }
+    pub fn liquid_escape_clear(&self, bounds: Aabb) -> bool {
+        if !self.collision_boxes(bounds).is_empty() {
+            return false;
+        }
+        for x in bounds.min[0].floor() as i32..=bounds.max[0].floor() as i32 {
+            for y in bounds.min[1].floor() as i32..=bounds.max[1].floor() as i32 {
+                for z in bounds.min[2].floor() as i32..=bounds.max[2].floor() as i32 {
+                    if matches!(self.block_state_or_air(BlockPos::new(x, y, z)) >> 4, 8..=11) {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
     pub fn movement_environment(&self, bounds: Aabb) -> MovementEnvironment {
         let mut result = MovementEnvironment::default();
         let feet = BlockPos::new(

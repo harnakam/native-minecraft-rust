@@ -36,3 +36,5 @@ resourcepacks/
 *.key
 server.properties
 eula.txt
+__pycache__/
+*.pyc

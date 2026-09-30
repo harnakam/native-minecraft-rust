@@ -13,15 +13,15 @@ cargo run -p rmc-client -- play --server localhost:25565 --offline --offline-nam
 
 Offline login requires an offline-mode server. For online login, the window supports locally installed launcher accounts and browser-based Microsoft authentication. Never commit account files or tokens.
 
-The windowed client receives chunks, renders terrain, simulates movement against received block geometry, and provides chat, hotbar, entity interaction and container pickup handling. Local assets are imported at runtime from an installed 1.8.9 JAR or a local MCP919 installation into ignored `local_assets/`. No Minecraft assets are distributed here.
+The windowed client receives chunks, renders terrain, simulates movement against received block geometry, and provides chat, hotbar, entity interaction, block mining, death/respawn controls and container pickup handling. Local assets are imported at runtime from an installed 1.8.9 JAR or a local MCP919 installation into ignored `local_assets/`. No Minecraft assets are distributed here.
 
 ## Compatibility status
 
 Verified on Windows against a local official 1.8.9 server: compressed login, world join, 49 received chunks, windowed rendering and sustained forward/sprint movement. Unit tests cover protocol framing, partial writes with encryption, movement rules, terrain collision, interaction reach, inventory rollback and comparison integrity.
 
-The strict live Java/Rust comparison passes the current packet, movement, combat and inventory scenarios. Local differential probes also match 960 travel ticks across twelve scenarios and 3,039 valid single-block metadata collision shapes. These are limited scenarios: neighboring blocks, all gameplay actions and online PvP are not comprehensively verified. Hypixel gameplay has not been verified. Do not interpret these results as full behavior parity.
+The strict live Java/Rust comparison passes the current packet, movement, combat and inventory scenarios. Local differential probes also match 1,360 travel ticks, 3,039 valid single-block collision shapes, 91,170 selection rays, 26,136 mining-speed values and 140 mining-controller ticks. A local official server confirms stone mining and respawn. These are limited scenarios: neighboring blocks, all gameplay actions and online PvP are not comprehensively verified. Hypixel gameplay has not been verified. Do not interpret these results as full behavior parity.
 
-Remaining work includes mining, neighbor-dependent collision and selection, fluid/enchantment edge cases, full inventory crafting/shift/drag rules, entity/item/model rendering, remaining protocol handlers and broader multiplayer interaction tests. See [verification](docs/verification.md) and [roadmap](docs/roadmap.md).
+Remaining work includes special mining cases, connected collision/selection, fluid/enchantment edge cases, full inventory crafting/shift/drag rules, entity/item/model rendering, remaining protocol handlers and broader multiplayer interaction tests. See [verification](docs/verification.md) and [roadmap](docs/roadmap.md).
 
 ## Source layout
 

@@ -154,6 +154,7 @@ pub struct LocalSimulationLayer {
     in_web: bool,
     fluid_acceleration: Option<f32>,
     food_level: i32,
+    alive: bool,
     allow_flying: bool,
     flying: bool,
     flying_speed: f32,
@@ -187,6 +188,7 @@ impl LocalSimulationLayer {
             in_web: false,
             fluid_acceleration: None,
             food_level: 20,
+            alive: true,
             allow_flying: false,
             flying: false,
             flying_speed: 0.05,
@@ -255,7 +257,10 @@ impl LocalSimulationLayer {
                     self.flying_speed = p.flying_speed;
                 }
             }
-            Packet::UpdateHealth(p) => self.food_level = p.food_level,
+            Packet::UpdateHealth(p) => {
+                self.food_level = p.food_level;
+                self.alive = p.health > 0.0;
+            }
             Packet::EntityEffect(p) if Some(p.entity_id) == local_entity => {
                 self.effects.insert(p.effect_id, (p.amplifier, p.duration));
             }
@@ -300,6 +305,7 @@ impl LocalSimulationLayer {
                 }
             }
             Packet::Respawn(_) => {
+                self.alive = true;
                 self.effects.clear();
                 self.jump_ticks = 0;
                 self.in_web = false;
@@ -329,6 +335,11 @@ impl LocalSimulationLayer {
         selected_hotbar_slot: u8,
         world: Option<&WorldSnapshot>,
     ) {
+        let movement = if self.alive {
+            movement
+        } else {
+            MovementInput::default()
+        };
         self.effects.retain(|_, effect| {
             effect.1 -= 1;
             effect.1 > 0
@@ -414,6 +425,7 @@ impl LocalSimulationLayer {
             self.velocity.y *= f64::from(0.05_f32);
         }
         let motion_before_collision = self.velocity;
+        let previous_y = self.player.position.y;
         if let Some(world) = world {
             self.resolve_terrain(world);
         } else {
@@ -457,6 +469,18 @@ impl LocalSimulationLayer {
         }
         self.velocity.x *= friction;
         self.velocity.z *= friction;
+        if !self.flying && (environment.water || environment.lava) && collided_horizontally {
+            if let Some(world) = world {
+                let offset = [
+                    self.velocity.x,
+                    self.velocity.y + f64::from(0.6_f32) - self.player.position.y + previous_y,
+                    self.velocity.z,
+                ];
+                if world.liquid_escape_clear(player_bounds(self.player.position).offset(offset)) {
+                    self.velocity.y = f64::from(0.3_f32);
+                }
+            }
+        }
         self.air_movement_factor = if self.player.sprinting {
             (f64::from(0.02_f32) + f64::from(0.02_f32) * 0.3) as f32
         } else {
@@ -485,6 +509,10 @@ impl LocalSimulationLayer {
 
     pub fn velocity(&self) -> Vec3 {
         self.velocity
+    }
+
+    pub fn effect_amplifier(&self, id: u8) -> Option<u8> {
+        self.effects.get(&id).map(|effect| effect.0)
     }
 
     fn apply_pending_server_state(&mut self) {

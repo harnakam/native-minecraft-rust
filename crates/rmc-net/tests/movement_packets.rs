@@ -1,6 +1,20 @@
 use rmc_net::codec::play::*;
 
 #[test]
+fn server_game_mode_change_uses_unsigned_reason_and_float_value() {
+    let bytes = [0x2b, 3, 0x3f, 0x80, 0, 0];
+    let packet = PlayClientboundPacket::ChangeGameState(ChangeGameStatePacket {
+        reason: 3,
+        value: 1.0,
+    });
+    assert_eq!(
+        PlayClientboundPacket::decode_packet(&bytes).unwrap(),
+        packet
+    );
+    assert_eq!(packet.encode_packet().unwrap().packet_bytes(), bytes);
+}
+
+#[test]
 fn server_hotbar_change_is_a_signed_byte_not_a_short() {
     for slot in [-1, 0, 8, 9] {
         let bytes = [0x09, slot as u8];

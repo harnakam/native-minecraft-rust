@@ -15,7 +15,7 @@ import net.minecraft.world.*;
 
 /** Local behavioral oracle. Prints numbers, never source or game assets. */
 public final class RmcCollisionOracle {
-    static final class QueryWorld extends WorldClient {
+    static class QueryWorld extends WorldClient {
         final Map<BlockPos,IBlockState> states = new HashMap<BlockPos,IBlockState>();
         final Map<Long,Chunk> chunks = new HashMap<Long,Chunk>();
         @Override protected boolean isChunkLoaded(int x,int z,boolean allowEmpty) { return true; }
