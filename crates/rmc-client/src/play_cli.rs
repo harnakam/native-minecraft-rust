@@ -1160,7 +1160,16 @@ impl PlayApp {
     }
 
     fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta) {
-        if self.screen != ScreenState::Playing {
+        if self.screen != ScreenState::Playing
+            || self.chat_open
+            || !self.mouse_captured
+            || self.runtime.as_ref().is_some_and(|runtime| {
+                runtime.combat_snapshot().health <= 0.0
+                    || runtime
+                        .usability_snapshot()
+                        .is_some_and(|snapshot| snapshot.window.is_some())
+            })
+        {
             return;
         }
 

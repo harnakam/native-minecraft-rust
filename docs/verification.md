@@ -259,3 +259,9 @@ The same verify_border_oracle.py command runs both groups. This establishes equa
 The native wheel handler now routes spectator scroll to the runtime, shell and simulation instead of hotbar selection. Simulation follows Minecraft.runTick's closed spectator-menu branch: normalize event direction, add direction times 0.005F to fly speed and clamp to 0..0.2. This is a local capability adjustment and does not manufacture a PlayerAbilities packet. The existing fly-speed-dependent acceleration uses the changed value.
 
 A regression verifies non-spectator rejection, sign normalization, increased actual forward motion, both speed limits and no unsolicited ability packet. Full workspace tests pass. Spectator GUI/menu selection, GUI-open input gating and official-client input/flight differential validation remain incomplete; this only implements the closed-menu speed behavior.
+
+## GUI gating for wheel gameplay input
+
+The native wheel event handler now checks the same blocking states as frame-input consumption before directly adjusting spectator fly speed: chat open, mouse released, dead player or open container block gameplay scrolling. This closes the bypass introduced when spectator speed updates moved directly into the event handler. Normal captured gameplay retains ordinary hotbar scrolling or spectator speed adjustment. The source Minecraft.runTick screen/allowUserInput gate was inspected; native chat/container overlays currently have no allowUserInput exception.
+
+Full workspace tests pass. The simple event guard was reviewed against existing overlay/cursor state transitions, but native interactive GUI wheel behavior has not been manually exercised. Chat scrollback and spectator GUI selection remain incomplete; this change prevents gameplay-side mutations while those native overlay states are active.
