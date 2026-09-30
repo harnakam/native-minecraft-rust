@@ -2185,14 +2185,13 @@ fn draw_border_warning(
             let tint = ((1.0 - distance / edge_width).max(0.0) * strength).clamp(0.0, 1.0);
             let index = ((y * width + x) * 4) as usize;
             let mask = vignette.map(|image| {
-                image.sample_repeat(
+                image.sample_linear_repeat(
                     (x as f32 + 0.5) / width as f32,
                     (y as f32 + 0.5) / height as f32,
                 )
             });
             for channel in [1, 2] {
-                let source =
-                    mask.map_or(tint, |sample| f32::from(sample[channel]) / 255.0 * strength);
+                let source = mask.map_or(tint, |sample| sample[channel] * strength);
                 // GuiIngame uses ZERO, ONE_MINUS_SRC_COLOR for border vignette.
                 frame[index + channel] =
                     (f32::from(frame[index + channel]) * (1.0 - source).clamp(0.0, 1.0)) as u8;

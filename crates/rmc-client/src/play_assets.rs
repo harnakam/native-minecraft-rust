@@ -42,6 +42,27 @@ impl ImageAsset {
         self.pixel(x, y)
     }
 
+    pub fn sample_linear_repeat(&self, u: f32, v: f32) -> [f32; 4] {
+        let x = u.rem_euclid(1.0) * self.width as f32 - 0.5;
+        let y = v.rem_euclid(1.0) * self.height as f32 - 0.5;
+        let x0 = x.floor() as i64;
+        let y0 = y.floor() as i64;
+        let fx = x - x.floor();
+        let fy = y - y.floor();
+        let sample = |dx: i64, dy: i64| {
+            self.pixel(
+                (x0 + dx).rem_euclid(i64::from(self.width)) as u32,
+                (y0 + dy).rem_euclid(i64::from(self.height)) as u32,
+            )
+        };
+        let [a, b, c, d] = [sample(0, 0), sample(1, 0), sample(0, 1), sample(1, 1)];
+        std::array::from_fn(|channel| {
+            let top = f32::from(a[channel]) * (1.0 - fx) + f32::from(b[channel]) * fx;
+            let bottom = f32::from(c[channel]) * (1.0 - fx) + f32::from(d[channel]) * fx;
+            (top * (1.0 - fy) + bottom * fy) / 255.0
+        })
+    }
+
     pub fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
         let index = ((y * self.width + x) * 4) as usize;
         [
@@ -596,6 +617,19 @@ fn should_extract_asset(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::should_extract_asset;
+    #[test]
+    fn linear_sampling_uses_texel_centers_and_repeat_edges() {
+        let image = super::ImageAsset {
+            width: 2,
+            height: 1,
+            pixels: vec![0, 0, 0, 255, 255, 255, 255, 255],
+        };
+        assert_eq!(image.sample_linear_repeat(0.25, 0.5), [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(image.sample_linear_repeat(0.75, 0.5), [1.0; 4]);
+        assert_eq!(image.sample_linear_repeat(0.5, 0.5), [0.5, 0.5, 0.5, 1.0]);
+        assert_eq!(image.sample_linear_repeat(0.0, 0.5), [0.5, 0.5, 0.5, 1.0]);
+        assert_eq!(image.sample_linear_repeat(1.0, 0.5), [0.5, 0.5, 0.5, 1.0]);
+    }
     #[test]
     fn local_jar_import_only_accepts_safe_asset_paths() {
         assert!(should_extract_asset(

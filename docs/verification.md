@@ -228,4 +228,10 @@ A state regression covers no warning, proximity, outside strength, resizing anti
 
 The local asset importer permits textures/misc/vignette.png and refreshes older extracted caches missing that image. GameAssets loads it locally. Border warning rendering uses its sampled green/blue channels with the GuiIngame ZERO / ONE_MINUS_SRC_COLOR destination blend; the red and alpha channels of the framebuffer remain unchanged. The previous edge fallback remains when no local image is available. No game image is tracked or bundled.
 
-Full workspace tests pass, followed by two focused warning tests after cache/test updates. The new test loads an authored synthetic PNG and verifies exact destination pixels, texture coverage and preserved red/alpha. Actual vanilla texture output has not been manually inspected. Sampling is nearest rather than the vanilla filtered texture path; normal brightness vignette, fancy-graphics setting and exact blending/rounding parity remain incomplete.
+Full workspace tests pass, followed by two focused warning tests after cache/test updates. The new test loads an authored synthetic PNG and verifies exact destination pixels, texture coverage and preserved red/alpha. Actual vanilla texture output has not been manually inspected. The following update adds filtered sampling; normal brightness vignette, fancy-graphics setting and exact blending/rounding parity remain incomplete.
+
+## Vignette blur metadata and linear repeat sampling
+
+The local official 1.8.9 JAR vignette.png.mcmeta specifies texture blur=true. SimpleTexture passes that metadata to TextureUtil; clamp is not specified. The native border vignette now uses normalized bilinear sampling with repeated texture edges and half-texel center coordinates, preserving float channels until framebuffer blending. Other existing sprite/terrain sampling paths are unchanged.
+
+A synthetic two-texel regression verifies exact texel centers, midpoint interpolation and repeating edge interpolation. The existing loaded-PNG warning framebuffer regression and the whole workspace pass. This confirms the CPU sampling path, not GPU pixel-for-pixel visual parity; normal light-level vignette and complete graphics-settings behavior remain incomplete. No vanilla image or metadata is published.
