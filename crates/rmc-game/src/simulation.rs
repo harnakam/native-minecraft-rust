@@ -481,6 +481,7 @@ impl LocalSimulationLayer {
         let motion_before_collision = self.velocity;
         let previous_y = self.player.position.y;
         if self.game_mode == 3 {
+            self.player.on_ground = false;
             self.player.position = self.player.position.add(self.velocity);
         } else if let Some(world) = world {
             self.resolve_terrain(world);
