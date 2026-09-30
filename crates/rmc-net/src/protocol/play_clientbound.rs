@@ -370,6 +370,28 @@ pub const BLOCK_CHANGE: PacketSpec = PacketSpec {
     ],
 };
 
+pub const TIME_UPDATE: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x03,
+    name: "Time Update",
+    java_class: "net.minecraft.network.play.server.S03PacketTimeUpdate",
+    java_handler: "INetHandlerPlayClient.handleTimeUpdate",
+    compression: PLAY_COMPRESSION,
+    fields: &[
+        FieldSpec {
+            name: "total_world_time",
+            encoding: "Long",
+            notes: "Signed total world ticks.",
+        },
+        FieldSpec {
+            name: "world_time",
+            encoding: "Long",
+            notes: "Negative stops daylight cycling; -1 encodes frozen zero.",
+        },
+    ],
+};
+
 pub const ENTITY_EQUIPMENT: PacketSpec = PacketSpec {
     state: ProtocolState::Play,
     direction: PacketDirection::Clientbound,
@@ -1097,6 +1119,7 @@ pub const PACKETS: &[PacketSpec] = &[
     WINDOW_ITEMS,
     WINDOW_PROPERTY,
     ENTITY_EQUIPMENT,
+    TIME_UPDATE,
     CONFIRM_TRANSACTION,
     PLAYER_LIST_ITEM,
     SCOREBOARD_OBJECTIVE,

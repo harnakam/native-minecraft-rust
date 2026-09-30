@@ -356,7 +356,7 @@ pub fn run_live_cli(raw_args: Vec<String>) -> Result<(), String> {
                     &mut shell,
                     &mut combat,
                     &mut usability,
-                    &world,
+                    &mut world,
                     &mut mesh_pipeline,
                     &mut driver,
                     &zlib,
@@ -449,7 +449,7 @@ pub fn run_live_cli(raw_args: Vec<String>) -> Result<(), String> {
             &mut shell,
             &mut combat,
             &mut usability,
-            &world,
+            &mut world,
             &mut mesh_pipeline,
             &mut driver,
             &zlib,
@@ -501,7 +501,7 @@ fn drive_live_frame(
     shell: &mut ClientShell,
     combat: &mut CombatState,
     usability: &mut UsabilityState,
-    world: &WorldSnapshot,
+    world: &mut WorldSnapshot,
     mesh_pipeline: &mut ChunkMeshPipeline,
     driver: &mut HeadlessDriver,
     zlib: &DefaultZlibCodec,
@@ -524,6 +524,7 @@ fn drive_live_frame(
         let output = shell.advance_in_world(frame_duration, frame_input, &frame_events, world);
 
         for _ in 0..output.ticks_run {
+            world.advance_time(1);
             combat.tick_feedback();
         }
 

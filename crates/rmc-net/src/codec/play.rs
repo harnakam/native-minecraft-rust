@@ -416,6 +416,12 @@ pub struct EntityEquipmentPacket {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimeUpdatePacket {
+    pub total_world_time: i64,
+    pub world_time: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmTransactionClientboundPacket {
     pub window_id: u8,
     pub action_number: i16,
@@ -712,6 +718,7 @@ pub enum PlayClientboundPacket {
     WindowItems(WindowItemsPacket),
     WindowProperty(WindowPropertyPacket),
     EntityEquipment(EntityEquipmentPacket),
+    TimeUpdate(TimeUpdatePacket),
     ConfirmTransaction(ConfirmTransactionClientboundPacket),
     PlayerListItem(PlayerListItemPacket),
     ScoreboardObjective(ScoreboardObjectivePacket),
@@ -757,6 +764,10 @@ impl PlayClientboundPacket {
             0x02 => Self::ChatMessage(ChatMessagePacket {
                 message_json: reader.read_chat()?,
                 position: reader.read_i8()?,
+            }),
+            0x03 => Self::TimeUpdate(TimeUpdatePacket {
+                total_world_time: reader.read_i64()?,
+                world_time: reader.read_i64()?,
             }),
             0x04 => Self::EntityEquipment(EntityEquipmentPacket {
                 entity_id: reader.read_var_i32()?,
@@ -1595,6 +1606,11 @@ impl PlayClientboundPacket {
                 }
 
                 0x30
+            }
+            Self::TimeUpdate(packet) => {
+                writer.write_i64(packet.total_world_time);
+                writer.write_i64(packet.world_time);
+                0x03
             }
             Self::EntityEquipment(packet) => {
                 writer.write_var_i32(packet.entity_id);

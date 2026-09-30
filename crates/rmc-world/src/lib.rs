@@ -8,6 +8,7 @@ use rmc_net::codec::play::{
 use std::collections::HashMap;
 
 pub mod collision;
+pub mod time;
 
 pub const CHUNK_EDGE: usize = 16;
 pub const CHUNK_HEIGHT: usize = 256;
@@ -396,6 +397,7 @@ impl WorldChangeSummary {
 
 #[derive(Clone, Debug, Default)]
 pub struct WorldSnapshot {
+    time: time::WorldTime,
     config: WorldConfig,
     chunks: HashMap<ChunkPos, ChunkColumn>,
 }
@@ -403,6 +405,7 @@ pub struct WorldSnapshot {
 impl WorldSnapshot {
     pub fn new(config: WorldConfig) -> Self {
         Self {
+            time: time::WorldTime::default(),
             config,
             chunks: HashMap::new(),
         }
@@ -410,6 +413,14 @@ impl WorldSnapshot {
 
     pub fn config(&self) -> WorldConfig {
         self.config
+    }
+
+    pub fn time(&self) -> time::WorldTime {
+        self.time
+    }
+
+    pub fn advance_time(&mut self, ticks: usize) {
+        self.time.advance(ticks);
     }
 
     pub fn chunk(&self, pos: ChunkPos) -> Option<&ChunkColumn> {
@@ -608,6 +619,11 @@ impl WorldSnapshot {
         packet: &PlayClientboundPacket,
     ) -> Result<Option<WorldChangeSummary>, WorldError> {
         let summary = match packet {
+            PlayClientboundPacket::TimeUpdate(packet) => {
+                self.time
+                    .receive(packet.total_world_time, packet.world_time);
+                None
+            }
             PlayClientboundPacket::ChunkData(packet) => Some(self.apply_chunk_data(packet)?),
             PlayClientboundPacket::MultiBlockChange(packet) => {
                 Some(self.apply_multi_block_change(packet)?)

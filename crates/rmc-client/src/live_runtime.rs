@@ -282,6 +282,7 @@ impl LiveRuntime {
                 .advance_in_world(frame_delta, frame_input, &frame_events, &self.world);
 
         for _ in 0..output.ticks_run {
+            self.world.advance_time(1);
             self.combat.tick_feedback();
         }
 

@@ -107,3 +107,9 @@ S04PacketEntityEquipment (0x04) is implemented with VarInt entity ID, signed sho
 Remote player state and movement handlers now live in client/entity/player.rs. Five equipment slots retain complete received item stacks: held item, boots, leggings, chestplate and helmet. Updates affect existing tracked players only; null removes equipment; destroy/respawn cleanup removes the tracked state. Slot 0 also updates the existing held-item ID. Invalid slot indices are ignored safely.
 
 The equipment codec test checks golden prefix bytes, null/item roundtrip and truncated input. The entity-state test checks unknown entities, helmet/held-item changes, removal and destruction. The local TCP runtime test feeds SpawnPlayer and Equipment and verifies the helmet reaches tracked state even before the local player's initial position. Full workspace tests pass. Remote player rendering still uses debug boxes; armor models, held-item geometry and general non-player entity equipment remain incomplete.
+
+## World time synchronization
+
+S03PacketTimeUpdate is decoded and encoded as two signed big-endian longs and registered for live delivery. WorldSnapshot owns time state in world/time.rs. Negative world time stops daylight cycling and is negated using Java long wrapping semantics; -1 represents the server frozen-zero sentinel and becomes frozen time 1, matching WorldClient. Positive updates resume cycling. Main-thread runtime and CLI ticks increment total world age regardless of the cycle flag and advance day time only while cycling. New worlds reset time state.
+
+One codec test verifies golden bytes and truncated input; two world tests cover frozen/running transitions, sentinel behavior and long overflow. Full workspace tests pass. Sky rendering, daylight brightness and live-server time assertions remain incomplete; the new state does not establish visual day/night parity.
