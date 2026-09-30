@@ -3958,7 +3958,7 @@ fn blend_styled_chat_pass(
         }
         x += text
             .chars()
-            .map(|ch| native_text_width(&ch.to_string()) + native_bold_advance(ch, style.bold))
+            .map(|ch| native_render_advance(ch) + native_bold_advance(ch, style.bold))
             .sum::<i32>();
     }
 }
@@ -4177,7 +4177,10 @@ fn draw_styled_title_pass(
         if shadow {
             style.color = title_shadow_color(style.color);
         }
-        let advance = run_width(&text, style);
+        let advance = text
+            .chars()
+            .map(|ch| native_render_advance(ch) + native_bold_advance(ch, style.bold))
+            .sum::<i32>();
         let mask_width = (advance + 8).max(1) as u32;
         let mut mask = vec![0; mask_width as usize * 16 * 4];
         let mut formatted = String::new();
@@ -5482,6 +5485,57 @@ mod inventory_layout_tests {
                 assert_eq!(pair[(py * 64 + px) * 4], single[(py * 64 + px - 16) * 4]);
             }
         }
+        let mut plain_chat = vec![0; 64 * 20 * 4];
+        let mut split_chat = plain_chat.clone();
+        let mut mask = plain_chat.clone();
+        blend_styled_chat_pass(
+            &mut plain_chat,
+            64,
+            20,
+            4,
+            0,
+            "\u{0488}\u{0488}",
+            255,
+            &mut mask,
+            false,
+        );
+        blend_styled_chat_pass(
+            &mut split_chat,
+            64,
+            20,
+            4,
+            0,
+            "\u{0488}§f\u{0488}",
+            255,
+            &mut mask,
+            false,
+        );
+        assert_eq!(plain_chat, split_chat);
+        let mut plain_title = vec![0; 128 * 32 * 4];
+        let mut split_title = plain_title.clone();
+        draw_styled_title_pass(
+            &mut plain_title,
+            128,
+            32,
+            "\u{0488}\u{0488}",
+            0,
+            2,
+            255,
+            false,
+        );
+        draw_styled_title_pass(
+            &mut split_title,
+            128,
+            32,
+            "\u{0488}§f\u{0488}",
+            0,
+            2,
+            255,
+            false,
+        );
+        assert_eq!(plain_title, split_title);
+        assert!(plain_title.chunks_exact(4).any(|pixel| pixel[0] > 0));
+        assert!(plain_chat.chunks_exact(4).any(|pixel| pixel[0] > 0));
         assert_eq!(native_bold_advance(ch, true), 2);
         assert_eq!(native_bold_advance(ch, false), 0);
         let mut bold_frame = vec![0; 64 * 16 * 4];

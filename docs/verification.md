@@ -1094,3 +1094,13 @@ retain getCharWidth behavior. The actual-jar test checks U+0488 measured
 width 18 versus drawing advance 16 at current scale and repeated-glyph
 pixel placement. Dedicated and full workspace tests pass. Mixed styled-run
 composition and title masks still need separate rendering-advance review.
+
+### Unicode advance across styled runs
+
+Chat and title compositing now position successive styled runs using the
+rendering advance, preserving measured widths for wrapping and title
+centering. The actual-jar integration test compares every foreground pixel
+of two U+0488 glyphs with and without an intervening white formatting code
+in chat and scaled title paths. Dedicated and full workspace tests pass.
+Per-glyph shadow offsets, forced Unicode mode, default extended atlas mapping
+and manual visual parity remain incomplete.
