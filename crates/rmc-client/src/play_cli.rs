@@ -2594,30 +2594,6 @@ fn tab_color_runs(text: &str, color: [u8; 3], limit: usize) -> Vec<(String, [u8;
         .collect()
 }
 
-#[cfg(test)]
-fn obfuscated_native_glyph(character: char, random: u64) -> char {
-    if !(' '..='~').contains(&character) {
-        return character;
-    }
-    static CANDIDATES: std::sync::OnceLock<Vec<(char, i32)>> = std::sync::OnceLock::new();
-    let candidates = CANDIDATES.get_or_init(|| {
-        (' '..='~')
-            .map(|ch| (ch, native_text_width(&ch.to_string())))
-            .collect()
-    });
-    let width = native_text_width(&character.to_string());
-    let count = candidates
-        .iter()
-        .filter(|(_, candidate_width)| *candidate_width == width)
-        .count();
-    candidates
-        .iter()
-        .filter(|(_, candidate_width)| *candidate_width == width)
-        .nth((random % count as u64) as usize)
-        .map(|(ch, _)| *ch)
-        .unwrap_or(character)
-}
-
 struct JavaFontRandom {
     state: u64,
 }
@@ -2644,25 +2620,33 @@ impl JavaFontRandom {
     }
 }
 
-fn next_obfuscated_native_glyph(character: char) -> char {
+fn select_obfuscated_native_glyph(character: char, random: &mut JavaFontRandom) -> char {
     if !(' '..='~').contains(&character) {
         return character;
     }
+    static CANDIDATES: std::sync::OnceLock<Vec<(char, i32)>> = std::sync::OnceLock::new();
+    let candidates = CANDIDATES.get_or_init(|| {
+        (' '..='~')
+            .map(|ch| (ch, native_text_width(&ch.to_string())))
+            .collect()
+    });
+    let width = native_text_width(&character.to_string());
+    loop {
+        let (selected, candidate_width) =
+            candidates[random.next_int(candidates.len() as i32) as usize];
+        if candidate_width == width {
+            return selected;
+        }
+    }
+}
+
+fn next_obfuscated_native_glyph(character: char) -> char {
     thread_local! {
         static RANDOM: std::cell::RefCell<JavaFontRandom> = std::cell::RefCell::new(JavaFontRandom::new(
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|duration|duration.as_nanos() as u64).unwrap_or_default()
         ));
     }
-    let width = native_text_width(&character.to_string());
-    RANDOM.with(|random| {
-        let mut random = random.borrow_mut();
-        loop {
-            let selected = char::from_u32(32 + random.next_int(95) as u32).unwrap();
-            if native_text_width(&selected.to_string()) == width {
-                return selected;
-            }
-        }
-    })
+    RANDOM.with(|random| select_obfuscated_native_glyph(character, &mut random.borrow_mut()))
 }
 
 fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_visible: usize) {
@@ -4898,16 +4882,19 @@ mod inventory_layout_tests {
 
     #[test]
     fn obfuscated_native_rendering_changes_glyphs_without_changing_advance() {
+        let mut random = JavaFontRandom::new(0);
         for ch in ' '..='~' {
-            for random in 0..128 {
-                let selected = obfuscated_native_glyph(ch, random);
+            for _ in 0..128 {
+                let selected = select_obfuscated_native_glyph(ch, &mut random);
                 assert_eq!(
                     native_text_width(&selected.to_string()),
                     native_text_width(&ch.to_string())
                 );
             }
         }
-        assert_eq!(obfuscated_native_glyph('日', 17), '日');
+        let state = random.state;
+        assert_eq!(select_obfuscated_native_glyph('日', &mut random), '日');
+        assert_eq!(random.state, state);
         let mut frames = Vec::new();
         for _ in 0..8 {
             let mut frame = vec![0; 320 * 16 * 4];

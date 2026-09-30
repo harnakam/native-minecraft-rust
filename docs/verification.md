@@ -940,3 +940,15 @@ of modulo-selecting a width bucket. Java 8 seed-zero output for four bounds
 rejection behavior. Runtime selector width and changing frame tests pass with
 the workspace suite. Minecraft's full glyph table/metrics and default Java seed
 initialization remain different; exact random animation parity is not claimed.
+
+
+### Production obfuscation selector regression
+
+Removed the obsolete test-only modulo bucket selector. The same Java-random
+rejection selector now serves runtime drawing and deterministic tests. Tests
+exercise 128 actual selections for each printable ASCII character (12,160
+selections), verify unchanged advances, and verify unsupported non-ASCII input
+does not consume RNG state. Candidate widths are cached once, avoiding repeated
+font metric computation on rejected candidates while preserving draw order.
+The workspace suite and formatting checks pass. This does not broaden the
+candidate set or establish Minecraft font/visual parity.
