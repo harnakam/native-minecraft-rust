@@ -913,3 +913,17 @@ bold, italic, underline, obfuscated, strikethrough. Executed MCP919 formatted
 text matches &l&n&k&mA&r&l&n&mB&r&l&n&k&mC&r for the regression fixture.
 Workspace tests pass. This preserves state and codes only: same-width randomized
 animated glyph drawing remains required and is not claimed as implemented.
+
+
+### Native obfuscated glyph drawing
+
+Tab and scaled title rendering now replace obfuscated printable ASCII glyphs
+on each draw using cached native-width candidate groups and a mixed atomic
+counter. Original advance and bold spacing are preserved; title mask rebuilding
+retains the k code. Tests check equal advances for all 95 printable ASCII inputs
+across 128 selector values and changing framebuffer output across repeated Tab
+and title draws. The implementation follows MCP919 FontRenderer's same-width
+selection principle, but does not yet match its full 256-character candidate
+table, Java RNG or Minecraft font metrics. Non-ASCII inputs are currently left
+unchanged, and normal chat styled drawing/manual visual parity remain incomplete.
+No game glyph assets or reference code are published.

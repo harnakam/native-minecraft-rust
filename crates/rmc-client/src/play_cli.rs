@@ -2594,10 +2594,47 @@ fn tab_color_runs(text: &str, color: [u8; 3], limit: usize) -> Vec<(String, [u8;
         .collect()
 }
 
+fn obfuscated_native_glyph(character: char, random: u64) -> char {
+    if !(' '..='~').contains(&character) {
+        return character;
+    }
+    static CANDIDATES: std::sync::OnceLock<Vec<(char, i32)>> = std::sync::OnceLock::new();
+    let candidates = CANDIDATES.get_or_init(|| {
+        (' '..='~')
+            .map(|ch| (ch, native_text_width(&ch.to_string())))
+            .collect()
+    });
+    let width = native_text_width(&character.to_string());
+    let count = candidates
+        .iter()
+        .filter(|(_, candidate_width)| *candidate_width == width)
+        .count();
+    candidates
+        .iter()
+        .filter(|(_, candidate_width)| *candidate_width == width)
+        .nth((random % count as u64) as usize)
+        .map(|(ch, _)| *ch)
+        .unwrap_or(character)
+}
+
+fn next_obfuscated_native_glyph(character: char) -> char {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mut random = COUNTER.fetch_add(0x9e3779b97f4a7c15, std::sync::atomic::Ordering::Relaxed);
+    random = (random ^ (random >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    random = (random ^ (random >> 27)).wrapping_mul(0x94d049bb133111eb);
+    obfuscated_native_glyph(character, random ^ (random >> 31))
+}
+
 fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_visible: usize) {
     let mut x = 4;
     for (text, style) in tab_styled_runs(text, color, max_visible) {
         for ch in text.chars() {
+            let original_width = native_text_width(&ch.to_string());
+            let ch = if style.obfuscated {
+                next_obfuscated_native_glyph(ch)
+            } else {
+                ch
+            };
             let text = ch.to_string();
             if style.italic {
                 draw_tab_italic_glyph(frame, width, x, &text, style.color, style.bold);
@@ -2607,7 +2644,7 @@ fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_v
                     draw_text_scaled(frame, width, 16, x + 1, 0, &text, style.color, 1);
                 }
             }
-            let advance = native_text_width(&text) + i32::from(style.bold);
+            let advance = original_width + i32::from(style.bold);
             for y in [
                 if style.underline { Some(14) } else { None },
                 if style.strike { Some(7) } else { None },
@@ -3706,6 +3743,7 @@ fn draw_styled_title_pass(
             (style.bold, 'l'),
             (style.italic, 'o'),
             (style.underline, 'n'),
+            (style.obfuscated, 'k'),
             (style.strike, 'm'),
         ] {
             if enabled {
@@ -4781,6 +4819,34 @@ mod inventory_layout_tests {
         .unwrap();
         assert_eq!(chat_component_text(&prioritized), "");
         assert_eq!(tab_component_formatted(&prioritized), "");
+    }
+
+    #[test]
+    fn obfuscated_native_rendering_changes_glyphs_without_changing_advance() {
+        for ch in ' '..='~' {
+            for random in 0..128 {
+                let selected = obfuscated_native_glyph(ch, random);
+                assert_eq!(
+                    native_text_width(&selected.to_string()),
+                    native_text_width(&ch.to_string())
+                );
+            }
+        }
+        assert_eq!(obfuscated_native_glyph('日', 17), '日');
+        let mut frames = Vec::new();
+        for _ in 0..8 {
+            let mut frame = vec![0; 320 * 16 * 4];
+            draw_tab_name(&mut frame, 320, "\u{a7}kObfuscated", [255; 3], 100);
+            frames.push(frame);
+        }
+        assert!(frames.windows(2).any(|pair| pair[0] != pair[1]));
+        let mut frames = Vec::new();
+        for _ in 0..4 {
+            let mut frame = vec![0; 320 * 200 * 4];
+            draw_styled_title_line(&mut frame, 320, 200, "\u{a7}kTitle", 60, 2, 255);
+            frames.push(frame);
+        }
+        assert!(frames.windows(2).any(|pair| pair[0] != pair[1]));
     }
 
     #[test]
