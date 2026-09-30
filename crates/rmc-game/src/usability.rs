@@ -170,6 +170,20 @@ impl Default for UsabilityState {
 }
 
 impl UsabilityState {
+    pub fn player_name(&self, uuid: &[u8; 16]) -> Option<&str> {
+        self.tab_list.get(uuid).map(|p| p.name.as_str())
+    }
+
+    pub fn friendly_invisibles_visible(&self, viewer: &str, target: &str) -> bool {
+        let Some(team) = self.player_teams.get(target) else {
+            return false;
+        };
+        self.player_teams.get(viewer) == Some(team)
+            && self
+                .teams
+                .get(team)
+                .is_some_and(|t| t.friendly_flags & 2 != 0)
+    }
     pub fn new() -> Self {
         Self {
             inventory: InventoryState::new(),

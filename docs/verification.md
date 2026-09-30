@@ -135,3 +135,9 @@ S1CPacketEntityMetadata (0x1C) is registered, decoded and encoded using the exis
 Remote player spawn metadata initializes indexed state; subsequent metadata packets replace only mentioned indices on existing players. Entity flags read byte index 0. The native renderer suppresses invisible remote players for ordinary viewers and retains them for spectators. Team-friendly invisible visibility remains incomplete, as do sneaking pose, burning feedback and non-player metadata behavior.
 
 Two codec tests cover packet layout, truncation/trailing failures and all eight value types. A player-state regression covers spawn flags and preservation of unrelated indices after updates. Full workspace tests pass. These new paths have not yet been compared with an authored Java metadata oracle or tested against an official server.
+
+## Friendly invisible player visibility
+
+UsabilityState now exposes the same-team/friendly-invisible rule from EntityPlayer.isInvisibleToPlayer and ScorePlayerTeam: scoreboard membership must match and friendly flags bit 2 must be enabled. Runtime caches the spawn profile name from the existing player-list mapping on the received player entity; later Tab-list removal does not discard that identity. Native rendering admits invisible teammates under that rule and continues to admit spectators. Team changes immediately affect the query.
+
+A focused regression covers absent teams, same/different team, enabling/disabling the flag and removing membership. Full workspace tests pass. Friendly-invisible alpha rendering and name-tag rules remain incomplete; remote avatars are still debug geometry. Missing player-list identity at spawn also remains outside the verified path.

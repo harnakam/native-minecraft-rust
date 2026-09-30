@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 pub struct TrackedPlayerEntity {
     pub entity_id: i32,
     pub uuid: [u8; 16],
+    pub profile_name: Option<String>,
     pub position: Vec3,
     pub yaw: f32,
     pub pitch: f32,
@@ -43,6 +44,12 @@ impl EntityTracker {
 
     pub fn players(&self) -> impl Iterator<Item = &TrackedPlayerEntity> {
         self.players.values()
+    }
+
+    pub fn set_profile_name(&mut self, entity_id: i32, name: String) {
+        if let Some(player) = self.players.get_mut(&entity_id) {
+            player.profile_name = Some(name);
+        }
     }
 
     pub fn apply_packet(&mut self, packet: &PlayClientboundPacket) {
@@ -93,6 +100,7 @@ impl EntityTracker {
             TrackedPlayerEntity {
                 entity_id: packet.entity_id,
                 uuid: packet.player_uuid,
+                profile_name: None,
                 position: Vec3::new(
                     f64::from(packet.x) / 32.0,
                     f64::from(packet.y) / 32.0,

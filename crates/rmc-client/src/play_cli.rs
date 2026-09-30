@@ -879,6 +879,7 @@ impl PlayApp {
                     runtime.entity_tracker(),
                     runtime.targeted_entity(),
                     runtime.is_spectator(),
+                    |name| runtime.can_see_friendly_invisible(name),
                 );
                 if let Some(icons) = self.assets.icons.as_ref() {
                     draw_sprite_region(
@@ -2584,10 +2585,17 @@ fn render_tracked_players(
     entities: &EntityTracker,
     targeted_entity: Option<TargetedEntity>,
     spectator: bool,
+    friendly_invisible: impl Fn(&str) -> bool,
 ) {
     let basis = camera_basis(camera_yaw, camera_pitch);
     for entity in entities.players() {
-        if entity.flag(5) && !spectator {
+        if entity.flag(5)
+            && !spectator
+            && !entity
+                .profile_name
+                .as_deref()
+                .is_some_and(&friendly_invisible)
+        {
             continue;
         }
         let highlighted = targeted_entity

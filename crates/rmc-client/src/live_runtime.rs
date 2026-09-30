@@ -474,6 +474,11 @@ impl LiveRuntime {
         self.game_mode == 3
     }
 
+    pub fn can_see_friendly_invisible(&self, target: &str) -> bool {
+        self.usability
+            .friendly_invisibles_visible(&self.username, target)
+    }
+
     pub fn world_render(&self) -> Option<&WorldRenderSnapshot> {
         self.last_world_render.as_ref()
     }
@@ -690,6 +695,12 @@ impl LiveRuntime {
                             self.trace.movement_corrections.push(format!("movement record=server_correction x={:.6} y={:.6} z={:.6} yaw={:.6} pitch={:.6} flags={}", correction.x, correction.y, correction.z, correction.yaw, correction.pitch, if correction.flags.bits() == 0 { "__".to_owned() } else { correction.flags.bits().to_string() }));
                         }
                         self.entity_tracker.apply_packet(&packet);
+                        if let PlayClientboundPacket::SpawnPlayer(spawn) = &packet {
+                            if let Some(name) = self.usability.player_name(&spawn.player_uuid) {
+                                self.entity_tracker
+                                    .set_profile_name(spawn.entity_id, name.to_owned());
+                            }
+                        }
                         apply_inbound_play_packet(
                             &packet,
                             self.driver.local_pose(),
