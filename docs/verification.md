@@ -555,3 +555,16 @@ This uses the current native 16-pixel glyph rasterization and a per-row shear;
 Minecraft atlas glyph geometry, shadows, spectator alpha, obfuscation, complete
 JSON style handling, and manual visual parity remain incomplete. No Minecraft
 image/source data is published.
+
+
+### Spectator Tab name opacity
+
+MCP919's spectator name color -1862270977 is ARGB 0x90FFFFFF. The native Tab cell
+now uses white for ordinary names and alpha 144 for spectator names instead of
+an opaque gray approximation. Formatting colors retain this opacity. The
+rendered glyph result is blended with the cell's prior RGB, preserving framebuffer
+alpha. Tests cover colored/italic names against a nonblack background, alpha-zero
+identity, and the alpha-144 result. The whole workspace suite passes.
+This currently composites the completed name layer; per-glyph overlap blending,
+OpenGL rounding, text shadows, Minecraft glyphs and manual visual comparison
+remain unverified or incomplete. This is not full rasterization parity.

@@ -2628,6 +2628,30 @@ fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_v
     }
 }
 
+fn draw_tab_name_alpha(
+    frame: &mut [u8],
+    width: u32,
+    text: &str,
+    color: [u8; 3],
+    max_visible: usize,
+    alpha: u8,
+) {
+    if alpha == 255 {
+        draw_tab_name(frame, width, text, color, max_visible);
+        return;
+    }
+    let previous = frame.to_vec();
+    draw_tab_name(frame, width, text, color, max_visible);
+    for (after, before) in frame.chunks_exact_mut(4).zip(previous.chunks_exact(4)) {
+        for channel in 0..3 {
+            after[channel] = ((after[channel] as u32 * alpha as u32
+                + before[channel] as u32 * (255 - alpha as u32))
+                / 255) as u8;
+        }
+        after[3] = before[3];
+    }
+}
+
 fn draw_tab_italic_glyph(
     frame: &mut [u8],
     width: u32,
@@ -2781,16 +2805,13 @@ fn draw_tab_snapshot(
                 } else {
                     name
                 };
-                draw_tab_name(
+                draw_tab_name_alpha(
                     &mut cell,
                     column_width as u32,
                     &name,
-                    if entry.game_mode == 3 {
-                        [144, 144, 144]
-                    } else {
-                        [236, 236, 236]
-                    },
+                    [255; 3],
                     ((column_width - ping_width - score_width - 4).max(0) / 8) as usize,
+                    if entry.game_mode == 3 { 0x90 } else { 255 },
                 );
                 if let Some(score) = score {
                     let score_x = column_width - ping_width - native_text_width(&score) - 2;
@@ -4084,6 +4105,28 @@ mod inventory_layout_tests {
             );
             assert_eq!(frame[0], 0);
         }
+    }
+
+    #[test]
+    fn spectator_name_alpha_blends_with_background_and_keeps_frame_alpha() {
+        let background = vec![40u8; 200 * 16 * 4];
+        let mut opaque = background.clone();
+        draw_tab_name_alpha(&mut opaque, 200, "\u{a7}o\u{a7}cAlex", [255; 3], 16, 255);
+        let mut faded = background.clone();
+        draw_tab_name_alpha(&mut faded, 200, "\u{a7}o\u{a7}cAlex", [255; 3], 16, 0x90);
+        assert_ne!(opaque, faded);
+        for (full, partial) in opaque.chunks_exact(4).zip(faded.chunks_exact(4)) {
+            for channel in 0..3 {
+                assert_eq!(
+                    partial[channel],
+                    ((full[channel] as u32 * 144 + 40 * 111) / 255) as u8
+                );
+            }
+            assert_eq!(partial[3], 40);
+        }
+        faded.copy_from_slice(&background);
+        draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
+        assert_eq!(faded, background);
     }
 
     #[test]
