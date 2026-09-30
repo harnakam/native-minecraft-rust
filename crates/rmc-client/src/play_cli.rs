@@ -910,6 +910,46 @@ impl PlayApp {
                     draw_tab_overlay(frame, width, height, runtime);
                 }
                 if let Some(snapshot) = runtime.usability_snapshot() {
+                    let xp = snapshot.experience;
+                    let x = width as i32 / 2 - 91;
+                    let y = height as i32 - 50;
+                    draw_rect(
+                        frame,
+                        width,
+                        height,
+                        UiRect {
+                            x,
+                            y,
+                            width: 182,
+                            height: 5,
+                        },
+                        [30, 45, 15],
+                    );
+                    draw_rect(
+                        frame,
+                        width,
+                        height,
+                        UiRect {
+                            x,
+                            y,
+                            width: (xp.progress.clamp(0.0, 1.0) * 182.0) as i32,
+                            height: 5,
+                        },
+                        [128, 190, 35],
+                    );
+                    if xp.level > 0 {
+                        draw_text_scaled(
+                            frame,
+                            width,
+                            height,
+                            width as i32 / 2 - 4,
+                            y - 12,
+                            &xp.level.to_string(),
+                            [128, 220, 50],
+                            1,
+                        );
+                    }
+
                     if let Some(window) = snapshot.window.as_ref() {
                         draw_window_overlay(frame, width, height, window);
                         if let Some(item) = window.carried_item.as_ref() {

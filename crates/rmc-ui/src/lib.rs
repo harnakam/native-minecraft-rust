@@ -219,6 +219,7 @@ mod tests {
     #[test]
     fn renders_pvp_overlay_lines() {
         let hud = PvPHud::from_snapshot(&UsabilitySnapshot {
+            experience: Default::default(),
             chat_lines: vec![ChatLine {
                 message_json: "{\"text\":\"Queue popped\"}".to_owned(),
                 position: 1,

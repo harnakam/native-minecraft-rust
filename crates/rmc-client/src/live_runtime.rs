@@ -781,6 +781,7 @@ impl LiveRuntime {
                 self.mining.reset();
                 self.position_initialized = false;
                 self.pending_simulation_events.clear();
+                self.usability.reset_experience();
                 self.usability.inventory_mut().reset_for_respawn();
                 if self.dimension != Some(packet.dimension) {
                     self.world = WorldSnapshot::new(world_config_for_dimension(packet.dimension));

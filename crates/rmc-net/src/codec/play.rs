@@ -429,6 +429,13 @@ pub struct EntityMetadataPacket {
     pub metadata: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct SetExperiencePacket {
+    pub progress: f32,
+    pub level: i32,
+    pub total: i32,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmTransactionClientboundPacket {
     pub window_id: u8,
@@ -728,6 +735,7 @@ pub enum PlayClientboundPacket {
     EntityEquipment(EntityEquipmentPacket),
     TimeUpdate(TimeUpdatePacket),
     EntityMetadata(EntityMetadataPacket),
+    SetExperience(SetExperiencePacket),
     ConfirmTransaction(ConfirmTransactionClientboundPacket),
     PlayerListItem(PlayerListItemPacket),
     ScoreboardObjective(ScoreboardObjectivePacket),
@@ -1083,6 +1091,11 @@ impl PlayClientboundPacket {
                 window_id: reader.read_i8()?,
                 slot_id: reader.read_i16()?,
                 item: read_slot(&mut reader)?,
+            }),
+            0x1F => Self::SetExperience(SetExperiencePacket {
+                progress: reader.read_f32()?,
+                level: reader.read_var_i32()?,
+                total: reader.read_var_i32()?,
             }),
             0x1C => Self::EntityMetadata(EntityMetadataPacket {
                 entity_id: reader.read_var_i32()?,
@@ -1619,6 +1632,12 @@ impl PlayClientboundPacket {
                 }
 
                 0x30
+            }
+            Self::SetExperience(packet) => {
+                writer.write_f32(packet.progress);
+                writer.write_var_i32(packet.level);
+                writer.write_var_i32(packet.total);
+                0x1F
             }
             Self::EntityMetadata(packet) => {
                 metadata::decode(&packet.metadata)?;

@@ -141,3 +141,9 @@ Two codec tests cover packet layout, truncation/trailing failures and all eight 
 UsabilityState now exposes the same-team/friendly-invisible rule from EntityPlayer.isInvisibleToPlayer and ScorePlayerTeam: scoreboard membership must match and friendly flags bit 2 must be enabled. Runtime caches the spawn profile name from the existing player-list mapping on the received player entity; later Tab-list removal does not discard that identity. Native rendering admits invisible teammates under that rule and continues to admit spectators. Team changes immediately affect the query.
 
 A focused regression covers absent teams, same/different team, enabling/disabling the flag and removing membership. Full workspace tests pass. Friendly-invisible alpha rendering and name-tag rules remain incomplete; remote avatars are still debug geometry. Missing player-list identity at spawn also remains outside the verified path.
+
+## Received experience and HUD state
+
+S1FPacketSetExperience (0x1F) is implemented with float progress, VarInt level and VarInt total, matching the inspected MCP919 codec and setXPStats handler order. The protocol registry and session route it to UsabilityState. Snapshots expose all three values; native rendering draws the received progress bar and level. LiveRuntime resets experience when creating the respawned player, awaiting the server update.
+
+A golden wire test checks field order and roundtrip. A state test verifies snapshot values and reset. Workspace tests pass, followed by the new focused state test. Real-server experience acquisition, GUI visual inspection, creative/spectator HUD visibility rules, XP orbs and enchantment interactions remain unverified or incomplete.

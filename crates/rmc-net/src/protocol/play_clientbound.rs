@@ -370,6 +370,33 @@ pub const BLOCK_CHANGE: PacketSpec = PacketSpec {
     ],
 };
 
+pub const SET_EXPERIENCE: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x1F,
+    name: "Set Experience",
+    java_class: "net.minecraft.network.play.server.S1FPacketSetExperience",
+    java_handler: "INetHandlerPlayClient.handleSetExperience",
+    compression: PLAY_COMPRESSION,
+    fields: &[
+        FieldSpec {
+            name: "progress",
+            encoding: "Float",
+            notes: "Experience bar progress.",
+        },
+        FieldSpec {
+            name: "level",
+            encoding: "VarInt",
+            notes: "Experience level.",
+        },
+        FieldSpec {
+            name: "total",
+            encoding: "VarInt",
+            notes: "Total experience.",
+        },
+    ],
+};
+
 pub const ENTITY_METADATA: PacketSpec = PacketSpec {
     state: ProtocolState::Play,
     direction: PacketDirection::Clientbound,
@@ -1143,6 +1170,7 @@ pub const PACKETS: &[PacketSpec] = &[
     ENTITY_EQUIPMENT,
     TIME_UPDATE,
     ENTITY_METADATA,
+    SET_EXPERIENCE,
     CONFIRM_TRANSACTION,
     PLAYER_LIST_ITEM,
     SCOREBOARD_OBJECTIVE,

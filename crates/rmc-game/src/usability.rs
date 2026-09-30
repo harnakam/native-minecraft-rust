@@ -103,8 +103,16 @@ impl ClientSettingsState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Experience {
+    pub progress: f32,
+    pub level: i32,
+    pub total: i32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct UsabilitySnapshot {
+    pub experience: Experience,
     pub chat_lines: Vec<ChatLine>,
     pub sidebar: Option<SidebarSnapshot>,
     pub tab_list: Vec<TabListEntrySnapshot>,
@@ -151,6 +159,7 @@ struct TeamState {
 }
 
 pub struct UsabilityState {
+    experience: Experience,
     inventory: InventoryState,
     settings: ClientSettingsState,
     chat_lines: Vec<ChatLine>,
@@ -170,6 +179,10 @@ impl Default for UsabilityState {
 }
 
 impl UsabilityState {
+    pub fn reset_experience(&mut self) {
+        self.experience = Experience::default();
+    }
+
     pub fn player_name(&self, uuid: &[u8; 16]) -> Option<&str> {
         self.tab_list.get(uuid).map(|p| p.name.as_str())
     }
@@ -186,6 +199,7 @@ impl UsabilityState {
     }
     pub fn new() -> Self {
         Self {
+            experience: Experience::default(),
             inventory: InventoryState::new(),
             settings: ClientSettingsState::default(),
             chat_lines: Vec::new(),
@@ -236,6 +250,13 @@ impl UsabilityState {
         };
 
         match packet {
+            PlayClientboundPacket::SetExperience(packet) => {
+                self.experience = Experience {
+                    progress: packet.progress,
+                    level: packet.level,
+                    total: packet.total,
+                };
+            }
             PlayClientboundPacket::ChatMessage(packet) => {
                 self.push_chat(packet);
                 update.chat_updated = true;
@@ -307,6 +328,7 @@ impl UsabilityState {
         });
 
         UsabilitySnapshot {
+            experience: self.experience,
             chat_lines: self.chat_lines.clone(),
             sidebar: self.sidebar_snapshot(),
             tab_list,

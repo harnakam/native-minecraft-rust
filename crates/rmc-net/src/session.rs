@@ -227,6 +227,9 @@ impl HeadlessSession {
             PlayClientboundPacket::WindowItems(packet) => {
                 Some(SessionAction::WindowItemsUpdated(packet.clone()))
             }
+            PlayClientboundPacket::SetExperience(packet) => Some(SessionAction::UsabilityPacket(
+                PlayClientboundPacket::SetExperience(packet.clone()),
+            )),
             PlayClientboundPacket::WindowProperty(packet) => Some(SessionAction::UsabilityPacket(
                 PlayClientboundPacket::WindowProperty(packet.clone()),
             )),
