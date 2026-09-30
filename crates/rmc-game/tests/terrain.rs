@@ -240,3 +240,41 @@ fn spectator_crosses_terrain_and_border_then_survival_restores_collision() {
     assert!(simulation.player().position.x < 2.0);
     assert_eq!(simulation.velocity().x, 0.0);
 }
+
+#[test]
+fn spectator_server_ground_flag_does_not_change_air_acceleration() {
+    use rmc_net::codec::play::{ChangeGameStatePacket, PlayClientboundPacket};
+    let world = WorldSnapshot::new(WorldConfig::overworld());
+    let mut positions = Vec::new();
+    let mut velocities = Vec::new();
+    for grounded in [false, true] {
+        let mut simulation = player(Vec3::new(0.5, 64.0, 0.5));
+        simulation.apply_player_packet(
+            &PlayClientboundPacket::ChangeGameState(ChangeGameStatePacket {
+                reason: 3,
+                value: 3.0,
+            }),
+            Some(1),
+        );
+        simulation.apply_authoritative_state(AuthoritativePlayerState {
+            position: Vec3::new(0.5, 64.0, 0.5),
+            velocity: Vec3::ZERO,
+            on_ground: grounded,
+        });
+        simulation.tick_with_world(
+            MovementInput {
+                forward: 1.0,
+                jump: true,
+                ..Default::default()
+            },
+            CameraState::default(),
+            0,
+            &world,
+        );
+        positions.push(simulation.player().position);
+        velocities.push(simulation.velocity());
+        assert!(!simulation.player().on_ground);
+    }
+    assert_eq!(positions[0], positions[1]);
+    assert_eq!(velocities[0], velocities[1]);
+}

@@ -400,6 +400,9 @@ impl LocalSimulationLayer {
         self.player.selected_hotbar_slot = selected_hotbar_slot;
         self.apply_pending_server_state();
         self.apply_pending_knockback();
+        if self.game_mode == 3 {
+            self.player.on_ground = false;
+        }
         if let Some(world) = world {
             self.config.ground_friction = f64::from(
                 world.slipperiness_at(BlockPos::new(

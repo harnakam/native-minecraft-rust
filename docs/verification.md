@@ -211,3 +211,9 @@ A regression covers unloaded columns, full boundary cubes, outside-state transit
 Local simulation now follows EntityPlayer.onUpdate's spectator on-ground clearing before movement and Entity.moveEntity's noClip branch: game mode 3 offsets position directly, bypassing terrain/border/step collisions and movement-phase web slowdown. Changing back to survival restores the ordinary entity-aware collision path. Existing spectator flight handling remains in use.
 
 A received ChangeGameState regression crosses a solid wall at the configured world border in spectator mode, asserts no ground contact, then restores survival and verifies the wall stops motion. The first full run exposed pending authoritative state restoring on-ground after the early spectator reset; the no-clip branch now clears it again. All nine terrain tests and the corrected full workspace run pass. Complete spectator compatibility is not proven: spectator speed controls, entity camera/riding, GUI and online official-server mode-switch validation remain incomplete.
+
+## Spectator acceleration after pending server state
+
+The pending authoritative position/ground state can overwrite the early spectator ground reset. Simulation now clears on-ground again immediately after pending state and knockback application, before movement acceleration/jump calculations. This prevents a received ground flag from selecting the ground acceleration branch for a spectator.
+
+A regression compares identical spectator forward/jump input after authoritative states differing only in their ground flag; positions and velocities must match exactly and ground remains false. Full workspace tests pass. This strengthens the no-clip path but does not implement spectator speed scrolling, camera targets or complete spectator behavior.
