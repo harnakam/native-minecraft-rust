@@ -722,3 +722,12 @@ that pattern and inherited styles/extra siblings instead of displaying nothing.
 A regression covers a radius selector with red/bold extra text and score-before-
 selector precedence. This does not implement client-side entity selection;
 server command resolution and invalid-component validation remain separate work.
+
+
+### Component kind precedence
+
+MCP919 IChatComponent.Serializer chooses text before translate, score and
+selector, including an empty text string. The plain native path previously
+overrode text with a translation when both keys were present. A regression
+failed with "<Alex> ignored!" instead of "literal!" before the fix and now covers
+both nonempty and empty text, extra siblings, and the formatted path.

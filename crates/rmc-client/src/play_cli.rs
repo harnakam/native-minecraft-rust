@@ -3205,7 +3205,11 @@ fn chat_component_text(value: &serde_json::Value) -> String {
                 .get("text")
                 .map(chat_component_text)
                 .unwrap_or_default();
-            if let Some(key) = object.get("translate").and_then(|v| v.as_str()) {
+            if let Some(key) = object
+                .get("translate")
+                .filter(|_| !object.contains_key("text"))
+                .and_then(|v| v.as_str())
+            {
                 let args: Vec<String> = object
                     .get("with")
                     .and_then(|v| v.as_array())
@@ -4386,6 +4390,22 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn text_component_precedes_translation_even_when_empty() {
+        for (text, expected) in [("literal", "literal!"), ("", "!")] {
+            let value = serde_json::json!({"text":text,"translate":"chat.type.text","with":["Alex","ignored"],"score":{"name":"Alex","objective":"points","value":"42"},"selector":"@a","extra":[{"text":"!"}]});
+            assert_eq!(chat_component_text(&value), expected);
+            let formatted = tab_component_formatted(&value);
+            assert_eq!(
+                tab_styled_runs(&formatted, [255; 3], 100)
+                    .iter()
+                    .map(|(text, _)| text.as_str())
+                    .collect::<String>(),
+                expected
+            );
+        }
     }
 
     #[test]
