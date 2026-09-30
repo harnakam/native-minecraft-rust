@@ -2612,7 +2612,7 @@ fn draw_tab_snapshot(
                             .map(|value| chat_component_text(&value))
                             .unwrap_or_else(|_| json.clone())
                     })
-                    .unwrap_or_else(|| entry.name.clone());
+                    .unwrap_or_else(|| entry.team_formatted_name.clone());
                 let mut cell = vec![0; column_width as usize * 16 * 4];
                 for pixel in cell.chunks_exact_mut(4) {
                     pixel.copy_from_slice(&[18, 22, 28, 255]);
@@ -3912,6 +3912,41 @@ mod inventory_layout_tests {
             );
             assert_eq!(frame[0], 0);
         }
+    }
+
+    #[test]
+    fn native_tab_uses_team_names_unless_server_display_name_overrides() {
+        use rmc_net::codec::play::{
+            PlayClientboundPacket, PlayerListEntry, PlayerListItemAction, PlayerListItemPacket,
+        };
+        let mut state = rmc_game::usability::UsabilityState::new();
+        state.apply_play_packet(&PlayClientboundPacket::PlayerListItem(
+            PlayerListItemPacket {
+                action: PlayerListItemAction::AddPlayer,
+                entries: vec![PlayerListEntry {
+                    uuid: [1; 16],
+                    name: Some("Alex".into()),
+                    properties: vec![],
+                    game_mode: Some(0),
+                    latency: Some(1),
+                    display_name_json: None,
+                }],
+            },
+        ));
+        let mut snapshot = state.snapshot();
+        let mut plain = vec![0; 400 * 100 * 4];
+        draw_tab_snapshot(&mut plain, 400, 100, &snapshot, None);
+        snapshot.tab_list[0].team_formatted_name = "[R] Alex".into();
+        let mut decorated = vec![0; 400 * 100 * 4];
+        draw_tab_snapshot(&mut decorated, 400, 100, &snapshot, None);
+        assert_ne!(plain, decorated);
+        snapshot.tab_list[0].display_name_json = Some(r#"{"text":"Override"}"#.into());
+        let mut override_frame = vec![0; 400 * 100 * 4];
+        draw_tab_snapshot(&mut override_frame, 400, 100, &snapshot, None);
+        snapshot.tab_list[0].team_formatted_name = "[Other] Alex".into();
+        decorated.fill(0);
+        draw_tab_snapshot(&mut decorated, 400, 100, &snapshot, None);
+        assert_eq!(override_frame, decorated);
     }
 
     #[test]

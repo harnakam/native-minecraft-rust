@@ -466,3 +466,17 @@ the whole workspace suite pass. No Minecraft image is committed or embedded.
 Actual imported-icon visual parity and manual/native window observation remain
 unverified; this does not complete the Tab HUD's remaining font, faces, style,
 and scoreboard behavior.
+
+
+### Team-decorated native tab names
+
+Tab snapshots now carry the latest team prefix + profile name + suffix fallback
+from the received scoreboard team state. The native list uses that fallback
+unless a server display-name component is present, matching the priority in
+GuiPlayerTabOverlay.getPlayerName. Team changes now mark both scoreboard and tab
+state as updated. Tests cover team creation, prefix replacement, removal from a
+team, actual framebuffer changes, and server display-name override priority.
+Full-workspace tests passed; follow-up targeted tests cover the update flag.
+Legacy formatting codes/styles, Minecraft typography, server-side live team
+visual comparison, and complete Tab-screen compatibility remain unverified or
+incomplete. No Minecraft assets or reference source are included.

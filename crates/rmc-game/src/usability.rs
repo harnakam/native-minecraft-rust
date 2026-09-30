@@ -41,6 +41,7 @@ pub struct TabListEntrySnapshot {
     pub uuid: [u8; 16],
     pub name: String,
     pub display_name_json: Option<String>,
+    pub team_formatted_name: String,
     pub latency: i32,
     pub game_mode: i32,
     pub property_count: usize,
@@ -321,6 +322,7 @@ impl UsabilityState {
             PlayClientboundPacket::Teams(packet) => {
                 self.apply_team(packet);
                 update.scoreboard_updated = true;
+                update.tab_list_updated = true;
             }
             _ => {}
         }
@@ -336,6 +338,7 @@ impl UsabilityState {
                 uuid: entry.uuid,
                 name: entry.name.clone(),
                 display_name_json: entry.display_name_json.clone(),
+                team_formatted_name: self.rendered_score_name(&entry.name),
                 latency: entry.latency,
                 game_mode: entry.game_mode,
                 property_count: entry.property_count,
@@ -803,6 +806,58 @@ mod tests {
                 .map(|line| line.rendered_name.clone()),
             Some("[R] Rush".to_owned())
         );
+    }
+
+    #[test]
+    fn tab_team_name_updates_from_received_team_packets() {
+        let mut state = UsabilityState::new();
+        state.apply_play_packet(&PlayClientboundPacket::PlayerListItem(
+            PlayerListItemPacket {
+                action: PlayerListItemAction::AddPlayer,
+                entries: vec![PlayerListEntry {
+                    uuid: [1; 16],
+                    name: Some("Alex".into()),
+                    properties: vec![],
+                    game_mode: Some(0),
+                    latency: Some(0),
+                    display_name_json: None,
+                }],
+            },
+        ));
+        let mut team = TeamsPacket {
+            name: "red".into(),
+            action: TeamAction::Create,
+            display_name: "Red".into(),
+            prefix: "[R] ".into(),
+            suffix: "!".into(),
+            friendly_flags: 0,
+            name_tag_visibility: "always".into(),
+            color: 12,
+            players: vec!["Alex".into()],
+        };
+        assert!(
+            state
+                .apply_play_packet(&PlayClientboundPacket::Teams(team.clone()))
+                .tab_list_updated
+        );
+        assert_eq!(
+            state.snapshot().tab_list[0].team_formatted_name,
+            "[R] Alex!"
+        );
+        team.action = TeamAction::Update;
+        team.prefix = "[Red] ".into();
+        assert!(
+            state
+                .apply_play_packet(&PlayClientboundPacket::Teams(team.clone()))
+                .tab_list_updated
+        );
+        assert_eq!(
+            state.snapshot().tab_list[0].team_formatted_name,
+            "[Red] Alex!"
+        );
+        team.action = TeamAction::RemovePlayers;
+        state.apply_play_packet(&PlayClientboundPacket::Teams(team));
+        assert_eq!(state.snapshot().tab_list[0].team_formatted_name, "Alex");
     }
 
     #[test]
