@@ -406,6 +406,12 @@ pub struct WorldSnapshot {
 }
 
 impl WorldSnapshot {
+    pub fn with_difficulty(config: WorldConfig, difficulty: u8) -> Self {
+        let mut world = Self::new(config);
+        world.difficulty = Some(difficulty % 4);
+        world
+    }
+
     pub fn new(config: WorldConfig) -> Self {
         Self {
             difficulty: None,

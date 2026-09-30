@@ -767,8 +767,10 @@ impl LiveRuntime {
                 self.mining.reset();
                 self.summary.joined_game = true;
                 self.position_initialized = false;
-                self.world =
-                    WorldSnapshot::new(world_config_for_dimension(i32::from(packet.dimension)));
+                self.world = WorldSnapshot::with_difficulty(
+                    world_config_for_dimension(i32::from(packet.dimension)),
+                    packet.difficulty,
+                );
                 self.entity_tracker.clear();
                 self.mesh_pipeline = ChunkMeshPipeline::with_config(self.mesh_config);
             }
@@ -783,7 +785,10 @@ impl LiveRuntime {
                 self.usability.reset_experience();
                 self.usability.inventory_mut().reset_for_respawn();
                 if self.dimension != Some(packet.dimension) {
-                    self.world = WorldSnapshot::new(world_config_for_dimension(packet.dimension));
+                    self.world = WorldSnapshot::with_difficulty(
+                        world_config_for_dimension(packet.dimension),
+                        packet.difficulty,
+                    );
                     self.mesh_pipeline = ChunkMeshPipeline::with_config(self.mesh_config);
                     self.last_world_render = None;
                 }
@@ -1050,6 +1055,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(2));
         }
         assert!(runtime.summary().joined_game);
+        assert_eq!(runtime.world.difficulty(), Some(1));
         assert!(
             runtime.output().is_none(),
             "must await first server position before ticking"
@@ -1250,6 +1256,10 @@ mod tests {
             .usability
             .inventory_mut()
             .sync_selected_hotbar_slot(8);
+        runtime
+            .world
+            .apply_play_packet(&PlayClientboundPacket::ServerDifficulty(3))
+            .unwrap();
         let respawn = PlayClientboundPacket::Respawn(RespawnPacket {
             dimension: 0,
             difficulty: 1,
@@ -1291,6 +1301,7 @@ mod tests {
                 .block_state_or_air(rmc_world::BlockPos::new(0, 64, 0)),
             16
         );
+        assert_eq!(runtime.world.difficulty(), Some(3));
         assert_eq!(runtime.usability.inventory().selected_hotbar_slot(), 0);
         assert!(!runtime.position_initialized);
         runtime
@@ -1301,6 +1312,7 @@ mod tests {
                 level_type: "default".into(),
             }))
             .unwrap();
+        assert_eq!(runtime.world.difficulty(), Some(1));
         assert_eq!(runtime.world.metrics().loaded_chunks, 0);
         assert!(!runtime.world.config().has_sky_light);
         assert_eq!(runtime.dimension, Some(-1));

@@ -174,4 +174,10 @@ A driver regression feeds a framed request after login, checks the inbound event
 
 S41PacketServerDifficulty (0x41) is registered and decodes one unsigned byte into EnumDifficulty using modulo four, matching MCP919. Encoding writes one byte. In this reference the difficultyLocked member is not serialized; adding a boolean would incorrectly consume trailing data. WorldSnapshot now retains the received difficulty and exposes it for subsequent world/UI behavior; a new world has no received S41 value until one arrives.
 
-A regression covers all normal IDs and byte values 4/255, exact encode/decode bytes, truncated/trailing input and world-state replacement. Workspace tests pass. Initial JoinGame/Respawn difficulty handoff into this new field, difficulty-lock UI and difficulty-dependent gameplay remain incomplete, and S41 has not yet been asserted against an official server. This addition only establishes the received update path.
+A regression covers all normal IDs and byte values 4/255, exact encode/decode bytes, truncated/trailing input and world-state replacement. Workspace tests pass. Difficulty-lock UI and difficulty-dependent gameplay remain incomplete, and S41 has not yet been asserted against an official server. This addition only establishes the received update path.
+
+## Difficulty across world lifecycle
+
+LiveRuntime initializes difficulty from JoinGame when creating the world. On Respawn it follows the inspected NetHandlerPlayClient: same-dimension respawn preserves the existing world difficulty, while cross-dimension world creation uses the new packet's difficulty. WorldSnapshot::with_difficulty supplies this initialization without manufacturing a network update.
+
+The framed local TCP join test asserts initial difficulty. The existing TCP death/respawn test sets difficulty to 3, receives a same-dimension respawn declaring 1 and verifies preservation of 3; its subsequent dimension-change path verifies replacement with 1. Workspace tests pass. These lifecycle assertions have not yet been repeated on an official server, and difficulty-dependent gameplay/UI remain incomplete.
