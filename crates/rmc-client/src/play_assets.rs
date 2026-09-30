@@ -58,6 +58,7 @@ pub struct GameAssets {
     pub vanilla_root: Option<PathBuf>,
     pub widgets: Option<ImageAsset>,
     pub icons: Option<ImageAsset>,
+    pub vignette: Option<ImageAsset>,
     block_textures: BTreeMap<String, ImageAsset>,
 }
 
@@ -77,6 +78,7 @@ impl GameAssets {
                 let texture_root = root.join("assets").join("minecraft").join("textures");
                 assets.widgets = ImageAsset::load(&texture_root.join("gui").join("widgets.png"));
                 assets.icons = ImageAsset::load(&texture_root.join("gui").join("icons.png"));
+                assets.vignette = ImageAsset::load(&texture_root.join("misc").join("vignette.png"));
                 assets.block_textures = load_block_textures(&texture_root.join("blocks"));
             }
             Err(error) => {
@@ -493,7 +495,11 @@ fn ensure_vanilla_assets() -> Result<(PathBuf, bool), String> {
         .join("textures")
         .join("gui")
         .join("widgets.png");
-    if marker.exists() {
+    if marker.exists()
+        && output_root
+            .join("assets/minecraft/textures/misc/vignette.png")
+            .exists()
+    {
         return Ok((output_root, false));
     }
 
@@ -584,6 +590,7 @@ fn should_extract_asset(name: &str) -> bool {
     name.starts_with("assets/minecraft/textures/blocks/")
         || name == "assets/minecraft/textures/gui/widgets.png"
         || name == "assets/minecraft/textures/gui/icons.png"
+        || name == "assets/minecraft/textures/misc/vignette.png"
 }
 
 #[cfg(test)]

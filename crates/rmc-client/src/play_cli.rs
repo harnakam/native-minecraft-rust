@@ -881,7 +881,13 @@ impl PlayApp {
                     runtime.is_spectator(),
                     |name| runtime.can_see_friendly_invisible(name),
                 );
-                draw_border_warning(frame, width, height, runtime.border_warning_strength());
+                draw_border_warning(
+                    frame,
+                    width,
+                    height,
+                    runtime.border_warning_strength(),
+                    self.assets.vignette.as_ref(),
+                );
                 if let Some(icons) = self.assets.icons.as_ref() {
                     draw_sprite_region(
                         frame,
@@ -2162,7 +2168,13 @@ struct WindowLayout {
     slots: Vec<(UiRect, i16)>,
 }
 
-fn draw_border_warning(frame: &mut [u8], width: u32, height: u32, strength: f32) {
+fn draw_border_warning(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    strength: f32,
+    vignette: Option<&ImageAsset>,
+) {
     if !strength.is_finite() || strength <= 0.0 {
         return;
     }
@@ -2172,8 +2184,19 @@ fn draw_border_warning(frame: &mut [u8], width: u32, height: u32, strength: f32)
             let distance = x.min(width - 1 - x).min(y.min(height - 1 - y)) as f32;
             let tint = ((1.0 - distance / edge_width).max(0.0) * strength).clamp(0.0, 1.0);
             let index = ((y * width + x) * 4) as usize;
-            frame[index + 1] = (f32::from(frame[index + 1]) * (1.0 - tint)) as u8;
-            frame[index + 2] = (f32::from(frame[index + 2]) * (1.0 - tint)) as u8;
+            let mask = vignette.map(|image| {
+                image.sample_repeat(
+                    (x as f32 + 0.5) / width as f32,
+                    (y as f32 + 0.5) / height as f32,
+                )
+            });
+            for channel in [1, 2] {
+                let source =
+                    mask.map_or(tint, |sample| f32::from(sample[channel]) / 255.0 * strength);
+                // GuiIngame uses ZERO, ONE_MINUS_SRC_COLOR for border vignette.
+                frame[index + channel] =
+                    (f32::from(frame[index + channel]) * (1.0 - source).clamp(0.0, 1.0)) as u8;
+            }
         }
     }
 }
@@ -3219,14 +3242,29 @@ mod inventory_layout_tests {
     use super::*;
 
     #[test]
+    fn border_warning_uses_loaded_texture_color_in_destination_blend() {
+        let path =
+            std::env::temp_dir().join(format!("rmc-vignette-test-{}.png", std::process::id()));
+        image::RgbaImage::from_raw(2, 1, vec![255, 255, 128, 255, 0, 0, 0, 255])
+            .unwrap()
+            .save(&path)
+            .unwrap();
+        let texture = ImageAsset::load(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        let mut frame = vec![200; 8];
+        draw_border_warning(&mut frame, 2, 1, 0.5, Some(&texture));
+        assert_eq!(frame, vec![200, 100, 149, 200, 200, 200, 200, 200]);
+    }
+
+    #[test]
     fn border_warning_tints_edges_and_leaves_center_unchanged() {
         let mut frame = vec![200; 100 * 100 * 4];
-        draw_border_warning(&mut frame, 100, 100, 0.5);
+        draw_border_warning(&mut frame, 100, 100, 0.5, None);
         assert_eq!(&frame[0..4], &[200, 100, 100, 200]);
         let center = (50 * 100 + 50) * 4;
         assert_eq!(&frame[center..center + 4], &[200; 4]);
         let unchanged = frame.clone();
-        draw_border_warning(&mut frame, 100, 100, 0.0);
+        draw_border_warning(&mut frame, 100, 100, 0.0, None);
         assert_eq!(frame, unchanged);
     }
 

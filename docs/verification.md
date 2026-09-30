@@ -223,3 +223,9 @@ A regression compares identical spectator forward/jump input after authoritative
 WorldBorder now computes GuiIngame's warning strength: closest distance is cast to float, warning radius is the maximum of warning blocks and the smaller of time-scaled resize speed and remaining diameter change, and strength is one minus the distance/radius ratio. Runtime supplies actual simulation player position, and the native frontend applies a red edge warning before crosshair and HUD drawing. No vignette texture is bundled.
 
 A state regression covers no warning, proximity, outside strength, resizing anticipation and completion. A framebuffer regression checks red edge tint, unchanged center and no modification at strength zero. Workspace tests pass, followed by the focused framebuffer test after the position handoff adjustment. The visible warning uses a simple edge mask, not the vanilla vignette image/blending pipeline; visual parity and official-server boundary testing remain unverified.
+
+## Local vignette texture for border warnings
+
+The local asset importer permits textures/misc/vignette.png and refreshes older extracted caches missing that image. GameAssets loads it locally. Border warning rendering uses its sampled green/blue channels with the GuiIngame ZERO / ONE_MINUS_SRC_COLOR destination blend; the red and alpha channels of the framebuffer remain unchanged. The previous edge fallback remains when no local image is available. No game image is tracked or bundled.
+
+Full workspace tests pass, followed by two focused warning tests after cache/test updates. The new test loads an authored synthetic PNG and verifies exact destination pixels, texture coverage and preserved red/alpha. Actual vanilla texture output has not been manually inspected. Sampling is nearest rather than the vanilla filtered texture path; normal brightness vignette, fancy-graphics setting and exact blending/rounding parity remain incomplete.
