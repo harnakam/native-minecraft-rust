@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 pub mod collision;
 pub mod time;
+pub mod weather;
 
 pub const CHUNK_EDGE: usize = 16;
 pub const CHUNK_HEIGHT: usize = 256;
@@ -397,6 +398,7 @@ impl WorldChangeSummary {
 
 #[derive(Clone, Debug, Default)]
 pub struct WorldSnapshot {
+    weather: weather::Weather,
     time: time::WorldTime,
     config: WorldConfig,
     chunks: HashMap<ChunkPos, ChunkColumn>,
@@ -405,6 +407,7 @@ pub struct WorldSnapshot {
 impl WorldSnapshot {
     pub fn new(config: WorldConfig) -> Self {
         Self {
+            weather: weather::Weather::default(),
             time: time::WorldTime::default(),
             config,
             chunks: HashMap::new(),
@@ -417,6 +420,10 @@ impl WorldSnapshot {
 
     pub fn time(&self) -> time::WorldTime {
         self.time
+    }
+
+    pub fn weather(&self) -> weather::Weather {
+        self.weather
     }
 
     pub fn advance_time(&mut self, ticks: usize) {
@@ -619,6 +626,10 @@ impl WorldSnapshot {
         packet: &PlayClientboundPacket,
     ) -> Result<Option<WorldChangeSummary>, WorldError> {
         let summary = match packet {
+            PlayClientboundPacket::ChangeGameState(packet) => {
+                self.weather.receive(packet.reason, packet.value);
+                None
+            }
             PlayClientboundPacket::TimeUpdate(packet) => {
                 self.time
                     .receive(packet.total_world_time, packet.world_time);
@@ -671,7 +682,6 @@ impl WorldSnapshot {
             | PlayClientboundPacket::Teams(_)
             | PlayClientboundPacket::PlayerAbilities(_)
             | PlayClientboundPacket::HeldItemChange(_)
-            | PlayClientboundPacket::ChangeGameState(_)
             | PlayClientboundPacket::EntityEffect(_)
             | PlayClientboundPacket::RemoveEntityEffect(_)
             | PlayClientboundPacket::EntityProperties(_)

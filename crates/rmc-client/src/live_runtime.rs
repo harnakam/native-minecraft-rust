@@ -476,7 +476,12 @@ impl LiveRuntime {
 
     pub fn daylight(&self, partial_ticks: f32) -> Option<rmc_render::daylight::Daylight> {
         self.world.config().has_sky_light.then(|| {
-            rmc_render::daylight::Daylight::calculate(self.world.time(), partial_ticks, 0.0, 0.0)
+            rmc_render::daylight::Daylight::calculate(
+                self.world.time(),
+                partial_ticks,
+                self.world.weather().rain_strength,
+                self.world.weather().thunder_strength(),
+            )
         })
     }
 
@@ -1052,6 +1057,10 @@ mod tests {
                 slot: 4,
                 item: Some(ItemStack::simple(310, 1, 17)),
             }),
+            PlayClientboundPacket::ChangeGameState(rmc_net::codec::play::ChangeGameStatePacket {
+                reason: 7,
+                value: 0.75,
+            }),
         ] {
             server
                 .write_all(
@@ -1073,10 +1082,11 @@ mod tests {
                     &RuntimeActionInput::default(),
                 )
                 .unwrap();
-            if runtime
-                .entity_tracker
-                .players()
-                .any(|p| p.equipment[4].is_some())
+            if runtime.world.weather().rain_strength == 0.75
+                && runtime
+                    .entity_tracker
+                    .players()
+                    .any(|p| p.equipment[4].is_some())
             {
                 break;
             }
@@ -1086,6 +1096,7 @@ mod tests {
             runtime.entity_tracker.players().next().unwrap().equipment[4],
             Some(ItemStack::simple(310, 1, 17))
         );
+        assert_eq!(runtime.world.weather().rain_strength, 0.75);
     }
 
     #[test]
