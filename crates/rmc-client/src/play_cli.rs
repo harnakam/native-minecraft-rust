@@ -1227,7 +1227,7 @@ impl PlayApp {
             .as_ref()
             .and_then(|r| r.usability_snapshot())
             .map_or(0, |snapshot| {
-                chat_display_lines(&snapshot.chat_lines, self.options.width).len()
+                chat_formatted_rows(&snapshot.chat_lines, self.options.width).len()
             });
         self.chat_scroll = (self.chat_scroll as i64)
             .saturating_add(amount)
@@ -3540,6 +3540,7 @@ fn wrap_chat_text(text: &str, columns: usize) -> Vec<String> {
     rows
 }
 
+#[cfg(test)]
 fn chat_display_lines(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec<String> {
     chat_display_rows(lines, width)
         .into_iter()
@@ -3547,6 +3548,7 @@ fn chat_display_lines(lines: &[rmc_game::usability::ChatLine], width: u32) -> Ve
         .collect()
 }
 
+#[cfg(test)]
 fn chat_display_rows(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec<(String, u64)> {
     let columns = (width.saturating_sub(24).min(470) / 6).max(1) as usize;
     let mut rows = Vec::new();
@@ -3569,68 +3571,109 @@ fn chat_display_rows(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec
     rows
 }
 
+#[cfg(test)]
 fn wrap_formatted_chat_text(text: &str, columns: usize) -> Vec<String> {
+    wrap_styled_chat(text, columns.max(1) as i32, |_, _| 1)
+}
+
+fn wrap_formatted_chat_pixels(text: &str, pixels: i32) -> Vec<String> {
+    wrap_styled_chat(text, pixels.max(1), |ch, style| {
+        native_text_width(&ch.to_string()) + i32::from(style.bold)
+    })
+}
+
+fn wrap_styled_chat(
+    text: &str,
+    limit: i32,
+    measure: impl Fn(char, TabNameStyle) -> i32,
+) -> Vec<String> {
     let mut styled = Vec::new();
     for (text, style) in tab_styled_runs(text, [255; 3], usize::MAX) {
         styled.extend(text.chars().map(|ch| (ch, style)));
     }
-    let plain: String = styled.iter().map(|(ch, _)| *ch).collect();
-    let mut cursor = 0;
-    wrap_chat_text(&plain, columns)
-        .into_iter()
-        .map(|row| {
-            let mut formatted = String::new();
-            for ch in row.chars() {
-                let style = styled[cursor].1;
-                let code = (0..16)
-                    .find(|index| {
-                        tab_styled_runs(
-                            &format!("\u{a7}{}x", char::from_digit(*index, 16).unwrap()),
-                            [255; 3],
-                            1,
-                        )[0]
-                        .1
-                        .color
-                            == style.color
-                    })
-                    .unwrap_or(15);
-                formatted.push('\u{a7}');
-                formatted.push(char::from_digit(code, 16).unwrap());
-                for (enabled, code) in [
-                    (style.bold, 'l'),
-                    (style.italic, 'o'),
-                    (style.underline, 'n'),
-                    (style.obfuscated, 'k'),
-                    (style.strike, 'm'),
-                ] {
-                    if enabled {
-                        formatted.push('\u{a7}');
-                        formatted.push(code);
-                    }
+    let mut rows = Vec::new();
+    for paragraph in styled.split(|(ch, _)| *ch == '\n') {
+        let mut start = 0;
+        loop {
+            let mut end = start;
+            let mut width = 0;
+            while end < paragraph.len() {
+                let advance = measure(paragraph[end].0, paragraph[end].1);
+                if width + advance > limit {
+                    break;
                 }
-                formatted.push(ch);
-                cursor += 1;
+                width += advance;
+                end += 1;
             }
-            if styled
-                .get(cursor)
-                .is_some_and(|(ch, _)| *ch == ' ' || *ch == '\n')
-            {
-                cursor += 1;
+            if end == start && end < paragraph.len() {
+                end += 1;
             }
-            formatted
-        })
-        .collect()
+            let mut next = end;
+            if end < paragraph.len() {
+                if let Some(space) = paragraph[start..end]
+                    .iter()
+                    .rposition(|(ch, _)| *ch == ' ')
+                    .filter(|offset| *offset > 0)
+                {
+                    end = start + space;
+                    next = end + 1;
+                } else if paragraph.get(next).is_some_and(|(ch, _)| *ch == ' ') {
+                    next += 1;
+                }
+            }
+            let mut formatted = String::new();
+            let mut previous = None;
+            for (ch, style) in &paragraph[start..end] {
+                if previous != Some(*style) {
+                    let code = (0..16)
+                        .find(|index| {
+                            tab_styled_runs(
+                                &format!("\u{a7}{}x", char::from_digit(*index, 16).unwrap()),
+                                [255; 3],
+                                1,
+                            )[0]
+                            .1
+                            .color
+                                == style.color
+                        })
+                        .unwrap_or(15);
+                    formatted.push('\u{a7}');
+                    formatted.push(char::from_digit(code, 16).unwrap());
+                    for (enabled, code) in [
+                        (style.bold, 'l'),
+                        (style.italic, 'o'),
+                        (style.underline, 'n'),
+                        (style.obfuscated, 'k'),
+                        (style.strike, 'm'),
+                    ] {
+                        if enabled {
+                            formatted.push('\u{a7}');
+                            formatted.push(code);
+                        }
+                    }
+                    previous = Some(*style);
+                }
+                formatted.push(*ch);
+            }
+            rows.push(formatted);
+            if next >= paragraph.len() {
+                break;
+            }
+            start = next;
+        }
+    }
+    rows
 }
 
 fn chat_formatted_rows(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec<(String, u64)> {
-    let columns = (width.saturating_sub(24).min(470) / 6).max(1) as usize;
+    let pixels = width.saturating_sub(24).min(470).max(1) as i32;
     let mut rows = Vec::new();
     for line in lines.iter().filter(|line| line.position != 2) {
         let formatted = parse_chat_component(&line.message_json)
             .map(|value| tab_component_formatted(&value))
             .unwrap_or_else(|_| line.message_json.clone());
         rows.extend(
-            wrap_formatted_chat_text(&formatted, columns)
+            wrap_formatted_chat_pixels(&formatted, pixels)
                 .into_iter()
                 .map(|row| (row, line.age_ticks)),
         );
@@ -5081,6 +5124,43 @@ mod inventory_layout_tests {
                 .map(|(_, style)| style.obfuscated)
                 .collect::<Vec<_>>(),
             vec![true, false, true, false]
+        );
+    }
+
+    #[test]
+    fn formatted_chat_pixel_wrap_uses_glyph_and_bold_advance() {
+        let limit = native_text_width("i") * 4;
+        let rows = wrap_formatted_chat_pixels("iiiiWWWW", limit);
+        assert!(rows.len() > 1);
+        for row in &rows {
+            let width: i32 = tab_styled_runs(row, [255; 3], 100)
+                .iter()
+                .map(|(text, style)| {
+                    text.chars()
+                        .map(|ch| native_text_width(&ch.to_string()) + i32::from(style.bold))
+                        .sum::<i32>()
+                })
+                .sum();
+            assert!(
+                width <= limit
+                    || tab_styled_runs(row, [255; 3], 100)
+                        .iter()
+                        .map(|(text, _)| text.chars().count())
+                        .sum::<usize>()
+                        == 1
+            );
+        }
+        let plain = wrap_formatted_chat_pixels("iiii", limit);
+        let bold = wrap_formatted_chat_pixels("\u{a7}liiii", limit);
+        assert!(bold.len() > plain.len());
+        let lines = vec![rmc_game::usability::ChatLine {
+            age_ticks: 0,
+            position: 0,
+            message_json: r#"{"text":"iiiiWWWW","bold":true}"#.into(),
+        }];
+        assert_eq!(
+            chat_formatted_rows(&lines, limit as u32 + 24).len(),
+            wrap_formatted_chat_pixels("\u{a7}liiiiWWWW", limit).len()
         );
     }
 

@@ -990,3 +990,17 @@ Framebuffer regressions verify additional dark shadow pixels and transparent
 behavior, alongside the existing real chat-history style test. The workspace
 suite passes. Native font glyphs/scale, pixel-width wrapping and manual visual
 parity remain incomplete. No game assets/reference source are published.
+
+
+### Native glyph-width chat wrapping
+
+Formatted chat history now wraps using actual native glyph advances plus bold
+spacing instead of a fixed six-pixel column estimate. Wrapping retains resolved
+styles, explicit newlines and word boundaries; a glyph wider than the viewport
+occupies a single clipped row so processing still advances. Scroll bounds now
+use these same formatted rows. Prefixes are emitted only when style changes.
+Regressions cover mixed narrow/wide glyphs, bold increasing row count, per-row
+width bounds and runtime row-count agreement. The full workspace suite passes.
+The implementation follows GuiUtilRenderComponents' width-driven principle;
+Minecraft font metrics, exact component-boundary/space handling, UI scaling and
+manual visual parity remain incomplete.
