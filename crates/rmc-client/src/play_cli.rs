@@ -2843,9 +2843,9 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
     fn visit(
         value: &serde_json::Value,
         inherited: TabNameStyle,
-        inherited_color: bool,
+        inherited_color: Option<char>,
         output: &mut String,
-    ) -> (TabNameStyle, bool) {
+    ) -> (TabNameStyle, Option<char>) {
         if let Some(array) = value.as_array() {
             let Some((first, rest)) = array.split_first() else {
                 return (inherited, inherited_color);
@@ -2877,9 +2877,12 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
                 "yellow",
                 "white",
             ];
-            if let Some(index) = names.iter().position(|name| *name == color) {
-                has_color = true;
+            if color == "reset" {
+                has_color = Some('r');
+                style.color = [255; 3];
+            } else if let Some(index) = names.iter().position(|name| *name == color) {
                 let code = char::from_digit(index as u32, 16).unwrap();
+                has_color = Some(code);
                 style.color = tab_styled_runs(&format!("\u{a7}{code}x"), [255; 3], 1)[0]
                     .1
                     .color;
@@ -2942,18 +2945,9 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
             String::new()
         };
         if !text.is_empty() {
-            for index in 0..16 {
-                let code = char::from_digit(index, 16).unwrap();
-                if has_color
-                    && tab_styled_runs(&format!("\u{a7}{code}x"), [255; 3], 1)[0]
-                        .1
-                        .color
-                        == style.color
-                {
-                    output.push('\u{a7}');
-                    output.push(code);
-                    break;
-                }
+            if let Some(code) = has_color {
+                output.push('\u{a7}');
+                output.push(code);
             }
             for (enabled, code) in [
                 (style.bold, 'l'),
@@ -2983,7 +2977,7 @@ fn tab_component_formatted(value: &serde_json::Value) -> String {
             color: [255; 3],
             ..Default::default()
         },
-        false,
+        None,
         &mut output,
     );
     output
@@ -4771,6 +4765,26 @@ mod inventory_layout_tests {
         .unwrap();
         assert_eq!(chat_component_text(&prioritized), "");
         assert_eq!(tab_component_formatted(&prioritized), "");
+    }
+
+    #[test]
+    fn reset_component_color_replaces_parent_color_without_losing_style_flags() {
+        let value = parse_chat_component(r#"{"text":"A","color":"red","bold":true,"extra":[{"text":"B","color":"reset"},{"text":"C"}]}"#).unwrap();
+        let formatted = tab_component_formatted(&value);
+        assert_eq!(formatted.replace('\u{a7}', "&"), "&c&lA&r&r&lB&r&c&lC&r");
+        assert!(tab_styled_runs(&formatted, [236; 3], 100)
+            .iter()
+            .any(|(text, style)| text == "B" && style.color == [236; 3] && style.bold));
+        let runs = tab_styled_runs(&tab_component_formatted(&value), [255; 3], 100);
+        assert!(runs
+            .iter()
+            .any(|(text, style)| text == "A" && style.color == [255, 85, 85] && style.bold));
+        assert!(runs
+            .iter()
+            .any(|(text, style)| text == "B" && style.color == [255; 3] && style.bold));
+        assert!(runs
+            .iter()
+            .any(|(text, style)| text == "C" && style.color == [255, 85, 85] && style.bold));
     }
 
     #[test]

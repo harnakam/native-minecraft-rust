@@ -877,3 +877,15 @@ parent A flags true/true/false/false, child B false/false/true/true and three
 invalid-field rejections, matching native regression results. Workspace tests
 pass. Obfuscated flag coercion is supported, but animated obfuscated glyph
 rendering remains incomplete, as do exact exception/ingress behavior and fonts.
+
+
+### Component reset color inheritance
+
+Formatted component traversal now retains the actual inherited color code,
+including reset, instead of deriving it only from RGB. color reset clears parent
+color while inherited bold/italic flags are reapplied, and following siblings
+retain their parent color. An executed MCP919 getFormattedText probe outputs
+&c&lA&r&r&lB&r&c&lC&r (ampersand standing for the section sign); the native
+regression matches this exact sequence and verifies reset honors a nonwhite
+draw base color. The workspace suite passes. Font/other enum color formatting
+values, obfuscation and manual visual parity remain incomplete.
