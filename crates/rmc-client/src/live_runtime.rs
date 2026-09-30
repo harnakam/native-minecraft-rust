@@ -654,6 +654,24 @@ impl LiveRuntime {
         self.flush_if_pending()
     }
 
+    pub fn transfer_window_slot(
+        &mut self,
+        window_id: u8,
+        slot_id: i16,
+        button: i8,
+    ) -> Result<(), String> {
+        if self.usability.inventory().pending_transactions().len() >= 128 {
+            return Err("Waiting for server inventory acknowledgements".to_owned());
+        }
+        let packet = self
+            .usability
+            .inventory_mut()
+            .queue_transfer_click(window_id, slot_id, button)
+            .map_err(str::to_owned)?;
+        self.queue_play_packet(&packet)?;
+        self.flush_if_pending()
+    }
+
     pub fn clone_window_slot(&mut self, window_id: u8, slot_id: i16) -> Result<(), String> {
         if self.usability.inventory().pending_transactions().len() >= 128 {
             return Err("Waiting for server inventory acknowledgements".to_owned());
@@ -1507,6 +1525,52 @@ mod tests {
                 .map(|s| s.count),
             Some(12)
         );
+        for (source, target, nbt_slot) in [(9, 37, 1), (37, 9, 9)] {
+            runtime.transfer_window_slot(0, source, 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime, &RuntimeActionInput::default());
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            assert!(runtime
+                .usability
+                .inventory()
+                .pending_transactions()
+                .is_empty());
+            assert_eq!(
+                runtime
+                    .usability
+                    .inventory()
+                    .inventory_window()
+                    .slot(target)
+                    .and_then(|s| s.as_ref())
+                    .map(|s| (s.item_id, s.count)),
+                Some((1, 12))
+            );
+            let previous_chat_count = runtime.usability.snapshot().chat_lines.len();
+            runtime.send_chat_message(&format!(r#"/testfor VanillaProbe {{Inventory:[{{Slot:{nbt_slot}b,id:"minecraft:stone",Count:12b}}]}}"#)).unwrap();
+            let mut confirmed = false;
+            for _ in 0..100 {
+                advance(&mut runtime, &RuntimeActionInput::default());
+                confirmed = runtime
+                    .usability
+                    .snapshot()
+                    .chat_lines
+                    .iter()
+                    .skip(previous_chat_count)
+                    .any(|line| line.message_json.contains("commands.testfor.success"));
+                if confirmed {
+                    break;
+                }
+            }
+            assert!(confirmed, "official server did not confirm shift transfer");
+        }
         for (whole, count) in [(false, 11), (true, 0)] {
             runtime.throw_window_slot(0, 9, whole).unwrap();
             for _ in 0..100 {
@@ -1633,7 +1697,7 @@ mod tests {
             "official server did not initialize the respawn position"
         );
         assert!(runtime.summary.disconnect_reason_json.is_none());
-        println!("official 1.8.9: number-key swaps, single/stack throws, server-confirmed stone mining, death and respawn passed");
+        println!("official 1.8.9: number-key swaps, shift transfers, single/stack throws, server-confirmed stone mining, death and respawn passed");
         if std::env::var("RMC_STOP_TEST_SERVER").as_deref() == Ok("1") {
             runtime.send_chat_message("/stop").unwrap();
             for _ in 0..100 {

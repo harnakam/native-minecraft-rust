@@ -3,6 +3,116 @@ use super::{item_stack_limit, predict_pickup, InventoryState};
 use rmc_net::codec::play::PlayServerboundPacket;
 
 impl InventoryState {
+    /// Shift-click transfer for player storage and unrestricted chest storage.
+    pub fn queue_transfer_click(
+        &mut self,
+        window_id: u8,
+        slot_id: i16,
+        button: i8,
+    ) -> Result<PlayServerboundPacket, &'static str> {
+        if !matches!(button, 0 | 1) {
+            return Err("Invalid shift-click button");
+        }
+        let item = self
+            .slot(window_id, slot_id)
+            .ok_or("Invalid inventory slot")?
+            .clone();
+        let before = if window_id == 0 {
+            self.inventory_window.clone()
+        } else {
+            self.open_window.as_ref().unwrap().clone()
+        };
+        let mut after = before.clone();
+        let mut returned = None;
+        if let Some(mut stack) = item.clone() {
+            let (start, end, reverse) = if window_id == 0 {
+                if slot_id == 0 {
+                    return Err("Recipe transfer requires crafting side effects");
+                }
+                let armor = (298..=317)
+                    .contains(&stack.item_id)
+                    .then(|| 5 + (stack.item_id as usize - 298) % 4);
+                if slot_id < 9 {
+                    (9, 45, false)
+                } else if let Some(armor) = armor.filter(|a| after.slots[*a].is_none()) {
+                    (armor, armor + 1, false)
+                } else if slot_id < 36 {
+                    (36, 45, false)
+                } else {
+                    (9, 36, false)
+                }
+            } else {
+                if !matches!(
+                    before.metadata.as_ref().map(|m| m.inventory_type.as_str()),
+                    Some("minecraft:container" | "minecraft:chest")
+                ) {
+                    return Err("This container requires a specialized transfer algorithm");
+                }
+                let offset = before.player_inventory_offset();
+                if before.slots.len() != offset + 36 {
+                    return Err("Incomplete container inventory");
+                }
+                if (slot_id as usize) < offset {
+                    (offset, after.slots.len(), true)
+                } else {
+                    (0, offset, false)
+                }
+            };
+            if after.slots.len() < end {
+                return Err("Incomplete player inventory");
+            }
+            let mut indices: Vec<usize> = (start..end).collect();
+            if reverse {
+                indices.reverse();
+            }
+            let limit = item_stack_limit(stack.item_id);
+            if limit > 1 {
+                for &index in &indices {
+                    if let Some(target) = &mut after.slots[index] {
+                        if target.item_id == stack.item_id
+                            && target.damage == stack.damage
+                            && target.tags_equal(&stack)
+                        {
+                            let amount = stack.count.min(limit.saturating_sub(target.count));
+                            target.count += amount;
+                            stack.count -= amount;
+                            if stack.count == 0 {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if stack.count > 0 {
+                if let Some(&index) = indices.iter().find(|&&i| after.slots[i].is_none()) {
+                    after.slots[index] = Some(stack.clone());
+                    stack.count = 0;
+                }
+            }
+            if stack.count != item.as_ref().unwrap().count {
+                returned = item;
+                after.slots[slot_id as usize] = (stack.count > 0).then_some(stack);
+            }
+        }
+        let packet = self.queue_click(window_id, slot_id, button, 1, returned);
+        if after != before {
+            if let PlayServerboundPacket::ClickWindow(click) = &packet {
+                self.pickup_predictions.insert(
+                    (window_id, click.action_number),
+                    (before, self.carried_item.clone()),
+                );
+            }
+            if window_id == 0 {
+                self.inventory_window = after;
+                self.sync_player_inventory_to_open();
+            } else {
+                self.open_window = Some(after);
+                self.sync_open_player_inventory();
+            }
+        }
+        Ok(packet)
+    }
+
     /// Creative-only Container.slotClick mode 3, preserving source NBT.
     pub fn queue_clone_click(
         &mut self,

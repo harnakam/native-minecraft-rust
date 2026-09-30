@@ -349,6 +349,7 @@ struct PlayApp {
     launched_at: Instant,
     mouse_captured: bool,
     modifiers_ctrl: bool,
+    modifiers_shift: bool,
     auto_exit_after: Option<Duration>,
     stop_after_join: bool,
     should_exit: bool,
@@ -398,6 +399,7 @@ impl PlayApp {
             launched_at: Instant::now(),
             mouse_captured: false,
             modifiers_ctrl: false,
+            modifiers_shift: false,
             auto_exit_after,
             stop_after_join,
             should_exit: false,
@@ -1069,6 +1071,8 @@ impl PlayApp {
                                 } else {
                                     Ok(())
                                 }
+                            } else if self.modifiers_shift && slot_id >= 0 {
+                                runtime.transfer_window_slot(window_id, slot_id, button_id)
                             } else {
                                 runtime.click_window_slot(window_id, slot_id, button_id)
                             };
@@ -1160,6 +1164,10 @@ impl PlayApp {
     fn handle_keyboard_input(&mut self, input: KeyboardInput, window: &winit::window::Window) {
         if let Some(key) = input.virtual_keycode {
             let pressed = input.state == ElementState::Pressed;
+
+            if key == VirtualKeyCode::LShift || key == VirtualKeyCode::RShift {
+                self.modifiers_shift = pressed;
+            }
 
             if key == VirtualKeyCode::LControl || key == VirtualKeyCode::RControl {
                 self.modifiers_ctrl = pressed;
