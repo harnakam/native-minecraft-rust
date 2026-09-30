@@ -191,6 +191,11 @@ impl HeadlessSession {
                 self.snapshot.dimension = Some(i32::from(packet.dimension));
                 Some(SessionAction::JoinedGame(packet.clone()))
             }
+            PlayClientboundPacket::PlayerListHeaderFooter(packet) => {
+                Some(SessionAction::UsabilityPacket(
+                    PlayClientboundPacket::PlayerListHeaderFooter(packet.clone()),
+                ))
+            }
             PlayClientboundPacket::Title(packet) => Some(SessionAction::UsabilityPacket(
                 PlayClientboundPacket::Title(packet.clone()),
             )),

@@ -221,6 +221,8 @@ mod tests {
         let hud = PvPHud::from_snapshot(&UsabilitySnapshot {
             action_bar: None,
             title: Default::default(),
+            tab_header_json: String::new(),
+            tab_footer_json: String::new(),
             experience: Default::default(),
             chat_lines: vec![ChatLine {
                 age_ticks: 0,

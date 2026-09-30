@@ -1138,6 +1138,7 @@ pub const HELD_ITEM_CHANGE: PacketSpec = PacketSpec {
 pub const PACKETS: &[PacketSpec] = &[
     WORLD_BORDER,
     TITLE,
+    PLAYER_LIST_HEADER_FOOTER,
     SERVER_DIFFICULTY,
     RESOURCE_PACK_SEND,
     CHANGE_GAME_STATE,
@@ -1297,5 +1298,20 @@ pub const TITLE: PacketSpec = PacketSpec {
         name: "action and fields",
         encoding: "VarInt, Chat or three Ints",
         notes: "Title/subtitle components, times, clear, reset; action-specific payload.",
+    }],
+};
+
+pub const PLAYER_LIST_HEADER_FOOTER: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x47,
+    name: "Player List Header Footer",
+    java_class: "net.minecraft.network.play.server.S47PacketPlayerListHeaderFooter",
+    java_handler: "INetHandlerPlayClient.handlePlayerListHeaderFooter",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "header, footer",
+        encoding: "Chat, Chat",
+        notes: "Two ordered chat components.",
     }],
 };

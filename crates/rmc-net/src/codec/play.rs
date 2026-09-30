@@ -6,6 +6,12 @@ mod world_border;
 pub use title::TitlePacket;
 pub use world_border::WorldBorderPacket;
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlayerListHeaderFooterPacket {
+    pub header_json: String,
+    pub footer_json: String,
+}
+
 use crate::buffer::{BufferError, PacketReader, PacketWriter};
 use crate::codec::{split_packet_bytes, CodecError, EncodedPacket};
 
@@ -753,6 +759,7 @@ pub enum PlayClientboundPacket {
     ResourcePackSend(ResourcePackSendPacket),
     WorldBorder(WorldBorderPacket),
     Title(TitlePacket),
+    PlayerListHeaderFooter(PlayerListHeaderFooterPacket),
     ServerDifficulty(u8),
     TimeUpdate(TimeUpdatePacket),
     EntityMetadata(EntityMetadataPacket),
@@ -802,6 +809,10 @@ impl PlayClientboundPacket {
             0x02 => Self::ChatMessage(ChatMessagePacket {
                 message_json: reader.read_chat()?,
                 position: reader.read_i8()?,
+            }),
+            0x47 => Self::PlayerListHeaderFooter(PlayerListHeaderFooterPacket {
+                header_json: reader.read_chat()?,
+                footer_json: reader.read_chat()?,
             }),
             0x45 => Self::Title(TitlePacket::read(&mut reader)?),
             0x44 => Self::WorldBorder(WorldBorderPacket::read(&mut reader)?),
@@ -1677,6 +1688,11 @@ impl PlayClientboundPacket {
                 writer.write_string(&packet.url, 32767)?;
                 writer.write_string(&packet.hash, 40)?;
                 0x48
+            }
+            Self::PlayerListHeaderFooter(packet) => {
+                writer.write_chat(&packet.header_json)?;
+                writer.write_chat(&packet.footer_json)?;
+                0x47
             }
             Self::Title(packet) => {
                 packet.write(&mut writer)?;

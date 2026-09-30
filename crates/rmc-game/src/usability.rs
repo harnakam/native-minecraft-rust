@@ -125,6 +125,8 @@ pub struct UsabilitySnapshot {
     pub title: crate::title::TitleState,
     pub sidebar: Option<SidebarSnapshot>,
     pub tab_list: Vec<TabListEntrySnapshot>,
+    pub tab_header_json: String,
+    pub tab_footer_json: String,
     pub window: Option<WindowSnapshot>,
     pub recent_sounds: Vec<AudioCueSnapshot>,
     pub settings: ClientSettingsState,
@@ -175,6 +177,8 @@ pub struct UsabilityState {
     action_bar: Option<ActionBarMessage>,
     title: crate::title::TitleState,
     tab_list: BTreeMap<[u8; 16], TabListEntryState>,
+    tab_header_json: String,
+    tab_footer_json: String,
     objectives: BTreeMap<String, ObjectiveState>,
     display_slots: BTreeMap<u8, String>,
     scores: BTreeMap<(String, String), i32>,
@@ -230,6 +234,8 @@ impl UsabilityState {
             action_bar: None,
             title: Default::default(),
             tab_list: BTreeMap::new(),
+            tab_header_json: String::new(),
+            tab_footer_json: String::new(),
             objectives: BTreeMap::new(),
             display_slots: BTreeMap::new(),
             scores: BTreeMap::new(),
@@ -276,6 +282,11 @@ impl UsabilityState {
         };
 
         match packet {
+            PlayClientboundPacket::PlayerListHeaderFooter(packet) => {
+                self.tab_header_json.clone_from(&packet.header_json);
+                self.tab_footer_json.clone_from(&packet.footer_json);
+                update.tab_list_updated = true;
+            }
             PlayClientboundPacket::Title(packet) => self.title.receive(packet),
             PlayClientboundPacket::SetExperience(packet) => {
                 self.experience = Experience {
@@ -361,6 +372,8 @@ impl UsabilityState {
             title: self.title.clone(),
             sidebar: self.sidebar_snapshot(),
             tab_list,
+            tab_header_json: self.tab_header_json.clone(),
+            tab_footer_json: self.tab_footer_json.clone(),
             window,
             recent_sounds: self.recent_sounds.clone(),
             settings: self.settings.clone(),

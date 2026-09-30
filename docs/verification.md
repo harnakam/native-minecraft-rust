@@ -411,3 +411,25 @@ reused after the failed attempt; no restart was used to mask the routing failure
 The test issued /stop, the server saved players/worlds/chunks, and the owned
 server process exited successfully. Title state reached the runtime in real
 communication; manual rendering parity and exact visual fade remain unverified.
+
+
+### S47 tab-list header/footer
+
+Added S47PacketPlayerListHeaderFooter (0x47), preserving header-then-footer Chat
+field order, to the codec and protocol registry. It is explicitly forwarded by
+HeadlessSession to the HUD state. Usability snapshots retain the latest pair,
+replacing both fields for every packet. Empty rendered component text hides the
+corresponding banner. The native Tab overlay draws wrapped centered header lines
+above the player list and footer lines below it, including header/footer-only
+snapshots. The overlay remains controlled by the existing Tab key.
+
+Codec tests cover round trip, truncated fields, and trailing bytes. An integrated
+regression decodes real packet bytes, applies the session routing action and HUD
+state, draws into a framebuffer, and verifies that a subsequent empty pair
+removes the banner pixels. It also covers explicit newlines. Publication contains
+only independently authored code, with no reference assets or source.
+
+Remaining gaps include Minecraft font/layout/style parity, complete translation,
+80-player multi-column layout and sorting, player faces, ping icons, scoreboard
+columns, reset timing across connection transitions, and actual server/plugin
+S47 delivery. This change does not establish full Tab-screen compatibility.

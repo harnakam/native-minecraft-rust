@@ -2479,55 +2479,124 @@ fn draw_hotbar_overlay(
 }
 
 fn draw_tab_overlay(frame: &mut [u8], width: u32, height: u32, runtime: &LiveRuntime) {
-    let Some(snapshot) = runtime.usability_snapshot() else {
-        return;
-    };
+    if let Some(snapshot) = runtime.usability_snapshot() {
+        draw_tab_snapshot(frame, width, height, snapshot);
+    }
+}
 
+fn tab_banner_lines(json: &str, width: u32) -> Vec<String> {
+    let text = serde_json::from_str(json)
+        .map(|value| chat_component_text(&value))
+        .unwrap_or_else(|_| json.to_owned());
+    if text.is_empty() {
+        return Vec::new();
+    }
+    wrap_chat_text(&text, (width.saturating_sub(50) / 8).max(1) as usize)
+}
+
+fn native_text_width(text: &str) -> i32 {
+    if let Some(font) = ui_font() {
+        text.chars()
+            .map(|ch| font.metrics(ch, 14.0).advance_width)
+            .sum::<f32>() as i32
+    } else {
+        text.chars().count() as i32 * 8
+    }
+}
+
+fn draw_tab_snapshot(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    snapshot: &rmc_game::usability::UsabilitySnapshot,
+) {
     let entries = snapshot.tab_list.iter().take(20).collect::<Vec<_>>();
-    if entries.is_empty() {
+    let header = tab_banner_lines(&snapshot.tab_header_json, width);
+    let footer = tab_banner_lines(&snapshot.tab_footer_json, width);
+    if entries.is_empty() && header.is_empty() && footer.is_empty() {
         return;
     }
-
-    let rect = UiRect {
-        x: width as i32 / 2 - 180,
-        y: 16,
-        width: 360,
-        height: 22 + entries.len() as i32 * 11,
-    };
-    draw_rect(frame, width, height, rect, [18, 22, 28]);
-    draw_rect_outline(frame, width, height, rect, [98, 108, 126]);
-    draw_text_scaled(
-        frame,
-        width,
-        height,
-        rect.x + 8,
-        rect.y + 7,
-        "Players",
-        [255, 240, 226],
-        1,
-    );
-
-    for (index, entry) in entries.iter().enumerate() {
-        draw_text_scaled(
+    let banner_width = header
+        .iter()
+        .chain(&footer)
+        .map(|text| native_text_width(text))
+        .max()
+        .unwrap_or(0);
+    let panel_width = banner_width.max(360).min(width.saturating_sub(8) as i32);
+    let mut y = 16;
+    for (section, lines) in [&header, &footer].into_iter().enumerate() {
+        if section == 1 && !entries.is_empty() {
+            let rect = UiRect {
+                x: width as i32 / 2 - panel_width / 2,
+                y,
+                width: panel_width,
+                height: 22 + entries.len() as i32 * 16,
+            };
+            draw_rect(frame, width, height, rect, [18, 22, 28]);
+            draw_text_scaled(
+                frame,
+                width,
+                height,
+                rect.x + 8,
+                y + 4,
+                "Players",
+                [255, 240, 226],
+                1,
+            );
+            for (index, entry) in entries.iter().enumerate() {
+                let row_y = y + 22 + index as i32 * 16;
+                draw_text_scaled(
+                    frame,
+                    width,
+                    height,
+                    rect.x + 8,
+                    row_y,
+                    &truncate_text(&entry.name, 28),
+                    [236, 236, 236],
+                    1,
+                );
+                draw_text_scaled(
+                    frame,
+                    width,
+                    height,
+                    rect.x + panel_width - 60,
+                    row_y,
+                    &format!("{}ms", entry.latency),
+                    [172, 214, 255],
+                    1,
+                );
+            }
+            y += rect.height + 2;
+        }
+        if lines.is_empty() {
+            continue;
+        }
+        draw_rect(
             frame,
             width,
             height,
-            rect.x + 8,
-            rect.y + 20 + index as i32 * 11,
-            &truncate_text(&entry.name, 28),
-            [236, 236, 236],
-            1,
+            UiRect {
+                x: width as i32 / 2 - panel_width / 2,
+                y,
+                width: panel_width,
+                height: lines.len() as i32 * 16,
+            },
+            [18, 22, 28],
         );
-        draw_text_scaled(
-            frame,
-            width,
-            height,
-            rect.x + rect.width - 60,
-            rect.y + 20 + index as i32 * 11,
-            &format!("{}ms", entry.latency),
-            [172, 214, 255],
-            1,
-        );
+        for text in lines {
+            draw_text_scaled(
+                frame,
+                width,
+                height,
+                width as i32 / 2 - native_text_width(text) / 2,
+                y,
+                text,
+                [255, 255, 255],
+                1,
+            );
+            y += 16;
+        }
+        y += 2;
     }
 }
 
@@ -3662,6 +3731,42 @@ mod inventory_layout_tests {
         let rows = wrap_chat_text(&text, 1);
         assert_eq!(rows.len(), 32767);
         assert_eq!(rows.concat(), text);
+    }
+
+    #[test]
+    fn tab_banners_route_through_session_to_state_and_framebuffer_then_clear() {
+        use rmc_net::codec::login::{LoginClientboundPacket, LoginSuccess};
+        use rmc_net::codec::play::{PlayClientboundPacket, PlayerListHeaderFooterPacket};
+        use rmc_net::session::{HeadlessSession, SessionAction};
+        let mut session = HeadlessSession::new();
+        session.begin_login(47, "localhost", 25565).unwrap();
+        session
+            .apply_login_packet(&LoginClientboundPacket::LoginSuccess(LoginSuccess {
+                uuid_string: "00000000-0000-0000-0000-000000000000".into(),
+                username: "Probe".into(),
+            }))
+            .unwrap();
+        let mut state = rmc_game::usability::UsabilityState::new();
+        for (header, footer) in [("Welcome\nServer", "Footer"), ("", "")] {
+            let packet =
+                PlayClientboundPacket::PlayerListHeaderFooter(PlayerListHeaderFooterPacket {
+                    header_json: serde_json::json!({"text":header}).to_string(),
+                    footer_json: serde_json::json!({"text":footer}).to_string(),
+                });
+            let bytes = packet.encode_packet().unwrap().packet_bytes();
+            let decoded = PlayClientboundPacket::decode_packet(&bytes).unwrap();
+            let actions = session.apply_play_packet(&decoded).unwrap();
+            assert_eq!(actions.len(), 1);
+            let SessionAction::UsabilityPacket(packet) = &actions[0] else {
+                panic!("missing HUD routing");
+            };
+            assert!(state.apply_play_packet(packet).tab_list_updated);
+            let initial = vec![100; 320 * 200 * 4];
+            let mut frame = initial.clone();
+            draw_tab_snapshot(&mut frame, 320, 200, &state.snapshot());
+            assert_eq!(frame == initial, header.is_empty());
+        }
+        assert_eq!(tab_banner_lines(r#"{"text":"a\nb"}"#, 320), vec!["a", "b"]);
     }
 
     #[test]
