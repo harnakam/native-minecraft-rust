@@ -194,3 +194,49 @@ fn depth_strider_matches_mcp_water_tick_and_leaves_lava_unchanged() {
     assert_eq!(travel(9, 3), travel(9, 5));
     assert_eq!(travel(11, 0), travel(11, 3));
 }
+
+#[test]
+fn spectator_crosses_terrain_and_border_then_survival_restores_collision() {
+    use rmc_net::codec::play::{ChangeGameStatePacket, PlayClientboundPacket, WorldBorderPacket};
+    let mut world = WorldSnapshot::new(WorldConfig::overworld());
+    for y in [64, 65] {
+        put(&mut world, 2, y, 0, 16);
+    }
+    world
+        .apply_play_packet(&PlayClientboundPacket::WorldBorder(
+            WorldBorderPacket::SetSize { diameter: 4.0 },
+        ))
+        .unwrap();
+    let mut simulation = player(Vec3::new(1.5, 64.0, 0.5));
+    let state = AuthoritativePlayerState {
+        position: Vec3::new(1.5, 64.0, 0.5),
+        velocity: Vec3::new(0.7, 0.0, 0.0),
+        on_ground: true,
+    };
+    simulation.apply_authoritative_state(state);
+    simulation.apply_player_packet(
+        &PlayClientboundPacket::ChangeGameState(ChangeGameStatePacket {
+            reason: 3,
+            value: 3.0,
+        }),
+        Some(1),
+    );
+    simulation.tick_with_world(MovementInput::default(), CameraState::default(), 0, &world);
+    assert!(simulation.player().position.x > 2.0);
+    assert!(!simulation.player().on_ground);
+    simulation.apply_player_packet(
+        &PlayClientboundPacket::ChangeGameState(ChangeGameStatePacket {
+            reason: 3,
+            value: 0.0,
+        }),
+        Some(1),
+    );
+    simulation.apply_authoritative_state(AuthoritativePlayerState {
+        position: Vec3::new(1.5, 64.0, 0.5),
+        velocity: Vec3::new(0.7, 0.0, 0.0),
+        on_ground: true,
+    });
+    simulation.tick_with_world(MovementInput::default(), CameraState::default(), 1, &world);
+    assert!(simulation.player().position.x < 2.0);
+    assert_eq!(simulation.velocity().x, 0.0);
+}

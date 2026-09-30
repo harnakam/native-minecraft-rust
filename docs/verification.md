@@ -205,3 +205,9 @@ Two regressions cover action replacement, initialization, half-time and one-thir
 The simulation's terrain, sneak-support and step collision queries now use an entity-aware WorldSnapshot path. It follows World.getCollidingBoundingBoxes: only loaded X/Z columns contribute; blocks outside the border become full stone collision cubes while the player is considered inside. The local simulation retains the outside-border flag and applies the source one-block entry/exit hysteresis. Border collision scans use source X/Z/Y order and include negative Y for virtual border cubes. Players already outside retain ordinary terrain collisions and can re-enter.
 
 A regression covers unloaded columns, full boundary cubes, outside-state transitions and the narrower re-entry threshold. All eight existing terrain movement tests and the whole workspace pass. Entity-vs-entity collisions, spectator no-clip, border graphics/warnings, transition timing differential probes and official-server border movement verification still remain incomplete. Earlier border-collision limitation statements above describe the state before this addition.
+
+## Spectator no-clip movement
+
+Local simulation now follows EntityPlayer.onUpdate's spectator on-ground clearing before movement and Entity.moveEntity's noClip branch: game mode 3 offsets position directly, bypassing terrain/border/step collisions and movement-phase web slowdown. Changing back to survival restores the ordinary entity-aware collision path. Existing spectator flight handling remains in use.
+
+A received ChangeGameState regression crosses a solid wall at the configured world border in spectator mode, asserts no ground contact, then restores survival and verifies the wall stops motion. All nine terrain tests and full workspace tests pass. Complete spectator compatibility is not proven: spectator speed controls, entity camera/riding, GUI and online official-server mode-switch validation remain incomplete.

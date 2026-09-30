@@ -369,6 +369,9 @@ impl LocalSimulationLayer {
         selected_hotbar_slot: u8,
         world: Option<&WorldSnapshot>,
     ) {
+        if self.game_mode == 3 {
+            self.player.on_ground = false;
+        }
         let movement = if self.alive {
             movement
         } else {
@@ -469,7 +472,7 @@ impl LocalSimulationLayer {
                 self.velocity.y = 0.0;
             }
         }
-        let web_slowed = self.in_web;
+        let web_slowed = self.in_web && self.game_mode != 3;
         if web_slowed {
             self.velocity.x *= 0.25;
             self.velocity.z *= 0.25;
@@ -477,7 +480,9 @@ impl LocalSimulationLayer {
         }
         let motion_before_collision = self.velocity;
         let previous_y = self.player.position.y;
-        if let Some(world) = world {
+        if self.game_mode == 3 {
+            self.player.position = self.player.position.add(self.velocity);
+        } else if let Some(world) = world {
             self.resolve_terrain(world);
         } else {
             self.resolve_collisions();
