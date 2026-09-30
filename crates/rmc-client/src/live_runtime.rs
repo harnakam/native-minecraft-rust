@@ -653,6 +653,24 @@ impl LiveRuntime {
         self.flush_if_pending()
     }
 
+    pub fn swap_window_slot_with_hotbar(
+        &mut self,
+        window_id: u8,
+        slot_id: i16,
+        hotbar: u8,
+    ) -> Result<(), String> {
+        if self.usability.inventory().pending_transactions().len() >= 128 {
+            return Err("Waiting for server inventory acknowledgements".to_owned());
+        }
+        let packet = self
+            .usability
+            .inventory_mut()
+            .queue_hotbar_swap(window_id, slot_id, hotbar)
+            .map_err(str::to_owned)?;
+        self.queue_play_packet(&packet)?;
+        self.flush_if_pending()
+    }
+
     pub fn attack_entity(&mut self, entity_id: i32) -> Result<(), String> {
         for packet in self.combat.attack_entity(entity_id) {
             self.queue_play_packet(&packet)?;
@@ -1409,6 +1427,65 @@ mod tests {
                 >> 4,
             1
         );
+        for (source, hotbar, target) in [(36, 1, 37), (37, 0, 36)] {
+            runtime
+                .swap_window_slot_with_hotbar(0, source, hotbar)
+                .unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime, &RuntimeActionInput::default());
+                if runtime
+                    .usability
+                    .inventory()
+                    .inventory_window()
+                    .slot(target)
+                    .and_then(|item| item.as_ref())
+                    .is_some_and(|item| item.item_id == 278)
+                    && runtime
+                        .usability
+                        .inventory()
+                        .pending_transactions()
+                        .is_empty()
+                {
+                    break;
+                }
+            }
+            assert_eq!(
+                runtime
+                    .usability
+                    .inventory()
+                    .inventory_window()
+                    .slot(target)
+                    .and_then(|item| item.as_ref())
+                    .map(|item| item.item_id),
+                Some(278),
+                "official server did not apply number-key swap"
+            );
+            assert!(runtime
+                .usability
+                .inventory()
+                .pending_transactions()
+                .is_empty());
+            let previous_chat_count = runtime.usability.snapshot().chat_lines.len();
+            runtime.send_chat_message(&format!(r#"/testfor VanillaProbe {{Inventory:[{{Slot:{hotbar}b,id:"minecraft:diamond_pickaxe"}}]}}"#)).unwrap();
+            let mut confirmed = false;
+            for _ in 0..100 {
+                advance(&mut runtime, &RuntimeActionInput::default());
+                confirmed = runtime
+                    .usability
+                    .snapshot()
+                    .chat_lines
+                    .iter()
+                    .skip(previous_chat_count)
+                    .any(|line| line.message_json.contains("commands.testfor.success"));
+                if confirmed {
+                    break;
+                }
+            }
+            assert!(
+                confirmed,
+                "official server did not confirm the swapped hotbar slot"
+            );
+        }
         for tick in 0..40 {
             advance(
                 &mut runtime,
@@ -1474,7 +1551,7 @@ mod tests {
             "official server did not initialize the respawn position"
         );
         assert!(runtime.summary.disconnect_reason_json.is_none());
-        println!("official 1.8.9: server-confirmed stone mining, death and respawn passed");
+        println!("official 1.8.9: number-key swaps, server-confirmed stone mining, death and respawn passed");
         if std::env::var("RMC_STOP_TEST_SERVER").as_deref() == Ok("1") {
             runtime.send_chat_message("/stop").unwrap();
             for _ in 0..100 {

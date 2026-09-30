@@ -1307,6 +1307,37 @@ impl PlayApp {
             }
         }
 
+        if self.window_is_open() {
+            if pressed {
+                let hotbar = match key {
+                    VirtualKeyCode::Key1 => Some(0),
+                    VirtualKeyCode::Key2 => Some(1),
+                    VirtualKeyCode::Key3 => Some(2),
+                    VirtualKeyCode::Key4 => Some(3),
+                    VirtualKeyCode::Key5 => Some(4),
+                    VirtualKeyCode::Key6 => Some(5),
+                    VirtualKeyCode::Key7 => Some(6),
+                    VirtualKeyCode::Key8 => Some(7),
+                    VirtualKeyCode::Key9 => Some(8),
+                    _ => None,
+                };
+                if let (Some(hotbar), Some((window_id, slot_id))) = (
+                    hotbar,
+                    self.window_slot_at(self.mouse_position.x, self.mouse_position.y),
+                ) {
+                    if slot_id >= 0 {
+                        if let Some(runtime) = &mut self.runtime {
+                            if let Err(error) =
+                                runtime.swap_window_slot_with_hotbar(window_id, slot_id, hotbar)
+                            {
+                                self.status_line = error;
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
         if let Some(input) = map_virtual_key(key) {
             self.runtime_input.keyboard_input(input, pressed);
         }
