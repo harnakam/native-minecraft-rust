@@ -2686,6 +2686,116 @@ fn draw_tab_italic_glyph(
     }
 }
 
+fn tab_component_formatted(value: &serde_json::Value) -> String {
+    fn visit(
+        value: &serde_json::Value,
+        inherited: TabNameStyle,
+        inherited_color: bool,
+        output: &mut String,
+    ) {
+        if let Some(array) = value.as_array() {
+            for item in array {
+                visit(item, inherited, inherited_color, output);
+            }
+            return;
+        }
+        let mut style = inherited;
+        let mut has_color = inherited_color;
+        if let Some(color) = value.get("color").and_then(|value| value.as_str()) {
+            let names = [
+                "black",
+                "dark_blue",
+                "dark_green",
+                "dark_aqua",
+                "dark_red",
+                "dark_purple",
+                "gold",
+                "gray",
+                "dark_gray",
+                "blue",
+                "green",
+                "aqua",
+                "red",
+                "light_purple",
+                "yellow",
+                "white",
+            ];
+            if let Some(index) = names.iter().position(|name| *name == color) {
+                has_color = true;
+                let code = char::from_digit(index as u32, 16).unwrap();
+                style.color = tab_styled_runs(&format!("\u{a7}{code}x"), [255; 3], 1)[0]
+                    .1
+                    .color;
+            }
+        }
+        for (key, flag) in [
+            ("bold", &mut style.bold),
+            ("italic", &mut style.italic),
+            ("underlined", &mut style.underline),
+            ("strikethrough", &mut style.strike),
+        ] {
+            if let Some(value) = value.get(key).and_then(|value| value.as_bool()) {
+                *flag = value;
+            }
+        }
+        let text = if let Some(text) = value.as_str() {
+            text.to_owned()
+        } else if let Some(text) = value.get("text").and_then(|value| value.as_str()) {
+            text.to_owned()
+        } else if value.get("translate").is_some() {
+            let mut own = value.clone();
+            own.as_object_mut().unwrap().remove("extra");
+            chat_component_text(&own)
+        } else {
+            String::new()
+        };
+        if !text.is_empty() {
+            for index in 0..16 {
+                let code = char::from_digit(index, 16).unwrap();
+                if has_color
+                    && tab_styled_runs(&format!("\u{a7}{code}x"), [255; 3], 1)[0]
+                        .1
+                        .color
+                        == style.color
+                {
+                    output.push('\u{a7}');
+                    output.push(code);
+                    break;
+                }
+            }
+            for (enabled, code) in [
+                (style.bold, 'l'),
+                (style.italic, 'o'),
+                (style.underline, 'n'),
+                (style.strike, 'm'),
+            ] {
+                if enabled {
+                    output.push('\u{a7}');
+                    output.push(code);
+                }
+            }
+            output.push_str(&text);
+            output.push_str("\u{a7}r");
+        }
+        if let Some(extra) = value.get("extra").and_then(|value| value.as_array()) {
+            for item in extra {
+                visit(item, style, has_color, output);
+            }
+        }
+    }
+    let mut output = String::new();
+    visit(
+        value,
+        TabNameStyle {
+            color: [255; 3],
+            ..Default::default()
+        },
+        false,
+        &mut output,
+    );
+    output
+}
+
 fn tab_ping_row(latency: i32) -> i32 {
     match latency {
         i32::MIN..=-1 => 5,
@@ -2785,7 +2895,7 @@ fn draw_tab_snapshot(
                     .as_ref()
                     .map(|json| {
                         serde_json::from_str(json)
-                            .map(|value| chat_component_text(&value))
+                            .map(|value| tab_component_formatted(&value))
                             .unwrap_or_else(|_| json.clone())
                     })
                     .unwrap_or_else(|| entry.team_formatted_name.clone());
@@ -4127,6 +4237,29 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn tab_json_styles_inherit_and_explicit_false_clears_parent_style() {
+        let value = serde_json::json!({"text":"A","color":"red","bold":true,"extra":[
+            {"text":"B","bold":false,"italic":true},{"text":"C","color":"green"}]});
+        let formatted = tab_component_formatted(&value);
+        let runs = tab_styled_runs(&formatted, [255; 3], 20);
+        assert_eq!(
+            runs.iter()
+                .map(|(text, _)| text.as_str())
+                .collect::<String>(),
+            "ABC"
+        );
+        assert_eq!(runs[0].1.color, [255, 85, 85]);
+        assert!(runs[0].1.bold);
+        assert!(!runs[1].1.bold);
+        assert!(runs[1].1.italic);
+        assert_eq!(runs[2].1.color, [85, 255, 85]);
+        assert!(runs[2].1.bold);
+        let mut frame = vec![0; 200 * 16 * 4];
+        draw_tab_name(&mut frame, 200, &formatted, [255; 3], 20);
+        assert!(frame.chunks_exact(4).any(|pixel| pixel[1] > pixel[0]));
     }
 
     #[test]

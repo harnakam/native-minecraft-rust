@@ -568,3 +568,18 @@ identity, and the alpha-144 result. The whole workspace suite passes.
 This currently composites the completed name layer; per-glyph overlap blending,
 OpenGL rounding, text shadows, Minecraft glyphs and manual visual comparison
 remain unverified or incomplete. This is not full rasterization parity.
+
+
+### Styled JSON Tab display names
+
+The native Tab display-name path now converts text components and extra children
+into formatted text for its existing style renderer. Named colors, bold, italic,
+underline and strike inherit from the parent; explicit boolean false clears the
+corresponding flag. Each text segment ends with reset, and uncolored segments do
+not introduce a white color code that would unnecessarily cancel spectator
+italic. Tests cover nested inheritance, explicit false, color override and actual
+colored pixels. The workspace tests passed before the reset-order adjustment;
+all ten Tab tests passed after it. Translation arguments still flatten through
+the existing partial translation helper; obfuscation, full component semantics,
+array-root inheritance, click/hover events, Minecraft fonts and manual rendering
+parity remain incomplete. No game assets/reference source are published.
