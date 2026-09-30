@@ -2510,6 +2510,54 @@ fn native_text_width(text: &str) -> i32 {
     }
 }
 
+fn tab_color_runs(text: &str, base_color: [u8; 3], max_visible: usize) -> Vec<(String, [u8; 3])> {
+    let mut runs = Vec::new();
+    let mut color = base_color;
+    let mut current = String::new();
+    let mut chars = text.chars().peekable();
+    let mut visible = 0;
+    while let Some(ch) = chars.next() {
+        if ch == '\u{a7}' && chars.peek().is_some() {
+            let code = chars.next().unwrap().to_ascii_lowercase();
+            if !current.is_empty() {
+                runs.push((std::mem::take(&mut current), color));
+            }
+            if code == 'r' {
+                color = base_color;
+            } else if !"klmno".contains(code) {
+                let index = code.to_digit(16).unwrap_or(15) as u8;
+                let bright = (index >> 3 & 1) * 85;
+                color = [
+                    (index >> 2 & 1) * 170 + bright,
+                    (index >> 1 & 1) * 170 + bright,
+                    (index & 1) * 170 + bright,
+                ];
+                if index == 6 {
+                    color[0] += 85;
+                }
+            }
+            continue;
+        }
+        if visible >= max_visible {
+            break;
+        }
+        visible += 1;
+        current.push(ch);
+    }
+    if !current.is_empty() {
+        runs.push((current, color));
+    }
+    runs
+}
+
+fn draw_tab_name(frame: &mut [u8], width: u32, text: &str, color: [u8; 3], max_visible: usize) {
+    let mut x = 4;
+    for (text, color) in tab_color_runs(text, color, max_visible) {
+        draw_text_scaled(frame, width, 16, x, 0, &text, color, 1);
+        x += native_text_width(&text);
+    }
+}
+
 fn tab_ping_row(latency: i32) -> i32 {
     match latency {
         i32::MIN..=-1 => 5,
@@ -2624,22 +2672,16 @@ fn draw_tab_snapshot(
                 for pixel in cell.chunks_exact_mut(4) {
                     pixel.copy_from_slice(&[18, 22, 28, 255]);
                 }
-                draw_text_scaled(
+                draw_tab_name(
                     &mut cell,
                     column_width as u32,
-                    16,
-                    4,
-                    0,
-                    &truncate_text(
-                        &name,
-                        ((column_width - ping_width - score_width - 4).max(0) / 8) as usize,
-                    ),
+                    &name,
                     if entry.game_mode == 3 {
                         [144, 144, 144]
                     } else {
                         [236, 236, 236]
                     },
-                    1,
+                    ((column_width - ping_width - score_width - 4).max(0) / 8) as usize,
                 );
                 if let Some(score) = score {
                     let score_x = column_width - ping_width - native_text_width(&score) - 2;
@@ -3933,6 +3975,27 @@ mod inventory_layout_tests {
             );
             assert_eq!(frame[0], 0);
         }
+    }
+
+    #[test]
+    fn tab_legacy_colors_reset_and_do_not_consume_visible_name_limit() {
+        assert_eq!(
+            tab_color_runs("\u{a7}cAlex\u{a7}r!", [236; 3], 5),
+            vec![("Alex".into(), [255, 85, 85]), ("!".into(), [236; 3])]
+        );
+        assert_eq!(
+            tab_color_runs("\u{a7}6Gold", [255; 3], 4),
+            vec![("Gold".into(), [255, 170, 0])]
+        );
+        assert_eq!(
+            tab_color_runs("\u{a7}AABC", [255; 3], 2),
+            vec![("AB".into(), [85, 255, 85])]
+        );
+        let mut frame = vec![0; 200 * 16 * 4];
+        draw_tab_name(&mut frame, 200, "\u{a7}cAlex\u{a7}r", [255; 3], 16);
+        assert!(frame
+            .chunks_exact(4)
+            .any(|pixel| pixel[0] > pixel[1] && pixel[1] == pixel[2]));
     }
 
     #[test]

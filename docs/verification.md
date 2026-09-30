@@ -512,3 +512,18 @@ server process saved its state and exited successfully. This proves runtime
 synchronization for these commands; native visual style/font comparison,
 heart-rendered scores, and server/plugin S47 header/footer delivery remain
 unverified. Reference binaries/worlds stay in ignored local directories.
+
+
+### Legacy team color rendering in native Tab names
+
+The native Tab-name renderer now interprets section-sign color codes with the
+MCP919 FontRenderer RGB palette, including the gold exception and case-insensitive
+codes. Reset restores the original row color. Formatting pairs do not consume
+the visible-name truncation limit. The actual cell renderer draws each colored
+run instead of showing the literal section-sign characters.
+Tests verify red/reset, gold, uppercase green, visible truncation, and red pixels
+in the framebuffer. The complete workspace suite passed. Bold, italic,
+underline, strikethrough, obfuscation, anaglyph palette, full JSON style handling,
+Minecraft font metrics and manual visual parity remain incomplete. These style
+codes are consumed without their visual effects in the current Tab-name path;
+this is explicitly partial formatting support, not full styled-text parity.
