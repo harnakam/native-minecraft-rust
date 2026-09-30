@@ -783,3 +783,17 @@ and overflow throw distinct Java runtime exceptions, while Rust represents all
 formatter failures as None. Native display still falls back to the key on error
 and therefore does not reproduce exception propagation. Probe source/classes
 and logs are ignored local verification files and are not published.
+
+
+### Local English language asset loading
+
+GameAssets imports en_US.lang from the user's local 1.8.9 jar into ignored
+local_assets; the extraction cache now also requires that language file. Native
+app initialization installs the loaded table once, and both plain/formatted
+translation paths consult it before their built-in fallback formats. Read failures
+are surfaced as an asset notice. Synthetic tests cover comments, first equals
+separator, CRLF, empty values, duplicate replacement, path restrictions, and
+component arguments retained through loaded formats. No language text is shipped.
+This is startup English lookup only: language switching, resource pack overlays,
+MCP numeric-format normalization and live reload remain incomplete. No manual
+native window/language rendering verification is claimed.

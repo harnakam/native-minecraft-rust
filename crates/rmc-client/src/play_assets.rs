@@ -77,6 +77,7 @@ impl ImageAsset {
 #[derive(Default)]
 pub struct GameAssets {
     pub vanilla_root: Option<PathBuf>,
+    pub translations: BTreeMap<String, String>,
     pub widgets: Option<ImageAsset>,
     pub icons: Option<ImageAsset>,
     pub vignette: Option<ImageAsset>,
@@ -96,6 +97,11 @@ impl GameAssets {
                         Some("Imported local vanilla textures from Minecraft 1.8.9 jar".to_owned());
                 }
 
+                let language_path = root.join("assets/minecraft/lang/en_US.lang");
+                match fs::read_to_string(&language_path) {
+                    Ok(text) => assets.translations = parse_language_table(&text),
+                    Err(error) => notice = Some(format!("Vanilla language unavailable: {error}")),
+                }
                 let texture_root = root.join("assets").join("minecraft").join("textures");
                 assets.widgets = ImageAsset::load(&texture_root.join("gui").join("widgets.png"));
                 assets.icons = ImageAsset::load(&texture_root.join("gui").join("icons.png"));
@@ -117,6 +123,14 @@ impl GameAssets {
             .or_else(|| self.block_textures.get("stone"))
             .or_else(|| self.block_textures.values().next())
     }
+}
+
+pub(crate) fn parse_language_table(text: &str) -> BTreeMap<String, String> {
+    text.lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .filter_map(|line| line.split_once('='))
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect()
 }
 
 fn load_block_textures(root: &Path) -> BTreeMap<String, ImageAsset> {
@@ -518,6 +532,9 @@ fn ensure_vanilla_assets() -> Result<(PathBuf, bool), String> {
         .join("widgets.png");
     if marker.exists()
         && output_root
+            .join("assets/minecraft/lang/en_US.lang")
+            .exists()
+        && output_root
             .join("assets/minecraft/textures/misc/vignette.png")
             .exists()
     {
@@ -608,7 +625,8 @@ fn should_extract_asset(name: &str) -> bool {
     {
         return false;
     }
-    name.starts_with("assets/minecraft/textures/blocks/")
+    name == "assets/minecraft/lang/en_US.lang"
+        || name.starts_with("assets/minecraft/textures/blocks/")
         || name == "assets/minecraft/textures/gui/widgets.png"
         || name == "assets/minecraft/textures/gui/icons.png"
         || name == "assets/minecraft/textures/misc/vignette.png"
@@ -617,6 +635,16 @@ fn should_extract_asset(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::should_extract_asset;
+    #[test]
+    fn imports_only_supported_local_language_file() {
+        assert!(should_extract_asset("assets/minecraft/lang/en_US.lang"));
+        assert!(!should_extract_asset("assets/minecraft/lang/../../secret"));
+        assert!(!should_extract_asset("assets/minecraft/lang/ja_JP.lang"));
+        let table = super::parse_language_table("#ignore\r\nkey=a=b\r\nempty=\r\n");
+        assert_eq!(table["key"], "a=b");
+        assert_eq!(table["empty"], "");
+    }
+
     #[test]
     fn linear_sampling_uses_texel_centers_and_repeat_edges() {
         let image = super::ImageAsset {

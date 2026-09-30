@@ -401,6 +401,7 @@ impl PlayApp {
         let auto_exit_after = options.duration_secs.map(Duration::from_secs);
         let stop_after_join = options.stop_after_join;
         let (assets, asset_notice) = GameAssets::load();
+        CHAT_TRANSLATIONS.get_or_init(|| assets.translations.clone());
         let server_input = format!("{}:{}", options.server_host, options.server_port);
         let offline_username_input = options.offline_username.clone();
         let mut app = Self {
@@ -3270,7 +3271,13 @@ fn format_chat_translation(format: &str, args: &[String]) -> Option<String> {
     )
 }
 
+static CHAT_TRANSLATIONS: std::sync::OnceLock<std::collections::BTreeMap<String, String>> =
+    std::sync::OnceLock::new();
+
 fn chat_translation_format(key: &str) -> &str {
+    if let Some(format) = CHAT_TRANSLATIONS.get().and_then(|table| table.get(key)) {
+        return format;
+    }
     match key {
         "chat.type.text" => "<%s> %s",
         "chat.type.announcement" => "[%s] %s",
@@ -4471,6 +4478,25 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn local_language_table_preserves_values_and_drives_translation_parts() {
+        let table = crate::play_assets::parse_language_table(
+            "# comment\nprobe.key=%2$s=%1$s\nignored\nprobe.key=%1$s says %2$s\nempty=\n",
+        );
+        assert_eq!(table.len(), 2);
+        assert_eq!(table["empty"], "");
+        let args = vec![
+            serde_json::json!({"text":"Alex","color":"blue"}),
+            serde_json::json!("hello"),
+        ];
+        let parts = chat_translation_parts(&table["probe.key"], &args).unwrap();
+        assert_eq!(
+            chat_component_text(&serde_json::Value::Array(parts.clone())),
+            "Alex says hello"
+        );
+        assert_eq!(parts[0], args[0]);
     }
 
     #[test]
