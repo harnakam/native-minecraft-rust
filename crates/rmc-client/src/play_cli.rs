@@ -2548,6 +2548,11 @@ fn native_bold_advance(ch: char, bold: bool) -> i32 {
         .and_then(Option::as_ref)
         .and_then(|font| bitmap_ascii_advance(font, ch))
         .is_some()
+        || HUD_UNICODE_FONT
+            .get()
+            .and_then(Option::as_ref)
+            .and_then(|font| unicode_font_advance(font, ch))
+            .is_some()
     {
         2
     } else {
@@ -2601,7 +2606,7 @@ fn draw_unicode_font_glyph(
                     continue;
                 }
                 for copy in 0..=i32::from(bold) {
-                    let tx = x + px + copy + if italic { 2 - py / 4 } else { 0 };
+                    let tx = x + px + copy * 2 + if italic { 2 - py / 4 } else { 0 };
                     if tx < 0 || tx >= width as i32 {
                         continue;
                     }
@@ -5441,7 +5446,23 @@ mod inventory_layout_tests {
         })
         .expect("local Unicode page unavailable");
         assert!(frame.chunks_exact(4).any(|pixel| pixel[0] > 0));
-        println!("official local Unicode font: Japanese glyph pixels match the local page crop");
+        assert_eq!(native_bold_advance(ch, true), 2);
+        assert_eq!(native_bold_advance(ch, false), 0);
+        let mut bold_frame = vec![0; 64 * 16 * 4];
+        draw_tab_name(&mut bold_frame, 64, "§l日", [255; 3], 100);
+        for py in 0..16usize {
+            for px in 0..64usize {
+                let base = frame[(py * 64 + px) * 4] as u32;
+                let shifted = if px >= 2 {
+                    frame[(py * 64 + px - 2) * 4] as u32
+                } else {
+                    0
+                };
+                let expected = (base * (255 - shifted) + 255 * shifted) / 255;
+                assert_eq!(bold_frame[(py * 64 + px) * 4], expected as u8);
+            }
+        }
+        println!("official local Unicode font: Japanese glyph and bold offset pixels match the local page crop");
     }
 
     #[test]

@@ -1074,3 +1074,12 @@ characters, forced Unicode mode, bold/italic/shadow precision, GUI scaling and
 manual visual parity remain incomplete. Missing/malformed page fallback does
 not yet reproduce vanilla resource exceptions. No binary table, font image or
 other game asset is published.
+
+### Unicode bold offset in normal font mode
+
+MCP919 FontRenderer.renderStringAtPos uses a one-unit bold offset with
+unicodeFlag=false and increments the glyph advance by one. At the current
+two-pixel HUD scale, local Unicode glyphs now duplicate at x+2 and advance
+by two additional pixels. The actual-jar Japanese glyph test checks every
+bold composited pixel against the original crop and its x+2 copy; it passes.
+Forced Unicode mode and per-glyph shadow placement remain incomplete.
