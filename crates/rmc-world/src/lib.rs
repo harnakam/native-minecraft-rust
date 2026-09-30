@@ -7,6 +7,7 @@ use rmc_net::codec::play::{
 };
 use std::collections::HashMap;
 
+pub mod border;
 pub mod collision;
 pub mod time;
 pub mod weather;
@@ -398,6 +399,7 @@ impl WorldChangeSummary {
 
 #[derive(Clone, Debug, Default)]
 pub struct WorldSnapshot {
+    border: border::WorldBorder,
     difficulty: Option<u8>,
     weather: weather::Weather,
     time: time::WorldTime,
@@ -414,6 +416,7 @@ impl WorldSnapshot {
 
     pub fn new(config: WorldConfig) -> Self {
         Self {
+            border: border::WorldBorder::default(),
             difficulty: None,
             weather: weather::Weather::default(),
             time: time::WorldTime::default(),
@@ -424,6 +427,10 @@ impl WorldSnapshot {
 
     pub fn config(&self) -> WorldConfig {
         self.config
+    }
+
+    pub fn border_mut(&mut self) -> &mut border::WorldBorder {
+        &mut self.border
     }
 
     pub fn difficulty(&self) -> Option<u8> {
@@ -642,6 +649,10 @@ impl WorldSnapshot {
                 self.weather.receive(packet.reason, packet.value);
                 None
             }
+            PlayClientboundPacket::WorldBorder(packet) => {
+                self.border.receive_at(packet, border::current_millis());
+                None
+            }
             PlayClientboundPacket::ServerDifficulty(difficulty) => {
                 self.difficulty = Some(*difficulty % 4);
                 None
@@ -703,7 +714,6 @@ impl WorldSnapshot {
             | PlayClientboundPacket::EntityEffect(_)
             | PlayClientboundPacket::RemoveEntityEffect(_)
             | PlayClientboundPacket::EntityProperties(_)
-            | PlayClientboundPacket::WorldBorder(_)
             | PlayClientboundPacket::ResourcePackSend(_)
             | PlayClientboundPacket::Disconnect(_) => None,
         };
