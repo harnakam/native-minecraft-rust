@@ -9,7 +9,7 @@ use rmc_net::codec::play::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const MAX_CHAT_LINES: usize = 64;
+pub const MAX_CHAT_LINES: usize = 100;
 pub const MAX_AUDIO_CUES: usize = 16;
 pub const SIDEBAR_DISPLAY_SLOT: u8 = 1;
 

@@ -1180,7 +1180,9 @@ impl PlayApp {
                 .runtime
                 .as_ref()
                 .and_then(|r| r.usability_snapshot())
-                .map_or(0, |s| s.chat_lines.len());
+                .map_or(0, |s| {
+                    chat_display_lines(&s.chat_lines, self.options.width).len()
+                });
             let step = if self.modifiers_shift { 1 } else { 7 };
             if y.is_finite() && y != 0.0 {
                 self.chat_scroll = (self.chat_scroll as i64 + i64::from(y.signum() as i8) * step)
@@ -2604,6 +2606,46 @@ fn chat_component_text(value: &serde_json::Value) -> String {
     }
 }
 
+fn wrap_chat_text(text: &str, columns: usize) -> Vec<String> {
+    let columns = columns.max(1);
+    let mut rows = Vec::new();
+    for paragraph in text.split('\n') {
+        let mut chars: Vec<char> = paragraph.chars().collect();
+        while chars.len() > columns {
+            let split = chars[..columns]
+                .iter()
+                .rposition(|ch| *ch == ' ')
+                .filter(|index| *index > 0)
+                .unwrap_or(columns);
+            rows.push(chars[..split].iter().collect());
+            chars.drain(..split);
+            if chars.first() == Some(&' ') {
+                chars.remove(0);
+            }
+        }
+        rows.push(chars.iter().collect());
+    }
+    rows
+}
+
+fn chat_display_lines(lines: &[rmc_game::usability::ChatLine], width: u32) -> Vec<String> {
+    let columns = (width.saturating_sub(24).min(470) / 6).max(1) as usize;
+    let mut rows = Vec::new();
+    for line in lines {
+        if line.position == 2 {
+            continue;
+        }
+        let text = serde_json::from_str(&line.message_json)
+            .map(|value| chat_component_text(&value))
+            .unwrap_or_else(|_| line.message_json.clone());
+        rows.extend(wrap_chat_text(&text, columns));
+    }
+    if rows.len() > 100 {
+        rows.drain(..rows.len() - 100);
+    }
+    rows
+}
+
 fn draw_chat_history(
     frame: &mut [u8],
     width: u32,
@@ -2611,8 +2653,9 @@ fn draw_chat_history(
     lines: &[rmc_game::usability::ChatLine],
     scroll: usize,
 ) {
-    let offset = scroll.min(lines.len().saturating_sub(8));
-    for (row, line) in lines.iter().rev().skip(offset).take(8).enumerate() {
+    let rows = chat_display_lines(lines, width);
+    let offset = scroll.min(rows.len().saturating_sub(8));
+    for (row, text) in rows.iter().rev().skip(offset).take(8).enumerate() {
         let y = height as i32 - 50 - row as i32 * 12;
         draw_rect(
             frame,
@@ -2626,19 +2669,7 @@ fn draw_chat_history(
             },
             [10, 10, 10],
         );
-        let text = serde_json::from_str(&line.message_json)
-            .map(|v| chat_component_text(&v))
-            .unwrap_or_else(|_| line.message_json.clone());
-        draw_text_scaled(
-            frame,
-            width,
-            height,
-            12,
-            y,
-            &truncate_text(&text, ((width.saturating_sub(24)).min(470) / 6) as usize),
-            [255, 255, 255],
-            1,
-        );
+        draw_text_scaled(frame, width, height, 12, y, text, [255, 255, 255], 1);
     }
 }
 
@@ -3354,6 +3385,18 @@ fn normalize(vector: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod inventory_layout_tests {
     use super::*;
+    #[test]
+    fn chat_wraps_words_newlines_and_unbroken_unicode_without_loss() {
+        assert_eq!(wrap_chat_text("hello world", 6), vec!["hello", "world"]);
+        assert_eq!(wrap_chat_text("abcdefghi", 3), vec!["abc", "def", "ghi"]);
+        assert_eq!(wrap_chat_text("日本語テスト", 3), vec!["日本語", "テスト"]);
+        assert_eq!(wrap_chat_text("a\nb", 4), vec!["a", "b"]);
+        let lines = vec![rmc_game::usability::ChatLine {
+            message_json: "{\"text\":\"abcdefghi\"}".into(),
+            position: 0,
+        }];
+        assert_eq!(chat_display_lines(&lines, 42), vec!["abc", "def", "ghi"]);
+    }
 
     #[test]
     fn received_chat_components_preserve_player_message_and_extra_text() {
