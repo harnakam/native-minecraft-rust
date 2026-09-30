@@ -4481,6 +4481,50 @@ mod inventory_layout_tests {
     }
 
     #[test]
+    #[ignore = "requires a local official 1.8.9 jar; run this test alone"]
+    fn local_vanilla_language_reaches_plain_and_styled_display() {
+        let previous = std::env::current_dir().unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        std::env::set_current_dir(root).unwrap();
+        let (assets, notice) = GameAssets::load();
+        std::env::set_current_dir(previous).unwrap();
+        assert!(assets.vanilla_root.is_some(), "{notice:?}");
+        assert!(
+            assets.translations.len() > 1000,
+            "language import failed: {notice:?}"
+        );
+        let key = "multiplayer.player.joined";
+        let format = assets
+            .translations
+            .get(key)
+            .expect("official join translation missing")
+            .clone();
+        CHAT_TRANSLATIONS
+            .set(assets.translations)
+            .expect("run this test in a fresh isolated process");
+        assert_eq!(chat_translation_format(key), format);
+        let expected = format_chat_translation(&format, &["VanillaProbe".into()]).unwrap();
+        assert!(expected.contains("VanillaProbe"));
+        assert!(!expected.contains(key));
+        let value = parse_chat_component(r#"{"translate":"multiplayer.player.joined","color":"yellow","with":[{"text":"VanillaProbe","color":"blue"}]}"#).unwrap();
+        assert_eq!(chat_component_text(&value), expected);
+        let runs = tab_styled_runs(&tab_component_formatted(&value), [255; 3], 100);
+        assert_eq!(
+            runs.iter()
+                .map(|(text, _)| text.as_str())
+                .collect::<String>(),
+            expected
+        );
+        assert!(runs
+            .iter()
+            .any(|(text, style)| text == "VanillaProbe" && style.color == [85, 85, 255]));
+        assert!(runs
+            .iter()
+            .any(|(text, style)| !text.contains("VanillaProbe") && style.color == [255, 255, 85]));
+        println!("official local language: loaded English table and rendered join translation with inherited/argument colors");
+    }
+
+    #[test]
     fn local_language_table_preserves_values_and_drives_translation_parts() {
         let table = crate::play_assets::parse_language_table(
             "# comment\nprobe.key=%2$s=%1$s\nignored\nprobe.key=%1$s says %2$s\nempty=\n",

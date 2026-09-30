@@ -811,3 +811,16 @@ private numericVariablePattern and confirms five grouped fixture outputs.
 This normalization runs before the existing plain/styled translation formatter.
 Language switching, pack overlays, reload and invalid-format exception propagation
 remain incomplete; assets/probe classes are not published.
+
+
+### Actual local-jar language integration
+
+An isolated ignored test calls GameAssets.load against the local official 1.8.9
+jar, verifies an English table with more than 1,000 entries, installs that table
+through the native startup lookup, and formats multiplayer.player.joined in
+plain and styled paths. It verifies the loaded format replaces the key, includes
+the player name, and retains blue argument/yellow parent styles. The dedicated
+test passed (1 test, 0 failures); it restores its temporary working directory
+and must run alone because the startup table is process-global. Imported files
+remain in ignored local_assets. This proves real language import/display data
+integration, not manual window/font parity or server delivery of this message.
