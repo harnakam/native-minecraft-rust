@@ -731,3 +731,15 @@ selector, including an empty text string. The plain native path previously
 overrode text with a translation when both keys were present. A regression
 failed with "<Alex> ignored!" instead of "literal!" before the fix and now covers
 both nonempty and empty text, extra siblings, and the formatted path.
+
+
+### Translation placeholder argument count
+
+MCP919 StringTranslate falls back to the key itself and ChatComponentTranslation
+only emits arguments referenced by format placeholders; missing positive-index
+arguments are skipped. Native unknown keys without percent formats now display
+the key without appended arguments or a trailing space. The two supported chat
+formats ignore extra arguments and omit missing argument text while preserving
+literal brackets/spaces. Regressions cover both display paths and extra siblings;
+the unknown-key case failed before the fix. Full language asset lookup, arbitrary
+percent formats and translated argument styles remain incomplete.

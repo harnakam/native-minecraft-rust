@@ -3215,10 +3215,12 @@ fn chat_component_text(value: &serde_json::Value) -> String {
                     .and_then(|v| v.as_array())
                     .map(|values| values.iter().map(chat_component_text).collect())
                     .unwrap_or_default();
-                text = match (key, args.as_slice()) {
-                    ("chat.type.text", [name, message]) => format!("<{name}> {message}"),
-                    ("chat.type.announcement", [name, message]) => format!("[{name}] {message}"),
-                    _ => format!("{} {}", key, args.join(" ")),
+                let name = args.first().map(String::as_str).unwrap_or_default();
+                let message = args.get(1).map(String::as_str).unwrap_or_default();
+                text = match key {
+                    "chat.type.text" => format!("<{name}> {message}"),
+                    "chat.type.announcement" => format!("[{name}] {message}"),
+                    _ => key.to_owned(),
                 };
             }
             if !object.contains_key("text") && !object.contains_key("translate") {
@@ -4390,6 +4392,31 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn translation_arguments_follow_placeholder_count() {
+        for (key, args, expected) in [
+            ("native.missing.key", vec!["ignored"], "native.missing.key"),
+            ("native.missing.key", vec![], "native.missing.key"),
+            (
+                "chat.type.text",
+                vec!["Alex", "hello", "ignored"],
+                "<Alex> hello",
+            ),
+            ("chat.type.text", vec!["Alex"], "<Alex> "),
+            ("chat.type.announcement", vec![], "[] "),
+        ] {
+            let value = serde_json::json!({"translate":key,"with":args,"extra":[{"text":"!"}]});
+            assert_eq!(chat_component_text(&value), format!("{expected}!"));
+            assert_eq!(
+                tab_styled_runs(&tab_component_formatted(&value), [255; 3], 100)
+                    .iter()
+                    .map(|(text, _)| text.as_str())
+                    .collect::<String>(),
+                format!("{expected}!")
+            );
+        }
     }
 
     #[test]
