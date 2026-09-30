@@ -1,5 +1,5 @@
 //! Container click algorithms corresponding to net.minecraft.inventory.Container.
-use super::{item_stack_limit, predict_pickup, InventoryState};
+use super::{item_has_subtypes, item_stack_limit, predict_pickup, InventoryState};
 use rmc_net::codec::play::PlayServerboundPacket;
 
 impl InventoryState {
@@ -70,7 +70,7 @@ impl InventoryState {
                 for &index in &indices {
                     if let Some(target) = &mut after.slots[index] {
                         if target.item_id == stack.item_id
-                            && target.damage == stack.damage
+                            && (!item_has_subtypes(stack.item_id) || target.damage == stack.damage)
                             && target.tags_equal(&stack)
                         {
                             let amount = stack.count.min(limit.saturating_sub(target.count));
@@ -270,7 +270,7 @@ impl InventoryState {
                             continue;
                         };
                         if stack.item_id == item.item_id
-                            && stack.damage == item.damage
+                            && (!item_has_subtypes(item.item_id) || stack.damage == item.damage)
                             && stack.tags_equal(&item)
                         {
                             let amount = item

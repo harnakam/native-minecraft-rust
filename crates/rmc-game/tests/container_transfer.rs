@@ -110,3 +110,26 @@ fn partial_transfer_returns_original_count_and_keeps_remainder() {
         Some(ItemStack::simple(1, 64, 0))
     );
 }
+
+#[test]
+fn transfer_ignores_non_subtype_metadata_but_preserves_subtypes() {
+    for (id, merged) in [(339, true), (35, false)] {
+        let mut state = chest();
+        let mut slots = vec![None; 63];
+        slots[0] = Some(ItemStack::simple(id, 12, 0));
+        slots[62] = Some(ItemStack::simple(id, 50, 1));
+        state.apply_window_items(&WindowItemsPacket {
+            window_id: 1,
+            items: slots,
+        });
+        state.queue_transfer_click(1, 0, 0).unwrap();
+        assert_eq!(
+            state.open_window().unwrap().slots[62]
+                .as_ref()
+                .unwrap()
+                .count,
+            if merged { 62 } else { 50 }
+        );
+        assert_eq!(state.open_window().unwrap().slots[61].is_none(), merged);
+    }
+}

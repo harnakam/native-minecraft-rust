@@ -1,6 +1,7 @@
 //! Inventory state, held-item sync, and transaction handling.
 
 mod container;
+pub mod item_properties;
 
 use rmc_net::codec::play::{
     ClickWindowPacket, CloseWindowPacket, CloseWindowServerboundPacket,
@@ -546,8 +547,9 @@ fn predict_pickup(slot: Slot, cursor: Slot, button: i8, valid: bool, limit: u8) 
     if !valid && cursor.is_some() {
         if let (Some(slot), Some(cursor)) = (&slot, &cursor) {
             if slot.item_id == cursor.item_id
-                && slot.damage == cursor.damage
+                && (!item_has_subtypes(slot.item_id) || slot.damage == cursor.damage)
                 && slot.tags_equal(&cursor)
+                && item_stack_limit(cursor.item_id) > 1
                 && u16::from(slot.count) + u16::from(cursor.count)
                     <= u16::from(item_stack_limit(cursor.item_id))
             {
@@ -603,16 +605,11 @@ fn predict_pickup(slot: Slot, cursor: Slot, button: i8, valid: bool, limit: u8) 
 }
 
 fn item_stack_limit(id: i16) -> u8 {
-    match id {
-        256 | 257 | 258 | 259 | 261 | 267 | 268 | 269 | 270 | 271 | 272 | 273 | 274 | 275 | 276
-        | 277 | 278 | 279 | 282 | 283 | 284 | 285 | 286 | 290 | 291 | 292 | 293 | 294 | 298
-        | 299 | 300 | 301 | 302 | 303 | 304 | 305 | 306 | 307 | 308 | 309 | 310 | 311 | 312
-        | 313 | 314 | 315 | 316 | 317 | 326 | 327 | 328 | 329 | 333 | 335 | 342 | 343 | 346
-        | 354 | 355 | 359 | 373 | 386 | 398 | 403 | 407 | 408 | 413 | 417 | 418 | 419 | 422
-        | 2256 | 2257 | 2258 | 2259 | 2260 | 2261 | 2262 | 2263 | 2264 | 2265 | 2266 | 2267 => 1,
-        323 | 325 | 332 | 344 | 368 | 387 | 416 | 425 => 16,
-        _ => 64,
-    }
+    item_properties::properties(id).map_or(64, |p| p.0)
+}
+
+fn item_has_subtypes(id: i16) -> bool {
+    item_properties::properties(id).map_or(true, |p| p.1)
 }
 
 #[cfg(test)]
