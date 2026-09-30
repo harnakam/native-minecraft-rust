@@ -17,6 +17,18 @@ pub struct TrackedPlayerEntity {
     pub on_ground: bool,
     pub held_item: i16,
     pub equipment: [rmc_net::codec::play::Slot; 5],
+    pub metadata: BTreeMap<u8, rmc_net::codec::play::metadata::Value>,
+}
+
+impl TrackedPlayerEntity {
+    pub fn flag(&self, bit: u8) -> bool {
+        match self.metadata.get(&0) {
+            Some(rmc_net::codec::play::metadata::Value::Byte(value)) if bit < 8 => {
+                (*value as u8 & (1 << bit)) != 0
+            }
+            _ => false,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -35,6 +47,14 @@ impl EntityTracker {
 
     pub fn apply_packet(&mut self, packet: &PlayClientboundPacket) {
         match packet {
+            PlayClientboundPacket::EntityMetadata(packet) => {
+                if let (Some(entity), Ok(values)) = (
+                    self.players.get_mut(&packet.entity_id),
+                    rmc_net::codec::play::metadata::decode(&packet.metadata),
+                ) {
+                    entity.metadata.extend(values);
+                }
+            }
             PlayClientboundPacket::EntityEquipment(packet) => {
                 if let (Some(entity), Ok(slot)) = (
                     self.players.get_mut(&packet.entity_id),
@@ -64,6 +84,9 @@ impl EntityTracker {
     }
 
     pub(crate) fn apply_spawn_player(&mut self, packet: &SpawnPlayerPacket) {
+        let Ok(metadata) = rmc_net::codec::play::metadata::decode(&packet.metadata) else {
+            return;
+        };
         let yaw = angle_to_degrees(packet.yaw);
         self.players.insert(
             packet.entity_id,
@@ -80,6 +103,7 @@ impl EntityTracker {
                 head_yaw: yaw,
                 on_ground: false,
                 held_item: packet.held_item,
+                metadata: metadata.into_iter().collect(),
                 equipment: [
                     (packet.held_item > 0)
                         .then(|| rmc_net::codec::play::ItemStack::simple(packet.held_item, 1, 0)),
@@ -196,5 +220,35 @@ mod tests {
             },
         ));
         assert_eq!(entities.players().count(), 0);
+    }
+
+    #[test]
+    fn spawn_flags_and_metadata_updates_preserve_other_indices() {
+        let mut entities = EntityTracker::default();
+        entities.apply_spawn_player(&SpawnPlayerPacket {
+            entity_id: 7,
+            player_uuid: [7; 16],
+            x: 0,
+            y: 0,
+            z: 0,
+            yaw: 0,
+            pitch: 0,
+            held_item: 0,
+            metadata: vec![0, 2, 0x26, 0, 9, 127],
+        });
+        assert!(entities.players().next().unwrap().flag(1));
+        entities.apply_packet(&PlayClientboundPacket::EntityMetadata(
+            rmc_net::codec::play::EntityMetadataPacket {
+                entity_id: 7,
+                metadata: vec![0, 32, 127],
+            },
+        ));
+        let player = entities.players().next().unwrap();
+        assert!(!player.flag(1));
+        assert!(player.flag(5));
+        assert_eq!(
+            player.metadata.get(&6),
+            Some(&rmc_net::codec::play::metadata::Value::Short(9))
+        );
     }
 }

@@ -878,6 +878,7 @@ impl PlayApp {
                     output.render.camera.pitch,
                     runtime.entity_tracker(),
                     runtime.targeted_entity(),
+                    runtime.is_spectator(),
                 );
                 if let Some(icons) = self.assets.icons.as_ref() {
                     draw_sprite_region(
@@ -2582,9 +2583,13 @@ fn render_tracked_players(
     camera_pitch: f32,
     entities: &EntityTracker,
     targeted_entity: Option<TargetedEntity>,
+    spectator: bool,
 ) {
     let basis = camera_basis(camera_yaw, camera_pitch);
     for entity in entities.players() {
+        if entity.flag(5) && !spectator {
+            continue;
+        }
         let highlighted = targeted_entity
             .map(|target| target.entity_id == entity.entity_id)
             .unwrap_or(false);

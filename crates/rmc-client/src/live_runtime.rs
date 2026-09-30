@@ -470,6 +470,10 @@ impl LiveRuntime {
         &self.entity_tracker
     }
 
+    pub fn is_spectator(&self) -> bool {
+        self.game_mode == 3
+    }
+
     pub fn world_render(&self) -> Option<&WorldRenderSnapshot> {
         self.last_world_render.as_ref()
     }

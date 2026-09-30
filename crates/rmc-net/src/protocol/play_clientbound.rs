@@ -370,6 +370,28 @@ pub const BLOCK_CHANGE: PacketSpec = PacketSpec {
     ],
 };
 
+pub const ENTITY_METADATA: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x1C,
+    name: "Entity Metadata",
+    java_class: "net.minecraft.network.play.server.S1CPacketEntityMetadata",
+    java_handler: "INetHandlerPlayClient.handleEntityMetadata",
+    compression: PLAY_COMPRESSION,
+    fields: &[
+        FieldSpec {
+            name: "entity_id",
+            encoding: "VarInt",
+            notes: "Existing entity id.",
+        },
+        FieldSpec {
+            name: "metadata",
+            encoding: "DataWatcher",
+            notes: "Typed values terminated by byte 127.",
+        },
+    ],
+};
+
 pub const TIME_UPDATE: PacketSpec = PacketSpec {
     state: ProtocolState::Play,
     direction: PacketDirection::Clientbound,
@@ -1120,6 +1142,7 @@ pub const PACKETS: &[PacketSpec] = &[
     WINDOW_PROPERTY,
     ENTITY_EQUIPMENT,
     TIME_UPDATE,
+    ENTITY_METADATA,
     CONFIRM_TRANSACTION,
     PLAYER_LIST_ITEM,
     SCOREBOARD_OBJECTIVE,

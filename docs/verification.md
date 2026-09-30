@@ -127,3 +127,11 @@ The whole workspace passes. Visual output has not been manually inspected. Curre
 WorldSnapshot now owns Weather in world/weather.rs and consumes S2B reasons 1/2/7/8. Rain-start sets the raining flag and strength zero; rain-stop clears the flag and sets strength one. Explicit strength updates replace the received value; nonfinite strengths are ignored. These states are not locally advanced because MCP919 WorldClient.updateWeather is empty. Thunder strength supplied to brightness is raw thunder multiplied by rain, matching World.getThunderStrength. New-world initialization clears weather.
 
 Live daylight calculation now reads weather instead of fixed zeros. The native terrain sky-light subtraction consequently responds to server weather. Tests cover reason transitions, persistence across client ticks, thunder/rain multiplication, noon brightness reduction, and S2B delivery over the local TCP runtime path. Full workspace tests and the focused TCP test pass. Rain geometry, clouds, lightning, sky-color weather desaturation, sound and official-server weather assertions remain incomplete.
+
+## Player DataWatcher metadata
+
+S1CPacketEntityMetadata (0x1C) is registered, decoded and encoded using the existing bounded DataWatcher blob parser. codec/play/metadata.rs additionally decodes all eight types into typed values: byte, short, int, float, string, nullable item with NBT, three-int position and three-float rotation. Ordered entries are preserved, and malformed/trailing input fails.
+
+Remote player spawn metadata initializes indexed state; subsequent metadata packets replace only mentioned indices on existing players. Entity flags read byte index 0. The native renderer suppresses invisible remote players for ordinary viewers and retains them for spectators. Team-friendly invisible visibility remains incomplete, as do sneaking pose, burning feedback and non-player metadata behavior.
+
+Two codec tests cover packet layout, truncation/trailing failures and all eight value types. A player-state regression covers spawn flags and preservation of unrelated indices after updates. Full workspace tests pass. These new paths have not yet been compared with an authored Java metadata oracle or tested against an official server.

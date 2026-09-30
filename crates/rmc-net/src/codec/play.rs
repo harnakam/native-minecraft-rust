@@ -1,5 +1,7 @@
 //! Play-state codecs for the protocol 47 packet set used by headless, world, and PvP bring-up.
 
+pub mod metadata;
+
 use crate::buffer::{BufferError, PacketReader, PacketWriter};
 use crate::codec::{split_packet_bytes, CodecError, EncodedPacket};
 
@@ -422,6 +424,12 @@ pub struct TimeUpdatePacket {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EntityMetadataPacket {
+    pub entity_id: i32,
+    pub metadata: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmTransactionClientboundPacket {
     pub window_id: u8,
     pub action_number: i16,
@@ -719,6 +727,7 @@ pub enum PlayClientboundPacket {
     WindowProperty(WindowPropertyPacket),
     EntityEquipment(EntityEquipmentPacket),
     TimeUpdate(TimeUpdatePacket),
+    EntityMetadata(EntityMetadataPacket),
     ConfirmTransaction(ConfirmTransactionClientboundPacket),
     PlayerListItem(PlayerListItemPacket),
     ScoreboardObjective(ScoreboardObjectivePacket),
@@ -1074,6 +1083,10 @@ impl PlayClientboundPacket {
                 window_id: reader.read_i8()?,
                 slot_id: reader.read_i16()?,
                 item: read_slot(&mut reader)?,
+            }),
+            0x1C => Self::EntityMetadata(EntityMetadataPacket {
+                entity_id: reader.read_var_i32()?,
+                metadata: reader.read_data_watcher_blob()?,
             }),
             0x30 => {
                 let window_id = reader.read_u8()?;
@@ -1606,6 +1619,12 @@ impl PlayClientboundPacket {
                 }
 
                 0x30
+            }
+            Self::EntityMetadata(packet) => {
+                metadata::decode(&packet.metadata)?;
+                writer.write_var_i32(packet.entity_id);
+                writer.write_bytes(&packet.metadata);
+                0x1C
             }
             Self::TimeUpdate(packet) => {
                 writer.write_i64(packet.total_world_time);
