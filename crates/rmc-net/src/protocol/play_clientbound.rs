@@ -370,6 +370,33 @@ pub const BLOCK_CHANGE: PacketSpec = PacketSpec {
     ],
 };
 
+pub const ENTITY_EQUIPMENT: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x04,
+    name: "Entity Equipment",
+    java_class: "net.minecraft.network.play.server.S04PacketEntityEquipment",
+    java_handler: "INetHandlerPlayClient.handleEntityEquipment",
+    compression: PLAY_COMPRESSION,
+    fields: &[
+        FieldSpec {
+            name: "entity_id",
+            encoding: "VarInt",
+            notes: "Existing entity id.",
+        },
+        FieldSpec {
+            name: "slot",
+            encoding: "Short",
+            notes: "0 held item, 1 boots, 2 leggings, 3 chestplate, 4 helmet.",
+        },
+        FieldSpec {
+            name: "item",
+            encoding: "Slot",
+            notes: "Nullable full item stack with NBT.",
+        },
+    ],
+};
+
 pub const WINDOW_PROPERTY: PacketSpec = PacketSpec {
     state: ProtocolState::Play,
     direction: PacketDirection::Clientbound,
@@ -1069,6 +1096,7 @@ pub const PACKETS: &[PacketSpec] = &[
     SET_SLOT,
     WINDOW_ITEMS,
     WINDOW_PROPERTY,
+    ENTITY_EQUIPMENT,
     CONFIRM_TRANSACTION,
     PLAYER_LIST_ITEM,
     SCOREBOARD_OBJECTIVE,

@@ -99,3 +99,11 @@ The test's authorized /stop cleanup tolerates only ConnectionAborted/ConnectionR
 Shift transfer destination selection now follows ContainerFurnace: output goes to player storage in reverse order; other furnace slots go forward; player stacks are routed to smelting input before fuel, otherwise between main/hotbar. Empty buckets are not shift-routed as fuel. The existing container-transfer probe now includes furnace and eight item types, comparing 12,960 scenarios with zero return-stack or slot-state differences. Two new regression tests cover fuel-slot validation and smelt/fuel/ordinary routing, including noncookable fish metadata.
 
 These changes do not implement a local furnace simulation, crafting-result side effects, achievements, or XP entity handling. The earlier official-server test validates furnace progress delivery; the new furnace transfer routes are covered by actual MCP algorithms, not yet by a live-server transfer test.
+
+## Remote player equipment synchronization
+
+S04PacketEntityEquipment (0x04) is implemented with VarInt entity ID, signed short equipment slot and the existing nullable/NBT-preserving Slot codec. The protocol registry delivers the packet to the runtime; the session does not treat remote equipment as local inventory.
+
+Remote player state and movement handlers now live in client/entity/player.rs. Five equipment slots retain complete received item stacks: held item, boots, leggings, chestplate and helmet. Updates affect existing tracked players only; null removes equipment; destroy/respawn cleanup removes the tracked state. Slot 0 also updates the existing held-item ID. Invalid slot indices are ignored safely.
+
+The equipment codec test checks golden prefix bytes, null/item roundtrip and truncated input. The entity-state test checks unknown entities, helmet/held-item changes, removal and destruction. The local TCP runtime test feeds SpawnPlayer and Equipment and verifies the helmet reaches tracked state even before the local player's initial position. Full workspace tests pass. Remote player rendering still uses debug boxes; armor models, held-item geometry and general non-player entity equipment remain incomplete.

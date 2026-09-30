@@ -1,3 +1,4 @@
+pub use crate::client::entity::player::EntityTracker;
 use crate::client::network::net_handler_play_client::apply_inbound_play_packet;
 use crate::shell::{ClientShell, ClientShellConfig, ShellAdvanceOutput};
 use rmc_game::combat::{CombatConfig, CombatSnapshot, CombatState};
@@ -11,8 +12,7 @@ use rmc_net::address::resolve_connect_target;
 use rmc_net::auth::{MojangSessionJoiner, OnlineAccount, SessionJoiner};
 use rmc_net::codec::login::{EncryptionResponse, LoginServerboundPacket};
 use rmc_net::codec::play::{
-    AnimationPacket, BlockPosition, EntityHeadLookPacket, EntityLookMovePacket, EntityLookPacket,
-    EntityRelativeMovePacket, EntityTeleportPacket, PlayClientboundPacket, PlayServerboundPacket,
+    AnimationPacket, BlockPosition, PlayClientboundPacket, PlayServerboundPacket,
     PlayerBlockPlacementPacket, SpawnPlayerPacket,
 };
 use rmc_net::crypto::build_login_encryption_response;
@@ -28,7 +28,6 @@ use rmc_render::{
 };
 use rmc_ui::PvPHud;
 use rmc_world::{WorldConfig, WorldSnapshot};
-use std::collections::BTreeMap;
 use std::io;
 use std::net::TcpStream;
 use std::time::Duration;
@@ -123,118 +122,6 @@ struct RuntimeTrace {
 impl TraceSink for RuntimeTrace {
     fn record(&mut self, event: PacketTraceEvent) {
         self.lines.push(event.summary_line());
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TrackedPlayerEntity {
-    pub entity_id: i32,
-    pub uuid: [u8; 16],
-    pub position: Vec3,
-    pub yaw: f32,
-    pub pitch: f32,
-    pub head_yaw: f32,
-    pub on_ground: bool,
-    pub held_item: i16,
-}
-
-#[derive(Default)]
-pub struct EntityTracker {
-    players: BTreeMap<i32, TrackedPlayerEntity>,
-}
-
-impl EntityTracker {
-    pub fn clear(&mut self) {
-        self.players.clear();
-    }
-
-    pub fn players(&self) -> impl Iterator<Item = &TrackedPlayerEntity> {
-        self.players.values()
-    }
-
-    pub fn apply_packet(&mut self, packet: &PlayClientboundPacket) {
-        match packet {
-            PlayClientboundPacket::SpawnPlayer(packet) => self.apply_spawn_player(packet),
-            PlayClientboundPacket::DestroyEntities(packet) => {
-                for entity_id in &packet.entity_ids {
-                    self.players.remove(entity_id);
-                }
-            }
-            PlayClientboundPacket::EntityRelativeMove(packet) => self.apply_relative_move(packet),
-            PlayClientboundPacket::EntityLook(packet) => self.apply_entity_look(packet),
-            PlayClientboundPacket::EntityLookMove(packet) => self.apply_entity_look_move(packet),
-            PlayClientboundPacket::EntityTeleport(packet) => self.apply_entity_teleport(packet),
-            PlayClientboundPacket::EntityHeadLook(packet) => self.apply_head_look(packet),
-            _ => {}
-        }
-    }
-
-    fn apply_spawn_player(&mut self, packet: &SpawnPlayerPacket) {
-        let yaw = angle_to_degrees(packet.yaw);
-        self.players.insert(
-            packet.entity_id,
-            TrackedPlayerEntity {
-                entity_id: packet.entity_id,
-                uuid: packet.player_uuid,
-                position: Vec3::new(
-                    f64::from(packet.x) / 32.0,
-                    f64::from(packet.y) / 32.0,
-                    f64::from(packet.z) / 32.0,
-                ),
-                yaw,
-                pitch: angle_to_degrees(packet.pitch),
-                head_yaw: yaw,
-                on_ground: false,
-                held_item: packet.held_item,
-            },
-        );
-    }
-
-    fn apply_relative_move(&mut self, packet: &EntityRelativeMovePacket) {
-        if let Some(entity) = self.players.get_mut(&packet.entity_id) {
-            entity.position.x += f64::from(packet.delta_x) / 32.0;
-            entity.position.y += f64::from(packet.delta_y) / 32.0;
-            entity.position.z += f64::from(packet.delta_z) / 32.0;
-            entity.on_ground = packet.on_ground;
-        }
-    }
-
-    fn apply_entity_look(&mut self, packet: &EntityLookPacket) {
-        if let Some(entity) = self.players.get_mut(&packet.entity_id) {
-            entity.yaw = angle_to_degrees(packet.yaw);
-            entity.pitch = angle_to_degrees(packet.pitch);
-            entity.on_ground = packet.on_ground;
-        }
-    }
-
-    fn apply_entity_look_move(&mut self, packet: &EntityLookMovePacket) {
-        if let Some(entity) = self.players.get_mut(&packet.entity_id) {
-            entity.position.x += f64::from(packet.delta_x) / 32.0;
-            entity.position.y += f64::from(packet.delta_y) / 32.0;
-            entity.position.z += f64::from(packet.delta_z) / 32.0;
-            entity.yaw = angle_to_degrees(packet.yaw);
-            entity.pitch = angle_to_degrees(packet.pitch);
-            entity.on_ground = packet.on_ground;
-        }
-    }
-
-    fn apply_entity_teleport(&mut self, packet: &EntityTeleportPacket) {
-        if let Some(entity) = self.players.get_mut(&packet.entity_id) {
-            entity.position = Vec3::new(
-                f64::from(packet.x) / 32.0,
-                f64::from(packet.y) / 32.0,
-                f64::from(packet.z) / 32.0,
-            );
-            entity.yaw = angle_to_degrees(packet.yaw);
-            entity.pitch = angle_to_degrees(packet.pitch);
-            entity.on_ground = packet.on_ground;
-        }
-    }
-
-    fn apply_head_look(&mut self, packet: &EntityHeadLookPacket) {
-        if let Some(entity) = self.players.get_mut(&packet.entity_id) {
-            entity.head_yaw = angle_to_degrees(packet.head_yaw);
-        }
     }
 }
 
@@ -950,10 +837,6 @@ fn is_nonblocking_wait(error: &io::Error) -> bool {
     )
 }
 
-fn angle_to_degrees(value: u8) -> f32 {
-    (f32::from(value) * 360.0) / 256.0
-}
-
 fn pick_target_entity(
     output: &ShellAdvanceOutput,
     entities: &EntityTracker,
@@ -1143,6 +1026,58 @@ mod tests {
         assert!(
             runtime.output().is_none(),
             "must await first server position before ticking"
+        );
+        use rmc_net::codec::play::{EntityEquipmentPacket, ItemStack};
+        for packet in [
+            PlayClientboundPacket::SpawnPlayer(SpawnPlayerPacket {
+                entity_id: 7,
+                player_uuid: [7; 16],
+                x: 0,
+                y: 0,
+                z: 0,
+                yaw: 0,
+                pitch: 0,
+                held_item: 0,
+                metadata: vec![127],
+            }),
+            PlayClientboundPacket::EntityEquipment(EntityEquipmentPacket {
+                entity_id: 7,
+                slot: 4,
+                item: Some(ItemStack::simple(310, 1, 17)),
+            }),
+        ] {
+            server
+                .write_all(
+                    &encode_frame(
+                        &packet.encode_packet().unwrap().packet_bytes(),
+                        CompressionState::Disabled,
+                        None,
+                        FrameLimits::default(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        for _ in 0..30 {
+            runtime
+                .step(
+                    Duration::from_millis(50),
+                    &InputFrame::default(),
+                    &RuntimeActionInput::default(),
+                )
+                .unwrap();
+            if runtime
+                .entity_tracker
+                .players()
+                .any(|p| p.equipment[4].is_some())
+            {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(
+            runtime.entity_tracker.players().next().unwrap().equipment[4],
+            Some(ItemStack::simple(310, 1, 17))
         );
     }
 

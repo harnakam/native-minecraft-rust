@@ -409,6 +409,13 @@ pub struct WindowPropertyPacket {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EntityEquipmentPacket {
+    pub entity_id: i32,
+    pub slot: i16,
+    pub item: Slot,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmTransactionClientboundPacket {
     pub window_id: u8,
     pub action_number: i16,
@@ -704,6 +711,7 @@ pub enum PlayClientboundPacket {
     SetSlot(SetSlotPacket),
     WindowItems(WindowItemsPacket),
     WindowProperty(WindowPropertyPacket),
+    EntityEquipment(EntityEquipmentPacket),
     ConfirmTransaction(ConfirmTransactionClientboundPacket),
     PlayerListItem(PlayerListItemPacket),
     ScoreboardObjective(ScoreboardObjectivePacket),
@@ -749,6 +757,11 @@ impl PlayClientboundPacket {
             0x02 => Self::ChatMessage(ChatMessagePacket {
                 message_json: reader.read_chat()?,
                 position: reader.read_i8()?,
+            }),
+            0x04 => Self::EntityEquipment(EntityEquipmentPacket {
+                entity_id: reader.read_var_i32()?,
+                slot: reader.read_i16()?,
+                item: read_slot(&mut reader)?,
             }),
             0x06 => Self::UpdateHealth(UpdateHealthPacket {
                 health: reader.read_f32()?,
@@ -1582,6 +1595,12 @@ impl PlayClientboundPacket {
                 }
 
                 0x30
+            }
+            Self::EntityEquipment(packet) => {
+                writer.write_var_i32(packet.entity_id);
+                writer.write_i16(packet.slot);
+                write_slot(&mut writer, &packet.item);
+                0x04
             }
             Self::WindowProperty(packet) => {
                 writer.write_u8(packet.window_id);

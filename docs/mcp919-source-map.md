@@ -11,7 +11,7 @@ The objective is to understand the local MCP919 client and reconstruct its behav
 | client/multiplayer/PlayerControllerMP | rmc-game combat, mining, inventory; live_runtime actions | One controller owner for held-item synchronization and ordered interaction decisions |
 | client/entity/EntityPlayerSP | rmc-game simulation, player; rmc-client shell | Separate local player update and walking packet emission from inherited physics |
 | entity/EntityLivingBase; entity/Entity | rmc-game simulation; rmc-world collision/environment | Represent living travel and base collision/motion as separate responsibilities |
-| client/multiplayer/WorldClient; world/World; world/chunk/Chunk | rmc-world WorldSnapshot; live_runtime EntityTracker | Separate world lifecycle, chunk storage and entity ownership |
+| client/multiplayer/WorldClient; world/World; world/chunk/Chunk | rmc-world WorldSnapshot; client/entity/player.rs EntityTracker | Separate world lifecycle, chunk storage and entity ownership |
 | inventory/Container; inventory/ContainerPlayer; entity/player/InventoryPlayer | rmc-game inventory/mod.rs and inventory/container.rs | Pickup, number-key swap, creative clone and throw algorithms separated from state; slot rules, player storage and recipe side effects still need reconstruction |
 | network/NetworkManager; network/PacketBuffer | rmc-net transport, driver, buffer, framing | Preserve transport/codec boundary; distinguish delivery from gameplay effects |
 | network/play/client; network/play/server | rmc-net codec/play and protocol/play_* | Split implemented packet definitions along the source package hierarchy |

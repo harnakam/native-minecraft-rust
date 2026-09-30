@@ -276,6 +276,7 @@ impl HeadlessSession {
             | PlayClientboundPacket::EntityLook(_)
             | PlayClientboundPacket::EntityLookMove(_)
             | PlayClientboundPacket::EntityTeleport(_)
+            | PlayClientboundPacket::EntityEquipment(_)
             | PlayClientboundPacket::EntityHeadLook(_) => None,
         };
 
