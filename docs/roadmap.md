@@ -147,3 +147,11 @@ MCP、Minecraftのソース・JAR・画像・フォント・音声・ワール�
 - 未達: 手動mouse検証、Shift double-click、特殊containerルール。
 - 次: mode 5 dragの状態機械とpress/move/release接続、共有slotルール、レシピ。
 - M1は進行中。限定sliceの成功で完了とはしない。
+
+### M1 drag 実行記録
+
+- mode 5の開始・追加・終了、均等/1個/creative分配、数量不足・重複・上限・拒否復元を実装。
+- press/move/releaseからruntimeの連続送信まで接続。creativeはmiddle dragを使用。
+- 公式サーバー側NBTで、12個→4/4/4、12個→1/1/1とcursor残9、creative→64/64/64を確認。
+- 未達: 手動mouse操作、preview、全特殊container/crafting副作用、他操作割込み時の厳密な順序。
+- 次は共有slot/take/merge制約とレシピを進める。M1全体は未完了。

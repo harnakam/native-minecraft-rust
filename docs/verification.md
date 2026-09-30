@@ -1138,3 +1138,22 @@ rejection rollback. The official 1.8.9 server test picked up 10 stone, collected
 Dedicated tests and full workspace tests pass. Manual mouse interaction,
 Shift double-click, special-container rules and drag remain unverified or
 unimplemented. M1 remains in progress.
+
+### Inventory mode-5 drag integration
+
+Container mode-5 transitions and computeStackSize were inspected in MCP919.
+InventoryState tracks drag mode and unique selected slots, computes even,
+single-item and creative distributions using shared slot rules, caps stacks
+and restores cursor/slots on rejected end transactions. Runtime sends the
+start/select/end packet sequence. Native GUI defers carried-item placement,
+collects eligible slots on pointer movement and submits on matching release;
+creative middle drag is connected. E/Escape and container lifecycle clear
+drag state. Unit tests cover duplicate slots, remainder, insufficient count,
+invalid creative mode/transitions, output/armor restrictions, capacity and
+rollback. An isolated official server verified each resulting slot by NBT:
+12 => 4/4/4; 12 => 1/1/1 plus 9 remaining; creative => 64/64/64. All passed.
+The initial multi-slot NBT command exceeded the protocol chat limit and
+failed with tag syntax errors; per-slot commands <=100 characters resolved
+this test issue. Manual GUI parity, selected-slot preview, complete special
+container/recipe side effects and exact interruption behavior remain open.
+No game assets or reference sources are published.

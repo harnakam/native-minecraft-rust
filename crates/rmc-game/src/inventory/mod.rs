@@ -96,6 +96,7 @@ impl InventoryUpdate {
 }
 
 pub struct InventoryState {
+    drag: Option<(u8, u8, std::collections::BTreeSet<i16>)>,
     selected_hotbar_slot: u8,
     inventory_window: ContainerSnapshot,
     open_window: Option<ContainerSnapshot>,
@@ -115,6 +116,7 @@ impl Default for InventoryState {
 impl InventoryState {
     pub fn new() -> Self {
         Self {
+            drag: None,
             selected_hotbar_slot: 0,
             inventory_window: ContainerSnapshot {
                 properties: BTreeMap::new(),
@@ -182,6 +184,7 @@ impl InventoryState {
     }
 
     pub fn close_open_window(&mut self) -> Option<PlayServerboundPacket> {
+        self.drag = None;
         if self.player_inventory_open {
             self.player_inventory_open = false;
             return Some(PlayServerboundPacket::CloseWindow(
@@ -203,6 +206,9 @@ impl InventoryState {
         mode: i8,
         clicked_item: Slot,
     ) -> PlayServerboundPacket {
+        if mode != 5 {
+            self.drag = None;
+        }
         let action_number = self.next_action_number(window_id);
         self.pending_transactions.push(PendingTransaction {
             window_id,
@@ -224,6 +230,7 @@ impl InventoryState {
     }
 
     pub fn apply_open_window(&mut self, packet: &OpenWindowPacket) -> InventoryUpdate {
+        self.drag = None;
         self.player_inventory_open = false;
         self.open_window = Some(ContainerSnapshot {
             properties: BTreeMap::new(),
@@ -243,6 +250,7 @@ impl InventoryState {
     }
 
     pub fn apply_close_window(&mut self, packet: &CloseWindowPacket) -> InventoryUpdate {
+        self.drag = None;
         self.drop_open_window(packet.window_id);
 
         let mut update = InventoryUpdate::default();

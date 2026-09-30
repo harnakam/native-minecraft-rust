@@ -278,6 +278,7 @@ pub fn run_play_cli(raw_args: Vec<String>) -> Result<(), String> {
                 }
                 WindowEvent::CursorMoved { position, .. } => {
                     app.mouse_position = position.cast::<f32>();
+                    app.update_inventory_drag();
                 }
                 WindowEvent::MouseInput { state, button, .. } => {
                     app.handle_mouse_input(button, state == ElementState::Pressed, &window);
@@ -382,6 +383,7 @@ struct PlayApp {
     mouse_position: PhysicalPosition<f32>,
     last_inventory_click: Option<(u8, i16, Instant)>,
     pending_collect: Option<(u8, i16)>,
+    inventory_drag: Option<(u8, MouseButton, std::collections::BTreeSet<i16>)>,
     last_frame_at: Instant,
     launched_at: Instant,
     mouse_captured: bool,
@@ -439,6 +441,7 @@ impl PlayApp {
             mouse_position: PhysicalPosition::new(0.0, 0.0),
             last_inventory_click: None,
             pending_collect: None,
+            inventory_drag: None,
             last_frame_at: Instant::now(),
             launched_at: Instant::now(),
             mouse_captured: false,
@@ -1115,6 +1118,19 @@ impl PlayApp {
         }
     }
 
+    fn update_inventory_drag(&mut self) {
+        let Some((window_id, slot)) =
+            self.window_slot_at(self.mouse_position.x, self.mouse_position.y)
+        else {
+            return;
+        };
+        if let (Some((id, _, slots)), Some(runtime)) = (&mut self.inventory_drag, &self.runtime) {
+            if *id == window_id && runtime.can_drag_window_slot(window_id, slot) {
+                slots.insert(slot);
+            }
+        }
+    }
+
     fn handle_mouse_input(
         &mut self,
         button: MouseButton,
@@ -1153,6 +1169,46 @@ impl PlayApp {
                         }
                     }
                     return;
+                }
+                if !pressed {
+                    if let Some((id, held_button, slots)) = self.inventory_drag.take() {
+                        if button == held_button {
+                            let target =
+                                self.window_slot_at(self.mouse_position.x, self.mouse_position.y);
+                            if let Some(runtime) = &mut self.runtime {
+                                let mode = if button == MouseButton::Right {
+                                    1
+                                } else if button == MouseButton::Middle {
+                                    2
+                                } else {
+                                    0
+                                };
+                                let result = if slots.is_empty() {
+                                    if let Some((window_id, slot)) =
+                                        target.filter(|(window_id, _)| *window_id == id)
+                                    {
+                                        runtime.click_window_slot(
+                                            window_id,
+                                            slot,
+                                            mode.min(1) as i8,
+                                        )
+                                    } else {
+                                        Ok(())
+                                    }
+                                } else {
+                                    runtime.drag_window_slots(
+                                        id,
+                                        &slots.into_iter().collect::<Vec<_>>(),
+                                        mode,
+                                    )
+                                };
+                                if let Err(error) = result {
+                                    self.status_line = error;
+                                }
+                            }
+                        }
+                        return;
+                    }
                 }
                 if !pressed && button == MouseButton::Left {
                     if let Some((window_id, slot_id)) = self.pending_collect.take() {
@@ -1198,6 +1254,22 @@ impl PlayApp {
                         if double_click {
                             self.last_inventory_click = None;
                             self.pending_collect = Some((window_id, slot_id));
+                            return;
+                        }
+                        if !self.modifiers_shift
+                            && (matches!(button, MouseButton::Left | MouseButton::Right)
+                                || (button == MouseButton::Middle
+                                    && self
+                                        .runtime
+                                        .as_ref()
+                                        .is_some_and(|runtime| runtime.is_creative())))
+                            && self
+                                .runtime
+                                .as_ref()
+                                .is_some_and(|runtime| runtime.has_carried_item())
+                        {
+                            self.inventory_drag = Some((window_id, button, Default::default()));
+                            self.update_inventory_drag();
                             return;
                         }
                         if let Some(runtime) = &mut self.runtime {
@@ -1480,6 +1552,7 @@ impl PlayApp {
             if matches!(key, VirtualKeyCode::E | VirtualKeyCode::Escape) && self.window_is_open() {
                 self.last_inventory_click = None;
                 self.pending_collect = None;
+                self.inventory_drag = None;
                 if let Some(runtime) = &mut self.runtime {
                     if let Err(error) = runtime.close_open_window() {
                         self.status_line = error;

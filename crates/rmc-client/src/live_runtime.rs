@@ -596,6 +596,46 @@ impl LiveRuntime {
         self.flush_if_pending()
     }
 
+    pub fn can_drag_window_slot(&self, window_id: u8, slot_id: i16) -> bool {
+        self.usability.inventory().can_drag_slot(window_id, slot_id)
+    }
+    pub fn is_creative(&self) -> bool {
+        self.game_mode == 1
+    }
+    pub fn has_carried_item(&self) -> bool {
+        self.usability.inventory().carried_item().is_some()
+    }
+    pub fn drag_window_slots(
+        &mut self,
+        window_id: u8,
+        slots: &[i16],
+        mode: u8,
+    ) -> Result<(), String> {
+        if mode > 2 || (mode == 2 && self.game_mode != 1) {
+            return Err("Invalid drag mode".into());
+        }
+        if self.usability.inventory().pending_transactions().len() + slots.len() + 2 > 128 {
+            return Err("Waiting for server inventory acknowledgements".into());
+        }
+        let events = std::iter::once((-999, 0))
+            .chain(slots.iter().map(|&slot| (slot, 1)))
+            .chain(std::iter::once((-999, 2)));
+        for (slot, event) in events {
+            let packet = self
+                .usability
+                .inventory_mut()
+                .queue_drag_click(
+                    window_id,
+                    slot,
+                    (mode * 4 + event) as i8,
+                    self.game_mode == 1,
+                )
+                .map_err(str::to_owned)?;
+            self.queue_play_packet(&packet)?;
+        }
+        self.flush_if_pending()
+    }
+
     pub fn collect_window_slot(&mut self, window_id: u8, slot_id: i16) -> Result<(), String> {
         if self.usability.inventory().pending_transactions().len() >= 128 {
             return Err("Waiting for server inventory acknowledgements".to_owned());
@@ -1469,6 +1509,137 @@ mod tests {
             confirmed,
             "official server did not confirm collected stack quantity"
         );
+        for (mode, initial, expected, game_mode) in
+            [(0u8, 12u8, 4u8, 0u8), (1, 12, 1, 0), (2, 3, 64, 1)]
+        {
+            for command in [
+                format!("/gamemode {game_mode} VanillaProbe"),
+                "/clear VanillaProbe".into(),
+                format!(
+                    "/replaceitem entity VanillaProbe slot.inventory.0 minecraft:stone {initial}"
+                ),
+            ] {
+                runtime.send_chat_message(&command).unwrap();
+            }
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime.game_mode == game_mode
+                    && runtime
+                        .usability
+                        .inventory()
+                        .inventory_window()
+                        .slot(9)
+                        .and_then(|s| s.as_ref())
+                        .is_some_and(|s| s.item_id == 1 && s.count == initial)
+                {
+                    break;
+                }
+            }
+            runtime.click_window_slot(0, 9, 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            runtime.drag_window_slots(0, &[9, 10, 11], mode).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            for slot in [9, 10, 11] {
+                assert_eq!(
+                    runtime
+                        .usability
+                        .inventory()
+                        .inventory_window()
+                        .slot(slot)
+                        .and_then(|s| s.as_ref())
+                        .map(|s| s.count),
+                    Some(expected)
+                );
+            }
+            if mode == 1 {
+                assert_eq!(
+                    runtime
+                        .usability
+                        .inventory()
+                        .carried_item()
+                        .as_ref()
+                        .unwrap()
+                        .count,
+                    9
+                );
+                runtime.click_window_slot(0, 13, 0).unwrap();
+                for _ in 0..100 {
+                    advance(&mut runtime);
+                    if runtime
+                        .usability
+                        .inventory()
+                        .pending_transactions()
+                        .is_empty()
+                    {
+                        break;
+                    }
+                }
+            } else {
+                assert!(runtime.usability.inventory().carried_item().is_none());
+            }
+            let mut checks = vec![(9, expected), (10, expected), (11, expected)];
+            if mode == 1 {
+                checks.push((13, 9));
+            }
+            for (slot, count) in checks {
+                let chat_count = runtime.usability.snapshot().chat_lines.len();
+                let command = format!(
+                    r#"/testfor VanillaProbe {{Inventory:[{{Slot:{slot}b,id:"minecraft:stone",Count:{count}b}}]}}"#
+                );
+                assert!(command.len() <= 100);
+                runtime.send_chat_message(&command).unwrap();
+                let mut confirmed = false;
+                for _ in 0..100 {
+                    advance(&mut runtime);
+                    confirmed = runtime
+                        .usability
+                        .snapshot()
+                        .chat_lines
+                        .iter()
+                        .skip(chat_count)
+                        .any(|line| line.message_json.contains("commands.testfor.success"));
+                    if confirmed {
+                        break;
+                    }
+                }
+                assert!(
+                    confirmed,
+                    "official server did not confirm drag mode {mode} slot {slot}: {:?}",
+                    runtime
+                        .usability
+                        .snapshot()
+                        .chat_lines
+                        .iter()
+                        .skip(chat_count)
+                        .map(|l| &l.message_json)
+                        .collect::<Vec<_>>()
+                );
+            }
+            println!("official server confirms drag mode {mode}: three slots have {expected} each");
+        }
+        runtime
+            .send_chat_message("/gamemode 0 VanillaProbe")
+            .unwrap();
         runtime.close_open_window().unwrap();
         if std::env::var_os("RMC_STOP_TEST_SERVER").is_some() {
             runtime.send_chat_message("/stop").unwrap();

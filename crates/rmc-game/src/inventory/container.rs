@@ -3,6 +3,116 @@ use super::{item_has_subtypes, item_stack_limit, predict_pickup, InventoryState}
 use rmc_net::codec::play::PlayServerboundPacket;
 
 impl InventoryState {
+    pub fn can_drag_slot(&self, window_id: u8, slot_id: i16) -> bool {
+        let Some(cursor) = self.carried_item.as_ref() else {
+            return false;
+        };
+        let Some(slot) = self.slot(window_id, slot_id) else {
+            return false;
+        };
+        let (valid, _) = self.slot_rules(window_id, slot_id, Some(cursor));
+        valid
+            && slot.as_ref().is_none_or(|stack| {
+                stack.item_id == cursor.item_id
+                    && stack.damage == cursor.damage
+                    && stack.tags_equal(cursor)
+                    && stack.count <= item_stack_limit(cursor.item_id)
+            })
+    }
+
+    /// Container mode 5: start, select slots, distribute, reset.
+    pub fn queue_drag_click(
+        &mut self,
+        window_id: u8,
+        slot_id: i16,
+        button: i8,
+        creative: bool,
+    ) -> Result<PlayServerboundPacket, &'static str> {
+        if window_id != 0
+            && self
+                .open_window
+                .as_ref()
+                .is_none_or(|w| w.window_id != window_id)
+        {
+            return Err("Invalid drag window");
+        }
+        let event = button as u8 & 3;
+        let mode = button as u8 >> 2 & 3;
+        let previous_event = if self.drag.is_some() { 1 } else { 0 };
+        let transition_valid = previous_event == event || (previous_event == 1 && event == 2);
+        if !transition_valid || self.carried_item.is_none() {
+            self.drag = None;
+        } else if event == 0 {
+            self.drag = if mode <= 1 || (mode == 2 && creative) {
+                Some((window_id, mode, Default::default()))
+            } else {
+                None
+            };
+        } else if event == 1 {
+            if self.can_drag_slot(window_id, slot_id) {
+                let count = self.carried_item.as_ref().unwrap().count as usize;
+                if let Some((id, _, slots)) = self.drag.as_mut() {
+                    if *id == window_id && count > slots.len() {
+                        slots.insert(slot_id);
+                    }
+                }
+            }
+        } else if event == 2 {
+            let (id, mode, slots) = self.drag.take().unwrap();
+            if id == window_id && !slots.is_empty() {
+                let before = if id == 0 {
+                    self.inventory_window.clone()
+                } else {
+                    self.open_window.as_ref().unwrap().clone()
+                };
+                let previous_cursor = self.carried_item.clone();
+                let cursor = previous_cursor.as_ref().unwrap();
+                let mut after = before.clone();
+                let mut remaining = i32::from(cursor.count);
+                for &slot in &slots {
+                    if !self.can_drag_slot(id, slot) || usize::from(cursor.count) < slots.len() {
+                        continue;
+                    }
+                    let old_count = before.slots[slot as usize].as_ref().map_or(0, |s| s.count);
+                    let amount = match mode {
+                        0 => usize::from(cursor.count) / slots.len(),
+                        1 => 1,
+                        _ => usize::from(item_stack_limit(cursor.item_id)),
+                    };
+                    let (_, limit) = self.slot_rules(id, slot, Some(cursor));
+                    let count = (usize::from(old_count) + amount).min(usize::from(limit));
+                    remaining -= count as i32 - i32::from(old_count);
+                    let mut stack = cursor.clone();
+                    stack.count = count as u8;
+                    after.slots[slot as usize] = Some(stack);
+                }
+                self.carried_item = if remaining > 0 {
+                    let mut stack = cursor.clone();
+                    stack.count = remaining as u8;
+                    Some(stack)
+                } else {
+                    None
+                };
+                let packet = self.queue_click(id, slot_id, button, 5, None);
+                if let PlayServerboundPacket::ClickWindow(click) = &packet {
+                    self.pickup_predictions
+                        .insert((id, click.action_number), (before, previous_cursor));
+                }
+                if id == 0 {
+                    self.inventory_window = after;
+                    self.sync_player_inventory_to_open();
+                } else {
+                    self.open_window = Some(after);
+                    self.sync_open_player_inventory();
+                }
+                return Ok(packet);
+            }
+        } else {
+            self.drag = None;
+        }
+        Ok(self.queue_click(window_id, slot_id, button, 5, None))
+    }
+
     /// Container.slotClick mode 6: partial stacks first, then full stacks.
     pub fn queue_collect_click(
         &mut self,
@@ -390,6 +500,7 @@ impl InventoryState {
         slot_id: i16,
         button: i8,
     ) -> PlayServerboundPacket {
+        self.drag = None;
         let clicked_item = self.slot(window_id, slot_id).cloned().unwrap_or(None);
         let before = if window_id == 0 {
             Some(self.inventory_window.clone())
@@ -508,5 +619,97 @@ mod collect_tests {
         state.queue_collect_click(0, 10, 0).unwrap();
         assert_eq!(state.inventory_window, before);
         assert_eq!(state.carried_item.as_ref().unwrap().count, 10);
+    }
+}
+
+#[cfg(test)]
+mod drag_tests {
+    use super::*;
+    use rmc_net::codec::play::{ConfirmTransactionClientboundPacket, ItemStack};
+    fn run(mode: u8, count: u8, creative: bool) -> InventoryState {
+        let mut state = InventoryState::new();
+        state.carried_item = Some(ItemStack::simple(1, count, 0));
+        state
+            .queue_drag_click(0, -999, (mode * 4) as i8, creative)
+            .unwrap();
+        for slot in [9, 10, 10, 11] {
+            state
+                .queue_drag_click(0, slot, (mode * 4 + 1) as i8, creative)
+                .unwrap();
+        }
+        state
+            .queue_drag_click(0, -999, (mode * 4 + 2) as i8, creative)
+            .unwrap();
+        state
+    }
+    #[test]
+    fn even_single_and_creative_distribution_with_duplicate_slots() {
+        let even = run(0, 14, false);
+        for slot in 9..=11 {
+            assert_eq!(even.inventory_window.slots[slot].as_ref().unwrap().count, 4);
+        }
+        assert_eq!(even.carried_item.as_ref().unwrap().count, 2);
+        let single = run(1, 14, false);
+        for slot in 9..=11 {
+            assert_eq!(
+                single.inventory_window.slots[slot].as_ref().unwrap().count,
+                1
+            );
+        }
+        assert_eq!(single.carried_item.as_ref().unwrap().count, 11);
+        let creative = run(2, 3, true);
+        for slot in 9..=11 {
+            assert_eq!(
+                creative.inventory_window.slots[slot]
+                    .as_ref()
+                    .unwrap()
+                    .count,
+                64
+            );
+        }
+        assert_eq!(creative.carried_item, None);
+        let invalid = run(2, 3, false);
+        assert!(invalid.inventory_window.slots.iter().all(Option::is_none));
+    }
+    #[test]
+    fn insufficient_quantity_caps_selection_and_wrong_transition_resets() {
+        let small = run(0, 2, false);
+        assert_eq!(small.inventory_window.slots[9].as_ref().unwrap().count, 1);
+        assert_eq!(small.inventory_window.slots[10].as_ref().unwrap().count, 1);
+        assert_eq!(small.inventory_window.slots[11], None);
+        let mut state = InventoryState::new();
+        state.carried_item = Some(ItemStack::simple(1, 12, 0));
+        state.queue_drag_click(0, 9, 1, false).unwrap();
+        state.queue_drag_click(0, -999, 2, false).unwrap();
+        assert!(state.inventory_window.slots.iter().all(Option::is_none));
+    }
+    #[test]
+    fn capacity_slot_rules_and_rejection_preserve_cursor_and_slots() {
+        let mut state = InventoryState::new();
+        state.carried_item = Some(ItemStack::simple(1, 12, 0));
+        state.inventory_window.slots[9] = Some(ItemStack::simple(1, 63, 0));
+        let before = state.inventory_window.clone();
+        state.queue_drag_click(0, -999, 0, false).unwrap();
+        for slot in [0, 5, 9, 10] {
+            state.queue_drag_click(0, slot, 1, false).unwrap();
+        }
+        let packet = state.queue_drag_click(0, -999, 2, false).unwrap();
+        assert_eq!(state.inventory_window.slots[9].as_ref().unwrap().count, 64);
+        assert_eq!(state.inventory_window.slots[10].as_ref().unwrap().count, 6);
+        assert_eq!(state.carried_item.as_ref().unwrap().count, 5);
+        let PlayServerboundPacket::ClickWindow(click) = packet else {
+            panic!()
+        };
+        assert_eq!(click.clicked_item, None);
+        state.apply_confirm_transaction(&ConfirmTransactionClientboundPacket {
+            window_id: 0,
+            action_number: click.action_number,
+            accepted: false,
+        });
+        assert_eq!(state.inventory_window, before);
+        assert_eq!(state.carried_item.as_ref().unwrap().count, 12);
+        state.queue_drag_click(0, -999, 0, false).unwrap();
+        state.close_open_window();
+        assert!(state.drag.is_none());
     }
 }
