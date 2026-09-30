@@ -1,3 +1,4 @@
+mod client;
 mod live_cli;
 mod live_runtime;
 mod perf_cli;

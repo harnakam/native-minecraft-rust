@@ -13,8 +13,9 @@
 - Singleplayer
 - World generation
 - Forge or FML compatibility
-- Full class-by-class Java port
-- Full feature parity before a usable PvP build exists
+- Copying Java source or Minecraft assets into the repository
+
+Full Minecraft 1.8.9 client compatibility is the requested objective. Existing PvP milestones and passing differential fixtures do not establish full compatibility.
 
 ## How exact the design should be now
 
@@ -264,9 +265,9 @@ Use single-writer ownership and message passing instead of coarse locks on hot p
 
 ## Implementation strategy
 
-### Behavior port, not class port
+### Source-led reconstruction
 
-Port packet, input, world, and render behavior. Do not mirror the Java class graph unless it serves a clear purpose.
+Read MCP919 package structure, ownership, inheritance and call order before extending behavior. Mirror its responsibility hierarchy in Rust modules, retaining workspace boundaries where they remain useful. See [MCP919 source map](mcp919-source-map.md). Java inheritance may become Rust composition, but its observable ordering and state ownership must remain explicit. Do not create empty modules to suggest coverage.
 
 ### Differential testing first
 
@@ -301,5 +302,5 @@ Not allowed on the critical path:
 
 - Commit authored code only
 - Do not commit decompiled Minecraft source or assets
-- Use private GitHub only
+- Publish authored Rust and analysis tooling only to the user-authorized GitHub repository
 - Do not make large binary references the source of truth

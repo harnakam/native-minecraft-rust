@@ -1,8 +1,8 @@
+use crate::client::network::net_handler_play_client::apply_inbound_play_packet;
 use crate::shell::{ClientShell, ClientShellConfig, ShellAdvanceOutput};
 use crate::verification_cli::{hypixel_gate_decision, GateDecision};
 use rmc_game::combat::{CombatConfig, CombatSnapshot, CombatState};
 use rmc_game::input::{InputFrame, PhysicalInput};
-use rmc_game::player::Vec3;
 use rmc_game::simulation::SimulationEvent;
 use rmc_game::usability::{UsabilitySnapshot, UsabilityState};
 use rmc_net::address::resolve_connect_target;
@@ -585,45 +585,6 @@ fn drive_live_frame(
     }
 
     *next_frame_deadline = Some(deadline);
-    Ok(())
-}
-
-fn apply_inbound_play_packet(
-    packet: &PlayClientboundPacket,
-    _local_pose: PlayerPose,
-    player_entity_id: Option<i32>,
-    world: &mut WorldSnapshot,
-    mesh_pipeline: &mut ChunkMeshPipeline,
-    combat: &mut CombatState,
-    pending_simulation_events: &mut Vec<SimulationEvent>,
-) -> Result<(), String> {
-    if let Some(changes) = world
-        .apply_play_packet(packet)
-        .map_err(|error| format!("failed to apply world packet: {error:?}"))?
-    {
-        mesh_pipeline.apply_world_changes(&changes);
-    }
-
-    if let PlayClientboundPacket::PlayerPositionAndLook(packet) = packet {
-        pending_simulation_events.push(SimulationEvent::Teleport {
-            position: Vec3::new(packet.x, packet.y, packet.z),
-            yaw: packet.yaw,
-            pitch: packet.pitch,
-            flags: packet.flags.bits(),
-        });
-    }
-
-    if let PlayClientboundPacket::Explosion(packet) = packet {
-        if packet.motion.iter().all(|v| v.is_finite()) {
-            pending_simulation_events.push(SimulationEvent::AddVelocity(Vec3::new(
-                f64::from(packet.motion[0]),
-                f64::from(packet.motion[1]),
-                f64::from(packet.motion[2]),
-            )));
-        }
-    }
-    let combat_update = combat.apply_play_packet(packet, player_entity_id);
-    pending_simulation_events.extend(combat_update.simulation_events);
     Ok(())
 }
 
