@@ -1,0 +1,38 @@
+target/
+.idea/
+.vscode/
+.DS_Store
+
+# Local reference trees. Keep these on disk, not in the authored repo history.
+MCP-919/
+MCProtocolLib-master/
+
+# Local captures and scratch data.
+captures/
+tmp/
+*.log
+local_assets/
+verification/
+
+# Never publish local Java reference sources, game files, or credentials.
+soarsrc/
+assets/
+resourcepacks/
+*.jar
+*.class
+*.zip
+*.png
+*.jpg
+*.ogg
+*.wav
+*.mp3
+*.ttf
+*.otf
+.env
+.env.*
+*accounts*.json
+*tokens*.json
+*.pem
+*.key
+server.properties
+eula.txt

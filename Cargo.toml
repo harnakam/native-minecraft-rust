@@ -1,0 +1,23 @@
+[workspace]
+members = [
+    "crates/rmc-client",
+    "crates/rmc-net",
+    "crates/rmc-game",
+    "crates/rmc-world",
+    "crates/rmc-render",
+    "crates/rmc-ui",
+    "crates/rmc-java",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "UNLICENSED"
+publish = false
+version = "0.1.0"
+
+[workspace.metadata.rmc]
+minecraft_version = "1.8.9"
+protocol_version = 47
+target_profile = "hypixel-pvp"
+
