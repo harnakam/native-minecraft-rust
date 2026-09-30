@@ -11,6 +11,7 @@ def main():
     parser.add_argument('--mcp-root', type=Path, default=Path('MCP-919'))
     parser.add_argument('--java-home', type=Path, required=True)
     parser.add_argument('--cargo', default='cargo')
+    parser.add_argument('--only', choices=['collision','neighbors','travel','mining','minestate','selection','explosion'])
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     mcp = args.mcp_root.resolve()
@@ -34,11 +35,13 @@ def main():
                     str(templates / 'RmcMovementOracle.java'),
                     str(templates / 'RmcMiningOracle.java'),
                     str(templates / 'RmcMiningStateOracle.java'),
+                    str(templates / 'RmcExplosionOracle.java'),
                     str(templates / 'RmcNeighborOracle.java'),
                     str(templates / 'RmcSelectionOracle.java')], cwd=root, check=True)
     output = root / 'tmp/local-oracles'
     output.mkdir(parents=True, exist_ok=True)
     for name, class_name, package, example in (
+        ('explosion', 'RmcExplosionOracle', 'rmc-net', 'explosion_dump'),
         ('neighbors', 'RmcNeighborOracle', 'rmc-world', 'neighbor_dump'),
         ('collision', 'RmcCollisionOracle', 'rmc-world', 'collision_dump'),
         ('travel', 'RmcMovementOracle', 'rmc-game', 'travel_dump'),
@@ -46,6 +49,8 @@ def main():
         ('minestate', 'RmcMiningStateOracle', 'rmc-game', 'minestate_dump'),
         ('selection', 'RmcSelectionOracle', 'rmc-world', 'selection_dump'),
     ):
+        if args.only and args.only != name:
+            continue
         reference, actual = output / f'{name}-java.txt', output / f'{name}-rust.txt'
         for command, destination in (
             ([str(java), '-cp', classpath, f'net.minecraft.client.rmc.{class_name}'], reference),

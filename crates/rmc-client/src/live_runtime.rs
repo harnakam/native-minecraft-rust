@@ -882,6 +882,15 @@ fn apply_inbound_play_packet(
         });
     }
 
+    if let PlayClientboundPacket::Explosion(packet) = packet {
+        if packet.motion.iter().all(|v| v.is_finite()) {
+            pending_simulation_events.push(SimulationEvent::AddVelocity(Vec3::new(
+                f64::from(packet.motion[0]),
+                f64::from(packet.motion[1]),
+                f64::from(packet.motion[2]),
+            )));
+        }
+    }
     let combat_update = combat.apply_play_packet(packet, player_entity_id);
     pending_simulation_events.extend(combat_update.simulation_events);
     Ok(())
@@ -1466,6 +1475,16 @@ mod tests {
         );
         assert!(runtime.summary.disconnect_reason_json.is_none());
         println!("official 1.8.9: server-confirmed stone mining, death and respawn passed");
+        if std::env::var("RMC_STOP_TEST_SERVER").as_deref() == Ok("1") {
+            runtime.send_chat_message("/stop").unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime, &RuntimeActionInput::default());
+                if runtime.summary.ended_by_eof || runtime.summary.disconnect_reason_json.is_some()
+                {
+                    break;
+                }
+            }
+        }
     }
 
     fn target_at(z: f64) -> EntityTracker {

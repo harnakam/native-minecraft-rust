@@ -75,6 +75,25 @@ mod tests {
             assert_eq!(output.simulation.player.selected_hotbar_slot, 7);
         }
     }
+    #[test]
+    fn teleport_and_explosion_motion_follow_packet_order_within_one_frame() {
+        use rmc_game::player::Vec3;
+        let correction = SimulationEvent::Teleport {
+            position: Vec3::new(0.0, 64.0, 0.0),
+            yaw: 0.0,
+            pitch: 0.0,
+            flags: 0,
+        };
+        let explosion = SimulationEvent::AddVelocity(Vec3::new(0.25, 0.5, -0.25));
+        for (events, expected) in [
+            ([correction, explosion], Vec3::new(0.25, 0.5, -0.25)),
+            ([explosion, correction], Vec3::ZERO),
+        ] {
+            let mut shell = ClientShell::new(ClientShellConfig::vanilla());
+            let output = shell.advance_with_events(Duration::ZERO, &InputFrame::default(), &events);
+            assert_eq!(output.simulation.velocity, expected);
+        }
+    }
 }
 
 impl ClientShell {

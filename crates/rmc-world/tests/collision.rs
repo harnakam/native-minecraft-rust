@@ -180,3 +180,25 @@ fn fence_and_pane_connections_use_distinct_mcp_material_predicates() {
     assert_eq!(bounds[0].min[0], 0.4375);
     assert_eq!(bounds[0].max[0], 1.0); // Panes connect to pumpkin's full-block flag.
 }
+
+#[test]
+fn explosion_removes_received_blocks_and_marks_mesh_changes() {
+    use rmc_net::codec::play::{ExplosionPacket, PlayClientboundPacket};
+    let mut world = WorldSnapshot::new(WorldConfig::overworld());
+    set(&mut world, -3, 65, 8, 16);
+    set(&mut world, -2, 65, 8, 16);
+    let update = world
+        .apply_play_packet(&PlayClientboundPacket::Explosion(ExplosionPacket {
+            x: -1.75,
+            y: 64.25,
+            z: 8.5,
+            strength: 2.0,
+            records: vec![[-2, 1, 0]],
+            motion: [0.0; 3],
+        }))
+        .unwrap()
+        .unwrap();
+    assert_eq!(world.block_state_or_air(BlockPos::new(-3, 65, 8)), 0);
+    assert_eq!(world.block_state_or_air(BlockPos::new(-2, 65, 8)), 16);
+    assert!(!update.touched_chunks.is_empty());
+}

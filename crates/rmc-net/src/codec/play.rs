@@ -4,6 +4,7 @@ use crate::buffer::{BufferError, PacketReader, PacketWriter};
 use crate::codec::{split_packet_bytes, CodecError, EncodedPacket};
 
 pub const MAX_CUSTOM_PAYLOAD_BYTES: usize = 32_767;
+pub const MAX_EXPLOSION_RECORDS: usize = 262_144;
 pub const MAX_DESTROYED_ENTITIES: usize = 8_192;
 pub const SECTION_BLOCK_COUNT: usize = 16 * 16 * 16;
 pub const SECTION_DATA_BYTES: usize = SECTION_BLOCK_COUNT * 2;
@@ -50,6 +51,26 @@ pub struct PlayerAbilitiesPacket {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HeldItemChangeClientboundPacket {
     pub slot: i8,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExplosionPacket {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub strength: f32,
+    pub records: Vec<[i8; 3]>,
+    pub motion: [f32; 3],
+}
+impl ExplosionPacket {
+    pub fn affected_positions(&self) -> impl Iterator<Item = BlockPosition> + '_ {
+        self.records.iter().map(|offset| {
+            BlockPosition::new(
+                (self.x as i32).wrapping_add(i32::from(offset[0])),
+                (self.y as i32).wrapping_add(i32::from(offset[1])),
+                (self.z as i32).wrapping_add(i32::from(offset[2])),
+            )
+        })
+    }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChangeGameStatePacket {
@@ -656,6 +677,7 @@ pub enum PlayClientboundPacket {
     PlayerAbilities(PlayerAbilitiesPacket),
     HeldItemChange(HeldItemChangeClientboundPacket),
     ChangeGameState(ChangeGameStatePacket),
+    Explosion(ExplosionPacket),
     EntityEffect(EntityEffectPacket),
     RemoveEntityEffect(RemoveEntityEffectPacket),
     EntityProperties(EntityPropertiesPacket),
@@ -862,6 +884,27 @@ impl PlayClientboundPacket {
                 Self::EntityProperties(EntityPropertiesPacket {
                     entity_id,
                     attributes,
+                })
+            }
+            0x27 => {
+                let (x, y, z, strength) = (
+                    reader.read_f32()?,
+                    reader.read_f32()?,
+                    reader.read_f32()?,
+                    reader.read_f32()?,
+                );
+                let count = bounded_count(reader.read_i32()?, MAX_EXPLOSION_RECORDS)?;
+                let mut records = Vec::with_capacity(count.min(1024));
+                for _ in 0..count {
+                    records.push([reader.read_i8()?, reader.read_i8()?, reader.read_i8()?]);
+                }
+                Self::Explosion(ExplosionPacket {
+                    x,
+                    y,
+                    z,
+                    strength,
+                    records,
+                    motion: [reader.read_f32()?, reader.read_f32()?, reader.read_f32()?],
                 })
             }
             0x2B => Self::ChangeGameState(ChangeGameStatePacket {
@@ -1265,6 +1308,23 @@ impl PlayClientboundPacket {
             Self::KeepAlive(packet) => {
                 writer.write_var_i32(packet.id);
                 0x00
+            }
+            Self::Explosion(packet) => {
+                writer.write_f32(packet.x);
+                writer.write_f32(packet.y);
+                writer.write_f32(packet.z);
+                writer.write_f32(packet.strength);
+                bounded_count(packet.records.len() as i32, MAX_EXPLOSION_RECORDS)?;
+                writer.write_i32(packet.records.len() as i32);
+                for record in &packet.records {
+                    for value in record {
+                        writer.write_i8(*value);
+                    }
+                }
+                for value in packet.motion {
+                    writer.write_f32(value);
+                }
+                0x27
             }
             Self::ChangeGameState(packet) => {
                 writer.write_u8(packet.reason);

@@ -1020,6 +1020,7 @@ fn combat_scenario_lines() -> Vec<String> {
                 impulse.velocity.z,
                 impulse.resets_sprint,
             )),
+            SimulationEvent::AddVelocity(motion) => lines.push(format!("simulation_event=AddVelocity x={} y={} z={}",motion.x,motion.y,motion.z)),
             SimulationEvent::AuthoritativeState(_) | SimulationEvent::Teleport { .. } => {}
         }
     }

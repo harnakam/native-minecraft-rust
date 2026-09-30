@@ -49,3 +49,5 @@ In PowerShell, set `$env:RMC_VANILLA_PORT='25570'` before running the Cargo comm
 Unit tests do not establish complete Minecraft compatibility. Additional fixtures must cover liquids, ladders, effects, complex block geometry, specialized inventory slots, respawn/dimension changes and real online multiplayer sessions. Authentication secrets must never appear in captures or commits.
 
 Respawn regression checks preserve received chunks within the same dimension, discard them when changing dimension, and recreate local movement and inventory state. The official-server mining/death/respawn test was rerun successfully after this correction.
+
+The authored S27 probe matches twelve exact wire/decoded-position records across four positive/negative/large-center cases. Explosion reception removes affected blocks, invalidates their meshes and adds player velocity in received packet order; regression checks cover position corrections before/after the explosion. Explosion sounds, particles and rendering feedback remain unimplemented. The opt-in official-server test can stop its authorized test server after success with `RMC_STOP_TEST_SERVER=1`.

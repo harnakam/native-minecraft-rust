@@ -7,6 +7,7 @@ import compare_collision
 import compare_travel
 import compare_mining
 import compare_minestate
+import compare_explosion
 
 
 class OracleComparisonTests(unittest.TestCase):
@@ -29,6 +30,11 @@ class OracleComparisonTests(unittest.TestCase):
                      'shape 1 0 1,0,0,0,1,1\n', 'shape 1 0 0,0,1\n'):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 self.read(compare_collision.read, text)
+
+    def test_explosion_rejects_empty_truncated_and_duplicate_evidence(self):
+        for text in ('', 'explosion 0 wire 27\n', 'explosion 0 pos0 0,64,0\n' * 2):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                self.read(compare_explosion.read, text)
 
     def test_union_comparison_preserves_volume(self):
         cube = [(0, 0, 0, 1, 1, 1)]

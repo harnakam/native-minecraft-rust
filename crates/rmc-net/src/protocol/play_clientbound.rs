@@ -1012,6 +1012,7 @@ pub const HELD_ITEM_CHANGE: PacketSpec = PacketSpec {
 };
 pub const PACKETS: &[PacketSpec] = &[
     CHANGE_GAME_STATE,
+    EXPLOSION,
     HELD_ITEM_CHANGE,
     PLAYER_ABILITIES,
     ENTITY_EFFECT,
@@ -1067,6 +1068,33 @@ pub const CHANGE_GAME_STATE: PacketSpec = PacketSpec {
             name: "value",
             encoding: "Float",
             notes: "Reason-dependent value.",
+        },
+    ],
+};
+
+pub const EXPLOSION: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x27,
+    name: "Explosion",
+    java_class: "net.minecraft.network.play.server.S27PacketExplosion",
+    java_handler: "INetHandlerPlayClient.handleExplosion",
+    compression: PLAY_COMPRESSION,
+    fields: &[
+        FieldSpec {
+            name: "position_strength",
+            encoding: "Float x4",
+            notes: "XYZ center and strength.",
+        },
+        FieldSpec {
+            name: "records",
+            encoding: "Int, Byte[3] x count",
+            notes: "Signed offsets from truncated center coordinates.",
+        },
+        FieldSpec {
+            name: "motion",
+            encoding: "Float x3",
+            notes: "Velocity added to local player motion.",
         },
     ],
 };

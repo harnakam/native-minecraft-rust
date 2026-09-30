@@ -41,6 +41,7 @@ impl KnockbackImpulse {
 pub enum SimulationEvent {
     AuthoritativeState(AuthoritativePlayerState),
     Knockback(KnockbackImpulse),
+    AddVelocity(Vec3),
     Teleport {
         position: Vec3,
         yaw: f32,
@@ -210,6 +211,11 @@ impl LocalSimulationLayer {
         match event {
             SimulationEvent::AuthoritativeState(state) => self.apply_authoritative_state(state),
             SimulationEvent::Knockback(impulse) => self.apply_knockback(impulse),
+            SimulationEvent::AddVelocity(motion) => {
+                self.apply_pending_server_state();
+                self.apply_pending_knockback();
+                self.velocity = self.velocity.add(motion);
+            }
             SimulationEvent::Teleport {
                 position, flags, ..
             } => {

@@ -319,6 +319,10 @@ fn run_combat_cli(raw_args: Vec<String>) -> Result<(), String> {
                     impulse.velocity.z,
                     impulse.resets_sprint
                 )),
+                SimulationEvent::AddVelocity(motion) => trace_lines.push(format!(
+                    "simulation_event=AddVelocity x={} y={} z={}",
+                    motion.x, motion.y, motion.z
+                )),
                 SimulationEvent::AuthoritativeState(_) | SimulationEvent::Teleport { .. } => {}
             }
         }
@@ -1289,6 +1293,7 @@ fn render_frame_events(frame_index: u32, events: &[SimulationEvent]) -> Vec<Stri
                 impulse.velocity.z,
                 impulse.resets_sprint
             ),
+            SimulationEvent::AddVelocity(motion) => format!("frame={frame_index} event=AddVelocity x={} y={} z={}",motion.x,motion.y,motion.z),
             SimulationEvent::Teleport { position, yaw, pitch, flags } => format!("frame={frame_index} event=Teleport x={} y={} z={} yaw={yaw} pitch={pitch} flags={flags}", position.x, position.y, position.z),
         })
         .collect()

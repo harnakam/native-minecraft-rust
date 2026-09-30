@@ -613,6 +613,18 @@ impl WorldSnapshot {
                 Some(self.apply_multi_block_change(packet)?)
             }
             PlayClientboundPacket::BlockChange(packet) => Some(self.apply_block_change(packet)?),
+            PlayClientboundPacket::Explosion(packet) => {
+                let mut changes = WorldChangeSummary::default();
+                for position in packet.affected_positions() {
+                    let update =
+                        self.apply_block_change(&rmc_net::codec::play::BlockChangePacket {
+                            position,
+                            block_state_id: 0,
+                        })?;
+                    changes.merge(update);
+                }
+                Some(changes)
+            }
             PlayClientboundPacket::MapChunkBulk(packet) => Some(self.apply_map_chunk_bulk(packet)?),
             PlayClientboundPacket::KeepAlive(_)
             | PlayClientboundPacket::JoinGame(_)
