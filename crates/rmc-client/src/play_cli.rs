@@ -2504,13 +2504,22 @@ fn native_text_width(text: &str) -> i32 {
     }
 }
 
+fn tab_grid(count: usize) -> (usize, usize) {
+    let count = count.min(80);
+    let mut columns = 1;
+    while count.div_ceil(columns) > 20 {
+        columns += 1;
+    }
+    (columns, count.div_ceil(columns))
+}
+
 fn draw_tab_snapshot(
     frame: &mut [u8],
     width: u32,
     height: u32,
     snapshot: &rmc_game::usability::UsabilitySnapshot,
 ) {
-    let entries = snapshot.tab_list.iter().take(20).collect::<Vec<_>>();
+    let entries = snapshot.tab_list.iter().take(80).collect::<Vec<_>>();
     let header = tab_banner_lines(&snapshot.tab_header_json, width);
     let footer = tab_banner_lines(&snapshot.tab_footer_json, width);
     if entries.is_empty() && header.is_empty() && footer.is_empty() {
@@ -2522,7 +2531,14 @@ fn draw_tab_snapshot(
         .map(|text| native_text_width(text))
         .max()
         .unwrap_or(0);
-    let panel_width = banner_width.max(360).min(width.saturating_sub(8) as i32);
+    let (columns, row_count) = tab_grid(entries.len());
+    let column_width = (width.saturating_sub(50) as i32 / columns as i32)
+        .min(240)
+        .max(1);
+    let grid_width = column_width * columns as i32 + (columns as i32 - 1) * 5;
+    let panel_width = banner_width
+        .max(grid_width)
+        .min(width.saturating_sub(8) as i32);
     let mut y = 16;
     for (section, lines) in [&header, &footer].into_iter().enumerate() {
         if section == 1 && !entries.is_empty() {
@@ -2530,41 +2546,65 @@ fn draw_tab_snapshot(
                 x: width as i32 / 2 - panel_width / 2,
                 y,
                 width: panel_width,
-                height: 22 + entries.len() as i32 * 16,
+                height: row_count as i32 * 16,
             };
             draw_rect(frame, width, height, rect, [18, 22, 28]);
-            draw_text_scaled(
-                frame,
-                width,
-                height,
-                rect.x + 8,
-                y + 4,
-                "Players",
-                [255, 240, 226],
-                1,
-            );
+            let base_x = width as i32 / 2 - grid_width / 2;
             for (index, entry) in entries.iter().enumerate() {
-                let row_y = y + 22 + index as i32 * 16;
+                let column = index / row_count;
+                let row = index % row_count;
+                let row_y = y + row as i32 * 16;
+                let x = base_x + column as i32 * (column_width + 5);
+                let name = entry
+                    .display_name_json
+                    .as_ref()
+                    .map(|json| {
+                        serde_json::from_str(json)
+                            .map(|value| chat_component_text(&value))
+                            .unwrap_or_else(|_| json.clone())
+                    })
+                    .unwrap_or_else(|| entry.name.clone());
+                let mut cell = vec![0; column_width as usize * 16 * 4];
+                for pixel in cell.chunks_exact_mut(4) {
+                    pixel.copy_from_slice(&[18, 22, 28, 255]);
+                }
                 draw_text_scaled(
-                    frame,
-                    width,
-                    height,
-                    rect.x + 8,
-                    row_y,
-                    &truncate_text(&entry.name, 28),
-                    [236, 236, 236],
+                    &mut cell,
+                    column_width as u32,
+                    16,
+                    4,
+                    0,
+                    &truncate_text(&name, ((column_width - 64).max(0) / 8) as usize),
+                    if entry.game_mode == 3 {
+                        [144, 144, 144]
+                    } else {
+                        [236, 236, 236]
+                    },
                     1,
                 );
                 draw_text_scaled(
-                    frame,
-                    width,
-                    height,
-                    rect.x + panel_width - 60,
-                    row_y,
+                    &mut cell,
+                    column_width as u32,
+                    16,
+                    column_width - 60,
+                    0,
                     &format!("{}ms", entry.latency),
                     [172, 214, 255],
                     1,
                 );
+                for py in 0..16 {
+                    if row_y + py < 0 || row_y + py >= height as i32 {
+                        continue;
+                    }
+                    for px in 0..column_width {
+                        if x + px < 0 || x + px >= width as i32 {
+                            continue;
+                        }
+                        let src = (py as usize * column_width as usize + px as usize) * 4;
+                        let dst = ((row_y + py) as usize * width as usize + (x + px) as usize) * 4;
+                        frame[dst..dst + 3].copy_from_slice(&cell[src..src + 3]);
+                    }
+                }
             }
             y += rect.height + 2;
         }
@@ -3731,6 +3771,59 @@ mod inventory_layout_tests {
         let rows = wrap_chat_text(&text, 1);
         assert_eq!(rows.len(), 32767);
         assert_eq!(rows.concat(), text);
+    }
+
+    #[test]
+    fn tab_renders_eightieth_player_and_caps_the_ninetieth() {
+        use rmc_net::codec::play::{
+            PlayClientboundPacket, PlayerListEntry, PlayerListItemAction, PlayerListItemPacket,
+        };
+        let mut state = rmc_game::usability::UsabilityState::new();
+        state.apply_play_packet(&PlayClientboundPacket::PlayerListItem(
+            PlayerListItemPacket {
+                action: PlayerListItemAction::AddPlayer,
+                entries: (0..90u8)
+                    .map(|index| PlayerListEntry {
+                        uuid: [index; 16],
+                        name: Some(format!("P{index:02}")),
+                        properties: vec![],
+                        game_mode: Some(0),
+                        latency: Some(1),
+                        display_name_json: None,
+                    })
+                    .collect(),
+            },
+        ));
+        let snapshot = state.snapshot();
+        let mut before = vec![0; 960 * 400 * 4];
+        draw_tab_snapshot(&mut before, 960, 400, &snapshot);
+        let mut changed = snapshot.clone();
+        changed.tab_list[79].display_name_json = Some(r#"{"text":"Visible"}"#.into());
+        let mut after = vec![0; 960 * 400 * 4];
+        draw_tab_snapshot(&mut after, 960, 400, &changed);
+        assert_ne!(before, after);
+        changed = snapshot;
+        changed.tab_list[89].display_name_json = Some(r#"{"text":"Excluded"}"#.into());
+        after.fill(0);
+        draw_tab_snapshot(&mut after, 960, 400, &changed);
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn tab_grid_matches_vanilla_column_major_limits() {
+        for (count, expected) in [
+            (0, (1, 0)),
+            (20, (1, 20)),
+            (21, (2, 11)),
+            (40, (2, 20)),
+            (41, (3, 14)),
+            (60, (3, 20)),
+            (61, (4, 16)),
+            (80, (4, 20)),
+            (100, (4, 20)),
+        ] {
+            assert_eq!(tab_grid(count), expected);
+        }
     }
 
     #[test]

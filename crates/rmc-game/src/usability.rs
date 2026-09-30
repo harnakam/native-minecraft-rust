@@ -342,9 +342,21 @@ impl UsabilityState {
             })
             .collect::<Vec<_>>();
         tab_list.sort_by(|left, right| {
-            left.name
-                .cmp(&right.name)
-                .then(left.latency.cmp(&right.latency))
+            (left.game_mode == 3)
+                .cmp(&(right.game_mode == 3))
+                .then_with(|| {
+                    self.player_teams
+                        .get(&left.name)
+                        .map_or("", String::as_str)
+                        .encode_utf16()
+                        .cmp(
+                            self.player_teams
+                                .get(&right.name)
+                                .map_or("", String::as_str)
+                                .encode_utf16(),
+                        )
+                })
+                .then_with(|| left.name.encode_utf16().cmp(right.name.encode_utf16()))
         });
 
         let window = self.inventory.open_window().map(|window| WindowSnapshot {
@@ -790,6 +802,41 @@ mod tests {
                 .and_then(|sidebar| sidebar.lines.first())
                 .map(|line| line.rendered_name.clone()),
             Some("[R] Rush".to_owned())
+        );
+    }
+
+    #[test]
+    fn tab_order_places_spectators_last_then_team_then_java_name() {
+        let mut state = UsabilityState::new();
+        for (id, name, mode, team) in [
+            (1, "Zed", 0, "a"),
+            (2, "Alpha", 0, "b"),
+            (3, "Aaron", 3, ""),
+            (4, "Beta", 0, ""),
+        ] {
+            state.tab_list.insert(
+                [id; 16],
+                super::TabListEntryState {
+                    uuid: [id; 16],
+                    name: name.into(),
+                    game_mode: mode,
+                    latency: 0,
+                    display_name_json: None,
+                    property_count: 0,
+                },
+            );
+            if !team.is_empty() {
+                state.player_teams.insert(name.into(), team.into());
+            }
+        }
+        assert_eq!(
+            state
+                .snapshot()
+                .tab_list
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Beta", "Zed", "Alpha", "Aaron"]
         );
     }
 

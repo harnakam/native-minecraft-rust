@@ -433,3 +433,22 @@ Remaining gaps include Minecraft font/layout/style parity, complete translation,
 80-player multi-column layout and sorting, player faces, ping icons, scoreboard
 columns, reset timing across connection transitions, and actual server/plugin
 S47 delivery. This change does not establish full Tab-screen compatibility.
+
+
+### Native tab ordering and 80-player columns
+
+UsabilitySnapshot now sorts tab entries by non-spectator first, registered team
+name, then profile name, matching GuiPlayerTabOverlay.PlayerComparator. String
+comparisons use Java UTF-16 ordering; latency no longer affects the order.
+The native overlay displays up to 80 players, increasing the column count until
+ceil(count/columns) is at most 20, with column-major placement and five-pixel
+column gaps. Server display-name components replace profile names when present.
+Cells clip their own rendering to avoid writing into another column; spectator
+text is dimmed. Header/footer layout remains connected above/below the grid.
+
+Tests cover column thresholds from 0 through more than 80 players, spectator and
+team ordering, and framebuffer evidence that player 80 is drawn while player 90
+is excluded. Minecraft metrics, styled team display names, italics, skin faces,
+ping icons, score/heart columns, and manual/server 80-player display parity remain
+incomplete. The native font uses 16-pixel rows, so geometry is not claimed to be
+identical to the nine-pixel Minecraft font.
