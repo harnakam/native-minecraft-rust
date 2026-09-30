@@ -3433,6 +3433,29 @@ fn draw_styled_title_line(
     scale: i32,
     alpha: u8,
 ) {
+    draw_styled_title_pass(frame, width, height, text, y + scale, scale, alpha, true);
+    draw_styled_title_pass(frame, width, height, text, y, scale, alpha, false);
+}
+
+fn title_shadow_color(color: [u8; 3]) -> [u8; 3] {
+    // FontRenderer's shadow palette does not apply the foreground gold boost.
+    if color == [255, 170, 0] {
+        [42, 42, 0]
+    } else {
+        color.map(|channel| channel / 4)
+    }
+}
+
+fn draw_styled_title_pass(
+    frame: &mut [u8],
+    width: u32,
+    height: u32,
+    text: &str,
+    y: i32,
+    scale: i32,
+    alpha: u8,
+    shadow: bool,
+) {
     let runs = tab_styled_runs(text, [255; 3], usize::MAX);
     let run_width = |text: &str, style: TabNameStyle| {
         text.chars()
@@ -3443,8 +3466,11 @@ fn draw_styled_title_line(
         .iter()
         .map(|(text, style)| run_width(text, *style))
         .sum::<i32>();
-    let mut x = width as i32 / 2 - total * scale / 2;
-    for (text, style) in runs {
+    let mut x = width as i32 / 2 - total * scale / 2 + if shadow { scale } else { 0 };
+    for (text, mut style) in runs {
+        if shadow {
+            style.color = title_shadow_color(style.color);
+        }
         let advance = run_width(&text, style);
         let mask_width = (advance + 8).max(1) as u32;
         let mut mask = vec![0; mask_width as usize * 16 * 4];
@@ -4344,6 +4370,21 @@ mod inventory_layout_tests {
         faded.copy_from_slice(&background);
         draw_tab_name_alpha(&mut faded, 200, "Alex", [255; 3], 16, 0);
         assert_eq!(faded, background);
+    }
+
+    #[test]
+    fn styled_title_shadow_uses_source_palette_and_scaled_offset() {
+        assert_eq!(title_shadow_color([255, 170, 0]), [42, 42, 0]);
+        assert_eq!(title_shadow_color([255, 85, 85]), [63, 21, 21]);
+        let mut plain = vec![0; 320 * 200 * 4];
+        draw_styled_title_pass(&mut plain, 320, 200, "Title", 60, 4, 255, false);
+        let mut shadowed = vec![0; 320 * 200 * 4];
+        draw_styled_title_line(&mut shadowed, 320, 200, "Title", 60, 4, 255);
+        assert_ne!(plain, shadowed);
+        assert!(plain
+            .chunks_exact(4)
+            .zip(shadowed.chunks_exact(4))
+            .any(|(a, b)| a[0] == 0 && b[0] > 0 && b[0] <= 63));
     }
 
     #[test]

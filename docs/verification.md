@@ -673,3 +673,15 @@ This reuses the native 16-pixel font rasterization at integer scale, so Minecraf
 font metrics, shadows, exact glyph geometry, translation styles, obfuscation,
 OpenGL rounding and manual visual parity remain incomplete. No game assets are
 published.
+
+
+### Styled native title shadows
+
+The title renderer now follows FontRenderer's shadow-first then foreground
+ordering. Shadow offset is one source pixel in each axis, multiplied by the
+4x/2x title scale. Shadow colors use the source quarter-bright palette, with the
+gold shadow exception (42,42,0), and share title fade alpha. A regression checks
+palette colors and darker shadow pixels outside the foreground glyph footprint.
+The complete workspace suite passes. Native glyphs, rasterization/rounding,
+obfuscation, translations and manual visual parity remain incomplete; no game
+assets/reference source are published.
