@@ -2,6 +2,7 @@
 
 pub mod camera;
 pub mod combat;
+pub mod game_mode;
 pub mod input;
 pub mod inventory;
 pub mod player;

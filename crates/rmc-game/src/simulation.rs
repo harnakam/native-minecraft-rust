@@ -336,11 +336,7 @@ impl LocalSimulationLayer {
             }
             Packet::JoinGame(packet) => self.set_game_mode(packet.game_mode),
             Packet::ChangeGameState(packet) if packet.reason == 3 => {
-                self.set_game_mode(if (0..=3).contains(&(packet.value as i32)) {
-                    packet.value as u8
-                } else {
-                    0
-                });
+                self.set_game_mode(crate::game_mode::from_game_state(packet.value));
             }
             Packet::Respawn(packet) => {
                 *self = Self::new(self.config);

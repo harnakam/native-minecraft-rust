@@ -682,12 +682,7 @@ impl LiveRuntime {
                     DriverEvent::InboundPlayPacket(packet) => {
                         if let PlayClientboundPacket::ChangeGameState(packet) = &packet {
                             if packet.reason == 3 {
-                                let mode = packet.value as i32;
-                                self.game_mode = if (0..=3).contains(&mode) {
-                                    mode as u8
-                                } else {
-                                    0
-                                };
+                                self.game_mode = rmc_game::game_mode::from_game_state(packet.value);
                             }
                         }
                         self.shell.apply_player_packet(
