@@ -217,3 +217,9 @@ A received ChangeGameState regression crosses a solid wall at the configured wor
 The pending authoritative position/ground state can overwrite the early spectator ground reset. Simulation now clears on-ground again immediately after pending state and knockback application, before movement acceleration/jump calculations. This prevents a received ground flag from selecting the ground acceleration branch for a spectator.
 
 A regression compares identical spectator forward/jump input after authoritative states differing only in their ground flag; positions and velocities must match exactly and ground remains false. Full workspace tests pass. This strengthens the no-clip path but does not implement spectator speed scrolling, camera targets or complete spectator behavior.
+
+## Border proximity warning handoff
+
+WorldBorder now computes GuiIngame's warning strength: closest distance is cast to float, warning radius is the maximum of warning blocks and the smaller of time-scaled resize speed and remaining diameter change, and strength is one minus the distance/radius ratio. Runtime supplies actual simulation player position, and the native frontend applies a red edge warning before crosshair and HUD drawing. No vignette texture is bundled.
+
+A state regression covers no warning, proximity, outside strength, resizing anticipation and completion. A framebuffer regression checks red edge tint, unchanged center and no modification at strength zero. Workspace tests pass, followed by the focused framebuffer test after the position handoff adjustment. The visible warning uses a simple edge mask, not the vanilla vignette image/blending pipeline; visual parity and official-server boundary testing remain unverified.

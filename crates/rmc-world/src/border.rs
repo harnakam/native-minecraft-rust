@@ -97,6 +97,29 @@ impl WorldBorder {
             java_min(self.center[1] + half, high),
         ]
     }
+    pub fn warning_strength_at(&mut self, x: f64, z: f64, now: i64) -> f32 {
+        let distance = self.closest_distance_at(x, z, now) as f32;
+        let speed = if self.end == self.start {
+            0.0
+        } else {
+            (self.from - self.to).abs() / self.end.wrapping_sub(self.start) as f64
+        };
+        let moving_distance = math_min(
+            speed * f64::from(self.warning_time) * 1000.0,
+            (self.to - self.diameter_at(now)).abs(),
+        );
+        let threshold = if moving_distance.is_nan() {
+            f64::NAN
+        } else {
+            f64::from(self.warning_distance).max(moving_distance)
+        };
+        if f64::from(distance) < threshold {
+            1.0 - (f64::from(distance) / threshold) as f32
+        } else {
+            0.0
+        }
+    }
+
     pub fn closest_distance_at(&mut self, x: f64, z: f64, now: i64) -> f64 {
         let [min_x, max_x, min_z, max_z] = self.bounds_at(now);
         math_min(

@@ -487,6 +487,13 @@ impl LiveRuntime {
         self.last_world_render.as_ref()
     }
 
+    pub fn border_warning_strength(&self) -> f32 {
+        self.last_output.as_ref().map_or(0.0, |output| {
+            let position = output.simulation.player.position;
+            self.world.border_warning_strength(position.x, position.z)
+        })
+    }
+
     pub fn daylight(&self, partial_ticks: f32) -> Option<rmc_render::daylight::Daylight> {
         self.world.config().has_sky_light.then(|| {
             rmc_render::daylight::Daylight::calculate(

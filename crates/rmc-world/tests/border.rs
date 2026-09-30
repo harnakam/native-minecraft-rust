@@ -106,3 +106,23 @@ fn collision_border_uses_loaded_columns_and_outside_hysteresis() {
     );
     assert!(!outside);
 }
+
+#[test]
+fn warning_strength_tracks_distance_and_resize_warning_time() {
+    let mut border = WorldBorder::default();
+    border.receive_at(&Packet::SetSize { diameter: 20.0 }, 0);
+    assert_eq!(border.warning_strength_at(0.0, 0.0, 0), 0.0);
+    assert_eq!(border.warning_strength_at(8.0, 0.0, 0), 0.6);
+    assert_eq!(border.warning_strength_at(10.0, 0.0, 0), 1.0);
+    assert!(border.warning_strength_at(11.0, 0.0, 0) > 1.0);
+    border.receive_at(
+        &Packet::LerpSize {
+            from: 100.0,
+            to: 20.0,
+            milliseconds: 10000,
+        },
+        0,
+    );
+    assert_eq!(border.warning_strength_at(0.0, 0.0, 0), 0.375);
+    assert_eq!(border.warning_strength_at(0.0, 0.0, 10000), 0.0);
+}

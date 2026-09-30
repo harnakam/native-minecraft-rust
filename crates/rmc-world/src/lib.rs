@@ -429,6 +429,12 @@ impl WorldSnapshot {
         self.config
     }
 
+    pub fn border_warning_strength(&self, x: f64, z: f64) -> f32 {
+        self.border
+            .clone()
+            .warning_strength_at(x, z, border::current_millis())
+    }
+
     pub fn border_mut(&mut self) -> &mut border::WorldBorder {
         &mut self.border
     }
