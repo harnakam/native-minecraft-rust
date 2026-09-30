@@ -1052,7 +1052,10 @@ impl PlayApp {
                     return;
                 }
                 if pressed
-                    && matches!(button, MouseButton::Left | MouseButton::Right)
+                    && matches!(
+                        button,
+                        MouseButton::Left | MouseButton::Right | MouseButton::Middle
+                    )
                     && !self.mouse_captured
                 {
                     if let Some((window_id, slot_id)) =
@@ -1060,9 +1063,16 @@ impl PlayApp {
                     {
                         if let Some(runtime) = &mut self.runtime {
                             let button_id = if button == MouseButton::Right { 1 } else { 0 };
-                            if let Err(error) =
+                            let result = if button == MouseButton::Middle {
+                                if slot_id >= 0 {
+                                    runtime.clone_window_slot(window_id, slot_id)
+                                } else {
+                                    Ok(())
+                                }
+                            } else {
                                 runtime.click_window_slot(window_id, slot_id, button_id)
-                            {
+                            };
+                            if let Err(error) = result {
                                 self.status_line = error;
                             }
                         }
@@ -1309,6 +1319,24 @@ impl PlayApp {
 
         if self.window_is_open() {
             if pressed {
+                if key == VirtualKeyCode::Q {
+                    if let Some((window_id, slot_id)) =
+                        self.window_slot_at(self.mouse_position.x, self.mouse_position.y)
+                    {
+                        if slot_id >= 0 {
+                            if let Some(runtime) = &mut self.runtime {
+                                if let Err(error) = runtime.throw_window_slot(
+                                    window_id,
+                                    slot_id,
+                                    self.modifiers_ctrl,
+                                ) {
+                                    self.status_line = error;
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
                 let hotbar = match key {
                     VirtualKeyCode::Key1 => Some(0),
                     VirtualKeyCode::Key2 => Some(1),

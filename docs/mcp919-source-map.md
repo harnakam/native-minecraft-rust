@@ -12,14 +12,14 @@ The objective is to understand the local MCP919 client and reconstruct its behav
 | client/entity/EntityPlayerSP | rmc-game simulation, player; rmc-client shell | Separate local player update and walking packet emission from inherited physics |
 | entity/EntityLivingBase; entity/Entity | rmc-game simulation; rmc-world collision/environment | Represent living travel and base collision/motion as separate responsibilities |
 | client/multiplayer/WorldClient; world/World; world/chunk/Chunk | rmc-world WorldSnapshot; live_runtime EntityTracker | Separate world lifecycle, chunk storage and entity ownership |
-| inventory/Container; inventory/ContainerPlayer; entity/player/InventoryPlayer | rmc-game inventory | Separate slot rules, container click algorithms and player storage; recipe side effects remain incomplete |
+| inventory/Container; inventory/ContainerPlayer; entity/player/InventoryPlayer | rmc-game inventory/mod.rs and inventory/container.rs | Pickup, number-key swap, creative clone and throw algorithms separated from state; slot rules, player storage and recipe side effects still need reconstruction |
 | network/NetworkManager; network/PacketBuffer | rmc-net transport, driver, buffer, framing | Preserve transport/codec boundary; distinguish delivery from gameplay effects |
 | network/play/client; network/play/server | rmc-net codec/play and protocol/play_* | Split implemented packet definitions along the source package hierarchy |
 | client/renderer/EntityRenderer; RenderGlobal | rmc-render; play_cli | Separate picking, world render orchestration, terrain and entity submission |
 | client/renderer/BlockRendererDispatcher; BlockModelShapes; client/resources | rmc-render meshes; play_assets | Reconstruct blockstate/model/resource loading; current cube meshes do not cover these classes |
 | client/gui; client/audio | rmc-ui; play_cli; usability | Separate screens, HUD and sound ownership; full behavior remains incomplete |
 
-Only the shared network handler path above has been physically moved in this change. Other rows record existing code and required restructuring, not implemented modules.
+The shared network handler and inventory container algorithms have been physically separated. Other rows record existing code and required restructuring, not implemented modules.
 
 ## Call chains inspected locally
 

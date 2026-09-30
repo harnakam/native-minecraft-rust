@@ -654,6 +654,37 @@ impl LiveRuntime {
         self.flush_if_pending()
     }
 
+    pub fn clone_window_slot(&mut self, window_id: u8, slot_id: i16) -> Result<(), String> {
+        if self.usability.inventory().pending_transactions().len() >= 128 {
+            return Err("Waiting for server inventory acknowledgements".to_owned());
+        }
+        let packet = self
+            .usability
+            .inventory_mut()
+            .queue_clone_click(window_id, slot_id, self.game_mode == 1)
+            .map_err(str::to_owned)?;
+        self.queue_play_packet(&packet)?;
+        self.flush_if_pending()
+    }
+
+    pub fn throw_window_slot(
+        &mut self,
+        window_id: u8,
+        slot_id: i16,
+        whole_stack: bool,
+    ) -> Result<(), String> {
+        if self.usability.inventory().pending_transactions().len() >= 128 {
+            return Err("Waiting for server inventory acknowledgements".to_owned());
+        }
+        let packet = self
+            .usability
+            .inventory_mut()
+            .queue_throw_click(window_id, slot_id, whole_stack)
+            .map_err(str::to_owned)?;
+        self.queue_play_packet(&packet)?;
+        self.flush_if_pending()
+    }
+
     pub fn swap_window_slot_with_hotbar(
         &mut self,
         window_id: u8,
@@ -1448,6 +1479,95 @@ mod tests {
                 "official server did not confirm the swapped hotbar slot"
             );
         }
+        runtime
+            .send_chat_message(
+                "/replaceitem entity VanillaProbe slot.inventory.0 minecraft:stone 12",
+            )
+            .unwrap();
+        for _ in 0..100 {
+            advance(&mut runtime, &RuntimeActionInput::default());
+            if runtime
+                .usability
+                .inventory()
+                .inventory_window()
+                .slot(9)
+                .and_then(|s| s.as_ref())
+                .is_some_and(|s| s.item_id == 1 && s.count == 12)
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            runtime
+                .usability
+                .inventory()
+                .inventory_window()
+                .slot(9)
+                .and_then(|s| s.as_ref())
+                .map(|s| s.count),
+            Some(12)
+        );
+        for (whole, count) in [(false, 11), (true, 0)] {
+            runtime.throw_window_slot(0, 9, whole).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime, &RuntimeActionInput::default());
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            assert!(runtime
+                .usability
+                .inventory()
+                .pending_transactions()
+                .is_empty());
+            let previous_chat_count = runtime.usability.snapshot().chat_lines.len();
+            let command = if count == 0 {
+                r#"/testfor VanillaProbe {Inventory:[{Slot:9b,id:"minecraft:stone"}]}"#.to_owned()
+            } else {
+                format!(
+                    r#"/testfor VanillaProbe {{Inventory:[{{Slot:9b,id:"minecraft:stone",Count:{count}b}}]}}"#
+                )
+            };
+            runtime.send_chat_message(&command).unwrap();
+            let expected = if count == 0 {
+                "commands.testfor.failure"
+            } else {
+                "commands.testfor.success"
+            };
+            let mut confirmed = false;
+            for _ in 0..100 {
+                advance(&mut runtime, &RuntimeActionInput::default());
+                confirmed = runtime
+                    .usability
+                    .snapshot()
+                    .chat_lines
+                    .iter()
+                    .skip(previous_chat_count)
+                    .any(|line| line.message_json.contains(expected));
+                if confirmed {
+                    break;
+                }
+            }
+            assert!(
+                confirmed,
+                "official server inventory did not confirm throw mode"
+            );
+            assert_eq!(
+                runtime
+                    .usability
+                    .inventory()
+                    .inventory_window()
+                    .slot(9)
+                    .and_then(|s| s.as_ref())
+                    .map_or(0, |s| s.count),
+                count
+            );
+        }
         for tick in 0..40 {
             advance(
                 &mut runtime,
@@ -1513,7 +1633,7 @@ mod tests {
             "official server did not initialize the respawn position"
         );
         assert!(runtime.summary.disconnect_reason_json.is_none());
-        println!("official 1.8.9: number-key swaps, server-confirmed stone mining, death and respawn passed");
+        println!("official 1.8.9: number-key swaps, single/stack throws, server-confirmed stone mining, death and respawn passed");
         if std::env::var("RMC_STOP_TEST_SERVER").as_deref() == Ok("1") {
             runtime.send_chat_message("/stop").unwrap();
             for _ in 0..100 {
