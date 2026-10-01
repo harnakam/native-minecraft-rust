@@ -152,7 +152,7 @@ impl WorldSnapshot {
                 }
             }
         }
-        let length = result.water_flow.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let length = f64::from(result.water_flow.iter().map(|v| v * v).sum::<f64>().sqrt() as f32);
         if length >= 1.0e-4 {
             for v in &mut result.water_flow {
                 *v = *v / length * 0.014;
@@ -184,7 +184,14 @@ impl WorldSnapshot {
         for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
             let neighbor = BlockPos::new(pos.x + dx, pos.y, pos.z + dz);
             let decay = level(neighbor);
-            let blocked = !self.block_collision_boxes(neighbor).is_empty();
+            let material = |position| {
+                let id = usize::from(self.block_state_or_air(position) >> 4);
+                crate::material_properties::MATERIAL_PROPERTIES
+                    .get(id)
+                    .copied()
+                    .unwrap_or([false; 3])
+            };
+            let blocked = material(neighbor)[0];
             let delta = if decay >= 0 {
                 decay - current
             } else if !blocked {
@@ -199,13 +206,16 @@ impl WorldSnapshot {
             };
             flow[0] += (dx * delta) as f64;
             flow[2] += (dz * delta) as f64;
-            falling_wall |= blocked
-                || !self
-                    .block_collision_boxes(BlockPos::new(neighbor.x, neighbor.y + 1, neighbor.z))
-                    .is_empty();
+            let wall = |position| {
+                let state = self.block_state_or_air(position);
+                let m = material(position);
+                !matches!(state >> 4, 8 | 9) && !m[2] && m[1]
+            };
+            falling_wall |=
+                wall(neighbor) || wall(BlockPos::new(neighbor.x, neighbor.y + 1, neighbor.z));
         }
         let normalize = |mut v: [f64; 3]| {
-            let length = v.iter().map(|n| n * n).sum::<f64>().sqrt();
+            let length = f64::from(v.iter().map(|n| n * n).sum::<f64>().sqrt() as f32);
             if length >= 1.0e-4 {
                 for n in &mut v {
                     *n /= length;
@@ -249,6 +259,85 @@ mod fluid_bounds_tests {
             .unwrap();
         world
     }
+    #[test]
+    fn falling_flow_distinguishes_web_ice_plant_and_stone_materials() {
+        for (id, expected) in [
+            (30, [0.1643989822269125, -0.9863938933614749, 0.0]),
+            (79, [0.0, 0.0, 0.0]),
+            (37, [1.0, 0.0, 0.0]),
+            (1, [0.0, -1.0, 0.0]),
+        ] {
+            let mut world = WorldSnapshot::new(crate::WorldConfig::overworld());
+            for (x, y, z, state) in [
+                (0, 1, 0, 8 << 4 | 8),
+                (1, 0, 0, 8 << 4 | 7),
+                (1, 1, 0, id << 4),
+            ] {
+                world
+                    .apply_block_change(&BlockChangePacket {
+                        position: BlockPosition::new(x, y, z),
+                        block_state_id: state,
+                    })
+                    .unwrap();
+            }
+            assert_eq!(
+                world.liquid_flow(BlockPos::new(0, 1, 0), 8),
+                expected,
+                "block {id}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires local MCP919 flow/material Java oracle"]
+    fn local_java_flow_materials_match() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp/flow-materials-java-oracle.log");
+        let oracle = std::fs::read_to_string(path).unwrap();
+        let mut cases = 0;
+        let mut materials = 0;
+        for line in oracle.lines() {
+            let f: Vec<_> = line.split('|').collect();
+            if f[0] == "MAT" {
+                let id: usize = f[1].parse().unwrap();
+                assert_eq!(
+                    crate::material_properties::MATERIAL_PROPERTIES[id],
+                    [f[2] == "true", f[3] == "true", f[4] == "true"]
+                );
+                materials += 1;
+            } else if f[0] == "FLOW" {
+                let level: u16 = f[1].parse().unwrap();
+                let id: u16 = f[2].parse().unwrap();
+                let mut world = WorldSnapshot::new(crate::WorldConfig::overworld());
+                for (x, y, z, state) in [
+                    (0, 1, 0, 8 << 4 | level),
+                    (1, 0, 0, 8 << 4 | 7),
+                    (1, 1, 0, id << 4),
+                    (1, 2, 0, if f[3] == "1" { id << 4 } else { 0 }),
+                ] {
+                    world
+                        .apply_block_change(&BlockChangePacket {
+                            position: BlockPosition::new(x, y, z),
+                            block_state_id: i32::from(state),
+                        })
+                        .unwrap();
+                }
+                let actual = world.liquid_flow(BlockPos::new(0, 1, 0), 8);
+                for axis in 0..3 {
+                    let expected: f64 = f[4 + axis].parse().unwrap();
+                    assert!(
+                        (actual[axis] - expected).abs() < 1e-12,
+                        "{line}: {actual:?}"
+                    );
+                }
+                cases += 1;
+            }
+        }
+        assert_eq!(materials, 198);
+        assert_eq!(cases, 1584);
+        println!("{materials} material facts and {cases} Java flow cases match");
+    }
+
     #[test]
     fn block_contacts_contract_both_minimum_and_maximum_faces() {
         for id in [30, 88] {

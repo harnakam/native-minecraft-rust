@@ -983,3 +983,5 @@ mod tests {
 
 pub mod environment;
 mod selection_properties;
+
+mod material_properties;

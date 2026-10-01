@@ -1488,3 +1488,12 @@ Inspected Entity.doBlockCollisions: both faces contract by 0.001 and the
 complete contact area must be loaded. Environment queries now honor these
 rules. Regression tests cover minimum-face near-touch, exact-touch and
 actual overlap for web and soul sand. Full block-effect parity remains open.
+
+## Liquid flow material predicates and precision (2026-10-01)
+
+Java BlockLiquid.modifyAcceleration verifies 1,584 configurations across
+198 neighbor block IDs, source/falling levels and upper-wall placement.
+Material.blocksMovement/isSolid/ice facts replace collision-box guesses.
+Vec3 normalize and length checks narrow sqrt to float before converting
+back to double. Normal regressions distinguish web, ice, plant and stone.
+All metadata and arbitrary neighboring configurations remain unverified.

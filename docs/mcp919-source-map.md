@@ -91,3 +91,9 @@ exclusive loop ends, rather than strict cube intersection. environment.rs
 now scans each transformed fluid box separately and checks water loaded
 areas (inclusive chunk end, world height gate). Vec3.normalize zeros lengths
 below 1e-4; water acceleration retains that cutoff.
+
+BlockLiquid.getFlowVector distinguishes Material.blocksMovement (neighbor
+flow obstruction) from Material.isSolid (falling wall), with ice excluded.
+material_properties.rs stores observed predicate facts for block IDs 0..197.
+Vec3.normalize/lengthVector narrow MathHelper.sqrt_double to float; both
+per-block and combined flow normalization now preserve that step.
