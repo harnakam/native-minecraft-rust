@@ -219,6 +219,113 @@ pub(super) fn grid_width(window: &ContainerSnapshot) -> Option<usize> {
         None
     }
 }
+fn fireworks_result(cells: &[Slot]) -> Slot {
+    const COLORS: [i32; 16] = [
+        1973019, 11743532, 3887386, 5320730, 2437522, 8073150, 2651799, 11250603, 4408131,
+        14188952, 4312372, 14602026, 6719955, 12801229, 15435844, 15790320,
+    ];
+    let (mut powder, mut paper, mut stars, mut dyes, mut modifiers, mut shapes) =
+        (0, 0, 0, 0, 0, 0);
+    for stack in cells.iter().flatten() {
+        match stack.item_id {
+            289 => powder += 1,
+            339 => paper += 1,
+            402 => stars += 1,
+            351 => dyes += 1,
+            348 | 264 => modifiers += 1,
+            385 | 288 | 371 | 397 => shapes += 1,
+            _ => return None,
+        }
+    }
+    if powder > 3 || paper > 1 {
+        return None;
+    }
+    let key = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
+    if powder >= 1 && paper == 1 && dyes + modifiers + shapes == 0 {
+        let mut output = ItemStack::simple(401, 1, 0);
+        if stars > 0 {
+            let explosions: Vec<Tag> = cells
+                .iter()
+                .flatten()
+                .filter(|s| s.item_id == 402)
+                .filter_map(|s| s.nbt.as_deref().and_then(|b| nbt::parse(b).ok()))
+                .filter_map(|t| match t.get("Explosion") {
+                    Some(e @ Tag::Compound(_)) => Some(e.clone()),
+                    _ => None,
+                })
+                .collect();
+            let kind = if explosions.is_empty() { 0 } else { 10 };
+            let fireworks = Tag::Compound(
+                [
+                    (key("Flight"), Tag::Byte(powder as i8)),
+                    (
+                        key("Explosions"),
+                        Tag::List {
+                            kind,
+                            values: explosions,
+                        },
+                    ),
+                ]
+                .into(),
+            );
+            output.nbt =
+                Some(nbt::encode(&Tag::Compound([(key("Fireworks"), fireworks)].into())).ok()?);
+        }
+        return Some(output);
+    }
+    if powder == 1 && paper == 0 && stars == 0 && dyes > 0 && shapes <= 1 {
+        let mut explosion = std::collections::BTreeMap::new();
+        let mut colors = Vec::new();
+        let mut shape = 0;
+        for stack in cells.iter().flatten() {
+            match stack.item_id {
+                351 => colors.push(COLORS[(stack.damage & 15) as usize]),
+                348 => {
+                    explosion.insert(key("Flicker"), Tag::Byte(1));
+                }
+                264 => {
+                    explosion.insert(key("Trail"), Tag::Byte(1));
+                }
+                385 => shape = 1,
+                288 => shape = 4,
+                371 => shape = 2,
+                397 => shape = 3,
+                _ => {}
+            }
+        }
+        explosion.insert(key("Type"), Tag::Byte(shape));
+        explosion.insert(key("Colors"), Tag::Ints(colors));
+        let mut output = ItemStack::simple(402, 1, 0);
+        output.nbt = Some(
+            nbt::encode(&Tag::Compound(
+                [(key("Explosion"), Tag::Compound(explosion))].into(),
+            ))
+            .ok()?,
+        );
+        return Some(output);
+    }
+    if powder == 0 && paper == 0 && stars == 1 && dyes > 0 && modifiers + shapes == 0 {
+        let mut output = cells.iter().flatten().find(|s| s.item_id == 402)?.clone();
+        let Tag::Compound(mut tags) = nbt::parse(output.nbt.as_deref()?).ok()? else {
+            return None;
+        };
+        let colors = cells
+            .iter()
+            .flatten()
+            .filter(|s| s.item_id == 351)
+            .map(|s| COLORS[(s.damage & 15) as usize])
+            .collect();
+        // getCompoundTag returns a detached empty compound for an absent/wrong type.
+        // Java accepts this case but does not attach the newly written fade colors.
+        if let Some(Tag::Compound(explosion)) = tags.get_mut(&key("Explosion")) {
+            explosion.insert(key("FadeColors"), Tag::Ints(colors));
+        }
+        output.count = 1;
+        output.nbt = Some(nbt::encode(&Tag::Compound(tags)).ok()?);
+        return Some(output);
+    }
+    None
+}
 fn armor_dye_result(cells: &[Slot]) -> Slot {
     // Sheep dye RGB in dye-damage order, with Java float precision.
     const RGB: [[f32; 3]; 16] = [
@@ -403,6 +510,9 @@ pub(super) fn result(window: &ContainerSnapshot) -> Slot {
     let width = grid_width(window)?;
     if window.slots.len() < 1 + width * width {
         return None;
+    }
+    if let Some(fireworks) = fireworks_result(&window.slots[1..=width * width]) {
+        return Some(fireworks);
     }
     if let Some(dyed) = armor_dye_result(&window.slots[1..=width * width]) {
         return Some(dyed);
@@ -683,6 +793,55 @@ mod tests {
             Some(ItemStack::simple(395, 1, 0))
         ])
         .is_none());
+    }
+    #[test]
+    fn fireworks_star_fade_and_rocket_use_exact_nbt_and_consume_once() {
+        let mut state = InventoryState::new();
+        state.inventory_window.slots[1] = Some(ItemStack::simple(289, 2, 0));
+        state.inventory_window.slots[2] = Some(ItemStack::simple(351, 1, 1));
+        state.inventory_window.slots[3] = Some(ItemStack::simple(264, 1, 0));
+        state.inventory_window.slots[4] = Some(ItemStack::simple(348, 1, 0));
+        let star = result(&state.inventory_window).unwrap();
+        let tag = nbt::parse(star.nbt.as_ref().unwrap()).unwrap();
+        let explosion = tag.get("Explosion").unwrap();
+        assert_eq!(explosion.get("Trail"), Some(&Tag::Byte(1)));
+        assert_eq!(explosion.get("Flicker"), Some(&Tag::Byte(1)));
+        assert_eq!(explosion.get("Colors"), Some(&Tag::Ints(vec![11743532])));
+        consume(&mut state.inventory_window);
+        assert_eq!(state.inventory_window.slots[1].as_ref().unwrap().count, 1);
+        assert!(state.inventory_window.slots[2..5]
+            .iter()
+            .all(Option::is_none));
+        state.inventory_window.slots[1] = Some(star);
+        state.inventory_window.slots[2] = Some(ItemStack::simple(351, 1, 15));
+        let faded = result(&state.inventory_window).unwrap();
+        let faded_tag = nbt::parse(faded.nbt.as_ref().unwrap()).unwrap();
+        assert_eq!(
+            faded_tag.get("Explosion").unwrap().get("FadeColors"),
+            Some(&Tag::Ints(vec![15790320]))
+        );
+        state.inventory_window.slots[1] = Some(faded);
+        state.inventory_window.slots[2] = Some(ItemStack::simple(289, 1, 0));
+        state.inventory_window.slots[3] = Some(ItemStack::simple(339, 1, 0));
+        let rocket = result(&state.inventory_window).unwrap();
+        assert_eq!((rocket.item_id, rocket.count), (401, 1));
+        let tag = nbt::parse(rocket.nbt.as_ref().unwrap()).unwrap();
+        let fireworks = tag.get("Fireworks").unwrap();
+        assert_eq!(fireworks.get("Flight"), Some(&Tag::Byte(1)));
+        assert_eq!(
+            fireworks.get("Explosions").unwrap().list().unwrap(),
+            &[faded_tag.get("Explosion").unwrap().clone()]
+        );
+        state.inventory_window.slots[1] = None;
+        assert_eq!(
+            result(&state.inventory_window),
+            Some(ItemStack::simple(401, 1, 0))
+        );
+    }
+    #[test]
+    #[ignore = "requires locally executed MCP919 FireworksProbe fixtures"]
+    fn local_java_fireworks_fixtures_match() {
+        compare_java_nbt_recipe_fixtures("fireworks-java-oracle.log", 9816);
     }
     fn compare_java_nbt_recipe_fixtures(file: &str, expected_count: usize) {
         fn stack(text: &str) -> Slot {

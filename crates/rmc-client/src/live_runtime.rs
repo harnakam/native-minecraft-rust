@@ -1966,6 +1966,33 @@ mod tests {
                 1261,
                 false,
             ),
+            (
+                "firework star",
+                "gunpowder 1 0",
+                "dye 1 1",
+                402,
+                1,
+                0,
+                false,
+            ),
+            (
+                "firework rocket",
+                "paper 1 0",
+                "gunpowder 1 0",
+                401,
+                1,
+                0,
+                false,
+            ),
+            (
+                "firework fade",
+                "firework_charge 1 0 {Explosion:{Type:0b}}",
+                "dye 1 15",
+                402,
+                1,
+                0,
+                false,
+            ),
             ("map", "filled_map 1 0", "map 1 0", 358, 2, 0, false),
             (
                 "armor dye",
@@ -1997,13 +2024,18 @@ mod tests {
                     "/replaceitem entity VanillaProbe slot.inventory.1 {second}"
                 ))
                 .unwrap();
+            let seed_id = match name {
+                "firework star" => 289,
+                "firework rocket" => 339,
+                _ => id,
+            };
             for _ in 0..100 {
                 advance(&mut runtime);
                 let window = runtime.usability.inventory().inventory_window();
                 if window
                     .slot(9)
                     .and_then(|s| s.as_ref())
-                    .is_some_and(|s| s.item_id == id)
+                    .is_some_and(|s| s.item_id == seed_id)
                     && window.slot(10).and_then(|s| s.as_ref()).is_some()
                 {
                     break;
@@ -2092,9 +2124,32 @@ mod tests {
                     Some(&rmc_net::nbt::Tag::Int(0x993333))
                 );
             }
+            if name == "firework star" || name == "firework fade" {
+                let tag = rmc_net::nbt::parse(actual.nbt.as_ref().unwrap()).unwrap();
+                let explosion = tag.get("Explosion").unwrap();
+                let field = if name == "firework star" {
+                    "Colors"
+                } else {
+                    "FadeColors"
+                };
+                let color = if name == "firework star" {
+                    11743532
+                } else {
+                    15790320
+                };
+                assert_eq!(
+                    explosion.get(field),
+                    Some(&rmc_net::nbt::Tag::Ints(vec![color]))
+                );
+            }
+            if name == "firework rocket" {
+                assert!(actual.nbt.is_none());
+            }
             let chat_count = runtime.usability.snapshot().chat_lines.len();
             let extra = if name == "armor dye" {
                 ",tag:{display:{color:10040115}}".to_string()
+            } else if name == "firework star" || name == "firework fade" {
+                ",tag:{Explosion:{Type:0b}}".to_string()
             } else if keep_original {
                 ",tag:{generation:1}".to_string()
             } else {

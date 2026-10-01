@@ -1261,3 +1261,29 @@ matrix ingredients and an acknowledged result pickup/storage placement.
 Earlier inventory, repair and cloning scenarios also pass in this run.
 Full workspace tests and format/diff checks pass. Rendering dyed armor and
 manual GUI parity are not yet verified; this is not full M1 completion.
+
+### Fireworks crafting
+
+Local RecipeFireworks and ItemDye were inspected. Runtime crafting now handles
+rockets, stars and fade-color updates. Occupied slots determine ingredient
+counts; stack counts do not multiply effects. Rockets require one paper and
+one to three powder slots, and only receive Flight/Explosions NBT when a star
+slot is present. Stars record ordered dye colors, optional Trail/Flicker and
+one shape modifier. Fade recipes copy one star and preserve other tags.
+An absent or mistyped Explosion on a tagged star follows Java's detached
+getCompoundTag behavior: matching succeeds but the output does not gain a
+new Explosion tag. Untagged stars cannot be faded. An executed MCP919 probe
+compares 9,816 cases, covering dye masking, shape modifiers, powder/paper/star
+counts, explosion ordering, invalid ingredients and absent/mistyped tags.
+All output item/count/damage and semantic NBT comparisons pass. A normal
+unit test exercises star creation, fade update, rocket creation and matrix
+consumption. Fireworks entity rendering, effects and usage remain incomplete.
+
+The isolated official 1.8.9 run passes star creation, plain rocket creation
+and fade updates via real matrix placement and result pickup. The client
+receives acknowledged transactions and resulting Colors/FadeColors arrays,
+and server-side Inventory NBT checks confirm output placement and Explosion
+Type. Both input slots are exhausted. Earlier inventory/repair/dye/cloning
+scenarios also pass. Full workspace tests, all four local Java recipe probes
+and format/diff checks pass. The owned server stopped and saved; manual GUI
+parity and fireworks use/rendering remain unverified.
