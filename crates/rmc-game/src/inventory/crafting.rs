@@ -352,6 +352,36 @@ fn repair_result(cells: &[Slot]) -> Slot {
     Some(ItemStack::simple(first.item_id, 1, damage as i16))
 }
 
+fn extending_map_result(window: &ContainerSnapshot) -> Slot {
+    if grid_width(window) != Some(3) || window.slots.len() < 10 {
+        return None;
+    }
+    for slot in 1..10 {
+        let item = window.slots[slot].as_ref()?;
+        if slot == 5 {
+            if item.item_id != 358 {
+                return None;
+            }
+        } else if item.item_id != 339 || item.damage != 0 {
+            return None;
+        }
+    }
+    let mut output = window.slots[5].clone()?;
+    if *window.map_scales.get(&i32::from(output.damage))? >= 4 {
+        return None;
+    }
+    let mut tags = match output.nbt.as_deref() {
+        None => Default::default(),
+        Some(bytes) => match nbt::parse(bytes).ok()? {
+            Tag::Compound(v) => v,
+            _ => return None,
+        },
+    };
+    tags.insert("map_is_scaling".encode_utf16().collect(), Tag::Byte(1));
+    output.count = 1;
+    output.nbt = Some(nbt::encode(&Tag::Compound(tags)).ok()?);
+    Some(output)
+}
 pub(super) fn result(window: &ContainerSnapshot) -> Slot {
     let width = grid_width(window)?;
     if window.slots.len() < 1 + width * width {
@@ -360,13 +390,14 @@ pub(super) fn result(window: &ContainerSnapshot) -> Slot {
     let cells = &window.slots[1..=width * width];
     let cloning = clone_result(cells);
     // Retain the reference registry positions across static and dynamic recipes.
-    // Position 72 is map extension, pending world map-data integration.
+    // Map extension uses received world map scales at position 72.
     let dynamic = [
         (0, armor_dye_result(cells)),
         (1, fireworks_result(cells)),
         (2, banner::add_pattern(cells)),
         (70, cloning.clone().filter(|s| s.item_id == 387)),
         (71, cloning.filter(|s| s.item_id == 358)),
+        (72, extending_map_result(window)),
         (216, repair_result(cells)),
         (280, banner::duplicate(cells)),
     ]
@@ -559,11 +590,68 @@ mod tests {
         ConfirmTransactionClientboundPacket, PlayServerboundPacket, SetSlotPacket,
     };
     #[test]
+    fn map_extension_requires_received_scale_and_preserves_nbt() {
+        let mut state = InventoryState::new();
+        let mut window = ContainerSnapshot {
+            window_id: 1,
+            map_scales: Default::default(),
+            slots: vec![None; 46],
+            properties: Default::default(),
+            metadata: Some(super::super::ContainerMetadata {
+                inventory_type: "minecraft:crafting_table".into(),
+                window_title_json: "{}".into(),
+                slot_count: 10,
+                entity_id: None,
+            }),
+        };
+        for slot in 1..10 {
+            window.slots[slot] = Some(ItemStack::simple(339, 2, 0));
+        }
+        let mut map = ItemStack::simple(358, 2, 7);
+        map.nbt = Some(
+            nbt::encode(&Tag::Compound(
+                [("custom".encode_utf16().collect(), Tag::Int(42))].into(),
+            ))
+            .unwrap(),
+        );
+        window.slots[5] = Some(map);
+        assert!(result(&window).is_none());
+        state.open_window = Some(window);
+        state.apply_play_packet(&rmc_net::codec::play::PlayClientboundPacket::Maps(
+            rmc_net::codec::play::MapsPacket {
+                map_id: 7,
+                scale: 3,
+                icons: vec![],
+                patch: None,
+            },
+        ));
+        let window = state.open_window.as_mut().unwrap();
+        let output = window.slots[0].as_ref().unwrap();
+        assert_eq!((output.item_id, output.count, output.damage), (358, 1, 7));
+        let tags = nbt::parse(output.nbt.as_ref().unwrap()).unwrap();
+        assert_eq!(tags.get("custom"), Some(&Tag::Int(42)));
+        assert_eq!(tags.get("map_is_scaling"), Some(&Tag::Byte(1)));
+        consume(window);
+        for slot in 1..10 {
+            assert_eq!(window.slots[slot].as_ref().unwrap().count, 1);
+        }
+        state.apply_play_packet(&rmc_net::codec::play::PlayClientboundPacket::Maps(
+            rmc_net::codec::play::MapsPacket {
+                map_id: 7,
+                scale: 4,
+                icons: vec![],
+                patch: None,
+            },
+        ));
+        assert!(state.open_window.as_ref().unwrap().slots[0].is_none());
+    }
+    #[test]
     fn workbench_number_key_result_updates_hotbar_alias_and_rolls_back() {
         let mut state = InventoryState::new();
         let mut window = ContainerSnapshot {
             window_id: 1,
             slots: vec![None; 46],
+            map_scales: Default::default(),
             properties: Default::default(),
             metadata: Some(super::super::ContainerMetadata {
                 inventory_type: "minecraft:crafting_table".into(),
@@ -673,6 +761,7 @@ mod tests {
         let mut window = ContainerSnapshot {
             window_id: 1,
             slots: vec![None; 46],
+            map_scales: Default::default(),
             properties: Default::default(),
             metadata: Some(super::super::ContainerMetadata {
                 inventory_type: "minecraft:crafting_table".into(),
@@ -981,6 +1070,9 @@ mod tests {
                 slot_count: 10,
                 entity_id: None,
             });
+            if parts.len() > 3 {
+                window.map_scales.insert(7, parts[3].parse().unwrap());
+            }
             for (i, cell) in parts[1].split(';').enumerate() {
                 window.slots[i + 1] = stack(cell);
             }
@@ -1001,6 +1093,11 @@ mod tests {
         }
         assert_eq!(count, expected_count);
         println!("{count} MCP919 NBT recipe cases match: {file}");
+    }
+    #[test]
+    #[ignore = "requires locally executed MCP919 MapExtendingProbe fixtures"]
+    fn local_java_map_extending_fixtures_match() {
+        compare_java_nbt_recipe_fixtures("map-extending-java-oracle.log", 90);
     }
     #[test]
     #[ignore = "requires locally executed MCP919 ArmorDyeProbe fixtures"]
@@ -1229,6 +1326,7 @@ mod tests {
         let mut window = ContainerSnapshot {
             window_id: 1,
             slots: vec![None; 46],
+            map_scales: Default::default(),
             properties: Default::default(),
             metadata: Some(super::super::ContainerMetadata {
                 inventory_type: "minecraft:crafting_table".into(),

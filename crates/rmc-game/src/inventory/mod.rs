@@ -25,6 +25,8 @@ pub struct ContainerMetadata {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContainerSnapshot {
+    /// Authoritative map scales needed by world-dependent crafting.
+    pub map_scales: BTreeMap<i32, i8>,
     pub properties: BTreeMap<i16, i16>,
     pub window_id: u8,
     pub slots: Vec<Slot>,
@@ -121,6 +123,7 @@ impl InventoryState {
             drag: None,
             selected_hotbar_slot: 0,
             inventory_window: ContainerSnapshot {
+                map_scales: Default::default(),
                 properties: BTreeMap::new(),
                 window_id: 0,
                 slots: vec![None; 45],
@@ -235,6 +238,7 @@ impl InventoryState {
         self.drag = None;
         self.player_inventory_open = false;
         self.open_window = Some(ContainerSnapshot {
+            map_scales: self.inventory_window.map_scales.clone(),
             properties: BTreeMap::new(),
             window_id: packet.window_id,
             slots: vec![None; packet.slot_count as usize],
@@ -322,6 +326,7 @@ impl InventoryState {
                 .map(|w| w.properties.clone())
                 .unwrap_or_default();
             self.open_window = Some(ContainerSnapshot {
+                map_scales: self.inventory_window.map_scales.clone(),
                 properties,
                 window_id: packet.window_id,
                 slots: packet.items.clone(),
@@ -360,6 +365,11 @@ impl InventoryState {
                 .push((packet.window_id, packet.action_number));
         } else {
             if let Some((mut window, cursor)) = prediction {
+                let map_context_changed = window.map_scales != self.inventory_window.map_scales;
+                window.map_scales = self.inventory_window.map_scales.clone();
+                if map_context_changed {
+                    crafting::refresh(&mut window);
+                }
                 if packet.window_id == 0 {
                     self.inventory_window = window;
                     self.sync_player_inventory_to_open();
@@ -398,6 +408,20 @@ impl InventoryState {
 
     pub fn apply_play_packet(&mut self, packet: &PlayClientboundPacket) -> InventoryUpdate {
         match packet {
+            PlayClientboundPacket::Maps(packet) => {
+                self.inventory_window
+                    .map_scales
+                    .insert(packet.map_id, packet.scale);
+                crafting::refresh(&mut self.inventory_window);
+                let mut update = InventoryUpdate::default();
+                update.touch_window(0);
+                if let Some(window) = self.open_window.as_mut() {
+                    window.map_scales.insert(packet.map_id, packet.scale);
+                    crafting::refresh(window);
+                    update.touch_window(window.window_id);
+                }
+                update
+            }
             PlayClientboundPacket::HeldItemChange(packet) => {
                 if (0..=8).contains(&packet.slot) {
                     self.selected_hotbar_slot = packet.slot as u8;
@@ -518,6 +542,7 @@ impl InventoryState {
             .unwrap_or(true)
         {
             self.open_window = Some(ContainerSnapshot {
+                map_scales: self.inventory_window.map_scales.clone(),
                 properties: BTreeMap::new(),
                 window_id,
                 slots: Vec::new(),

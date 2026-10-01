@@ -1390,6 +1390,193 @@ mod tests {
 
     #[test]
     #[ignore = "requires user-authorized official offline server with VanillaProbe operator"]
+    fn official_server_map_update_and_extension() {
+        let mut config = LiveRuntimeConfig::offline("VanillaProbe");
+        config.server_host = "127.0.0.1".into();
+        config.server_port = std::env::var("RMC_VANILLA_PORT").unwrap().parse().unwrap();
+        let mut runtime = LiveRuntime::connect(config).unwrap();
+        fn advance(r: &mut LiveRuntime) {
+            r.step(
+                Duration::from_millis(50),
+                &InputFrame::default(),
+                &RuntimeActionInput::default(),
+            )
+            .unwrap();
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        fn settle(r: &mut LiveRuntime) {
+            for _ in 0..100 {
+                advance(r);
+                if r.usability.inventory().pending_transactions().is_empty() {
+                    break;
+                }
+            }
+        }
+        for _ in 0..300 {
+            advance(&mut runtime);
+            if runtime.output().is_some() {
+                break;
+            }
+        }
+        // Wait for the authoritative health packet, including persisted death state.
+        for _ in 0..25 {
+            advance(&mut runtime);
+        }
+        if runtime.combat_snapshot().health <= 0.0 {
+            for _ in 0..25 {
+                advance(&mut runtime);
+            }
+            runtime.request_respawn().unwrap();
+            for _ in 0..200 {
+                advance(&mut runtime);
+                if runtime.combat_snapshot().health > 0.0 {
+                    break;
+                }
+            }
+        }
+        runtime
+            .send_chat_message("/tp VanillaProbe 0.5 64 0.5 0 0")
+            .unwrap();
+        for _ in 0..100 {
+            advance(&mut runtime);
+            if runtime
+                .world
+                .chunk(rmc_world::ChunkPos::new(0, 0))
+                .is_some()
+            {
+                break;
+            }
+        }
+        for command in [
+            "/gamemode 0 VanillaProbe",
+            "/clear VanillaProbe",
+            "/setblock 0 63 0 stone",
+            "/tp VanillaProbe 0.5 64 0.5 0 0",
+            "/setblock 0 65 2 air",
+            "/setblock 0 65 2 crafting_table",
+            "/replaceitem entity @p slot.hotbar.0 filled_map 1 0",
+            "/replaceitem entity @p slot.inventory.0 paper 8",
+            "/tp VanillaProbe 0.5 64 0.5 0 0",
+        ] {
+            runtime.send_chat_message(command).unwrap();
+        }
+        let mut scale = None;
+        for _ in 0..200 {
+            advance(&mut runtime);
+            scale = runtime.world.map(0).map(|m| m.scale);
+            if scale.is_some()
+                && runtime
+                    .world
+                    .block_state_or_air(rmc_world::BlockPos::new(0, 65, 2))
+                    >> 4
+                    == 58
+            {
+                break;
+            }
+        }
+        let scale = scale.expect("S34 map packet did not reach world state");
+        assert!(scale < 4);
+        assert_eq!(runtime.world.map(0).unwrap().colors.len(), 16384);
+        assert_eq!(
+            runtime
+                .usability
+                .inventory()
+                .inventory_window()
+                .map_scales
+                .get(&0),
+            Some(&scale)
+        );
+        for _ in 0..20 {
+            advance(&mut runtime);
+        }
+        runtime
+            .queue_play_packet(&block_use_packet(
+                rmc_world::collision::BlockHit {
+                    position: rmc_world::BlockPos::new(0, 65, 2),
+                    distance: 2.0,
+                    face: 2,
+                    point: [0.5, 65.5, 2.0],
+                },
+                None,
+            ))
+            .unwrap();
+        runtime.flush_if_pending().unwrap();
+        let mut id = None;
+        for _ in 0..100 {
+            advance(&mut runtime);
+            id = runtime
+                .usability
+                .inventory()
+                .open_window()
+                .filter(|w| {
+                    w.metadata
+                        .as_ref()
+                        .is_some_and(|m| m.inventory_type == "minecraft:crafting_table")
+                })
+                .map(|w| w.window_id);
+            if id.is_some() {
+                break;
+            }
+        }
+        let id = id.unwrap_or_else(|| {
+            panic!(
+                "workbench did not open: pos={:?} window={:?}",
+                runtime.output().map(|o| o.simulation.player.position),
+                runtime.usability.inventory().open_window()
+            )
+        });
+        for slot in [37, 5, 10] {
+            runtime.click_window_slot(id, slot, 0).unwrap();
+            settle(&mut runtime);
+        }
+        runtime
+            .drag_window_slots(id, &[1, 2, 3, 4, 6, 7, 8, 9], 0)
+            .unwrap();
+        settle(&mut runtime);
+        let result = runtime.usability.inventory().open_window().unwrap().slots[0]
+            .as_ref()
+            .unwrap();
+        assert_eq!((result.item_id, result.count, result.damage), (358, 1, 0));
+        assert_eq!(
+            rmc_net::nbt::parse(result.nbt.as_ref().unwrap())
+                .unwrap()
+                .get("map_is_scaling"),
+            Some(&rmc_net::nbt::Tag::Byte(1))
+        );
+        runtime.click_window_slot(id, 0, 0).unwrap();
+        settle(&mut runtime);
+        runtime.click_window_slot(id, 37, 0).unwrap();
+        settle(&mut runtime);
+        let window = runtime.usability.inventory().open_window().unwrap();
+        for slot in 0..10 {
+            assert!(window.slots[slot].is_none());
+        }
+        runtime.close_open_window().unwrap();
+        let mut confirmed = None;
+        for _ in 0..200 {
+            advance(&mut runtime);
+            if let Some(stack) = runtime.usability.inventory().inventory_window().slots[36].as_ref()
+            {
+                if stack.item_id == 358 && stack.count == 1 {
+                    let id = i32::from(stack.damage);
+                    if runtime.world.map(id).is_some_and(|m| m.scale == scale + 1) {
+                        confirmed = Some(id);
+                        break;
+                    }
+                }
+            }
+        }
+        let new_id = confirmed.expect(
+            "server-assigned map and increased scale did not synchronize after closing workbench",
+        );
+        println!("official server confirms S34 map data and extension: map 0 scale {scale} -> map {new_id} scale {}",scale+1);
+        if std::env::var_os("RMC_STOP_TEST_SERVER").is_some() {
+            runtime.send_chat_message("/stop").unwrap();
+            std::thread::sleep(Duration::from_millis(300));
+        }
+    }
+    #[test]
+    #[ignore = "requires user-authorized official offline server with VanillaProbe operator"]
     fn official_server_confirms_double_click_collection() {
         let mut config = LiveRuntimeConfig::offline("VanillaProbe");
         config.server_host = "127.0.0.1".into();

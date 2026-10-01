@@ -1166,6 +1166,7 @@ pub const PACKETS: &[PacketSpec] = &[
     MULTI_BLOCK_CHANGE,
     BLOCK_CHANGE,
     MAP_CHUNK_BULK,
+    MAPS,
     SOUND_EFFECT,
     OPEN_WINDOW,
     CLOSE_WINDOW,
@@ -1314,4 +1315,31 @@ pub const PLAYER_LIST_HEADER_FOOTER: PacketSpec = PacketSpec {
         encoding: "Chat, Chat",
         notes: "Two ordered chat components.",
     }],
+};
+
+pub const MAPS: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x34,
+    name: "Maps",
+    java_class: "net.minecraft.network.play.server.S34PacketMaps",
+    java_handler: "INetHandlerPlayClient.handleMaps",
+    compression: PLAY_COMPRESSION,
+    fields: &[
+        FieldSpec {
+            name: "map id and scale",
+            encoding: "VarInt, Byte",
+            notes: "Persistent map identifier and signed scale.",
+        },
+        FieldSpec {
+            name: "icons",
+            encoding: "VarInt, packed Byte + Byte x + Byte y",
+            notes: "Kind in high nibble, rotation in low nibble; replaces all icons.",
+        },
+        FieldSpec {
+            name: "patch",
+            encoding: "UnsignedByte columns; optional rows/x/y/ByteArray",
+            notes: "Zero columns omits colors; row-major rectangle in the 128x128 map.",
+        },
+    ],
 };

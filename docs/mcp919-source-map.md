@@ -35,3 +35,12 @@ The shared network handler and inventory container algorithms have been physical
 For each next responsibility: read its source callers and state owners, document the transition and order, move the real implementation into the corresponding package, then compare behavior. Keep compatibility imports only when they protect existing consumers. Do not substitute empty class-shaped files for implementation, or copy reference code into publication paths.
 
 The first extraction removes identical inbound-effect functions from live_cli and live_runtime. Both now invoke client/network/net_handler_play_client, so fixes to these effects share one implementation. This is a starting boundary, not a complete port of NetHandlerPlayClient.
+
+## Map data and crafting context
+
+S34PacketMaps maps to rmc-net/codec/play/maps.rs and rmc-world/maps.rs.
+NetHandlerPlayClient.handleMaps updates scale, icons and a bounded pixel
+rectangle. RecipesMapExtending requires ItemMap.getMapData and scale < 4;
+InventoryState keeps received scales across open windows and rejected clicks.
+ItemMap.onCreated / SlotCrafting.onCrafting immediate local map allocation
+and statistics remain open; server-assigned IDs reconcile after closing.

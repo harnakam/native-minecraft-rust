@@ -1,7 +1,9 @@
 //! Play-state codecs for the protocol 47 packet set used by headless, world, and PvP bring-up.
 
+mod maps;
 pub mod metadata;
 mod title;
+pub use maps::{MapIcon, MapPatch, MapsPacket};
 mod world_border;
 pub use title::TitlePacket;
 pub use world_border::WorldBorderPacket;
@@ -749,6 +751,7 @@ pub enum PlayClientboundPacket {
     MultiBlockChange(MultiBlockChangePacket),
     BlockChange(BlockChangePacket),
     MapChunkBulk(MapChunkBulkPacket),
+    Maps(MapsPacket),
     SoundEffect(SoundEffectPacket),
     OpenWindow(OpenWindowPacket),
     CloseWindow(CloseWindowPacket),
@@ -783,6 +786,7 @@ impl PlayClientboundPacket {
         let mut reader = PacketReader::new(body);
 
         let packet = match packet_id {
+            0x34 => Self::Maps(MapsPacket::read(&mut reader)?),
             0x00 => Self::KeepAlive(KeepAlivePacket {
                 id: reader.read_var_i32()?,
             }),
@@ -1407,6 +1411,10 @@ impl PlayClientboundPacket {
         let mut writer = PacketWriter::new();
 
         let packet_id = match self {
+            Self::Maps(packet) => {
+                packet.write(&mut writer)?;
+                0x34
+            }
             Self::KeepAlive(packet) => {
                 writer.write_var_i32(packet.id);
                 0x00

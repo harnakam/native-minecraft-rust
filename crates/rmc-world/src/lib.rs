@@ -1,5 +1,6 @@
 //! Chunk, block, and world-state storage for the M3 world pipeline.
 
+pub mod maps;
 use rmc_net::codec::play::{
     max_chunk_data_len, BlockChangePacket, BlockPosition as NetBlockPosition, ChunkDataPacket,
     MapChunkBulkPacket, MultiBlockChangePacket, PlayClientboundPacket, CHUNK_BIOME_BYTES,
@@ -112,6 +113,7 @@ impl Default for WorldConfig {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WorldError {
+    InvalidMapPacket,
     InvalidBlockStateId(i32),
     UnexpectedChunkDataLen {
         chunk: ChunkPos,
@@ -399,6 +401,7 @@ impl WorldChangeSummary {
 
 #[derive(Clone, Debug, Default)]
 pub struct WorldSnapshot {
+    maps: HashMap<i32, maps::MapData>,
     border: border::WorldBorder,
     difficulty: Option<u8>,
     weather: weather::Weather,
@@ -416,6 +419,7 @@ impl WorldSnapshot {
 
     pub fn new(config: WorldConfig) -> Self {
         Self {
+            maps: HashMap::new(),
             border: border::WorldBorder::default(),
             difficulty: None,
             weather: weather::Weather::default(),
@@ -425,6 +429,9 @@ impl WorldSnapshot {
         }
     }
 
+    pub fn map(&self, id: i32) -> Option<&maps::MapData> {
+        self.maps.get(&id)
+    }
     pub fn config(&self) -> WorldConfig {
         self.config
     }
@@ -651,6 +658,17 @@ impl WorldSnapshot {
         packet: &PlayClientboundPacket,
     ) -> Result<Option<WorldChangeSummary>, WorldError> {
         let summary = match packet {
+            PlayClientboundPacket::Maps(packet) => {
+                packet
+                    .validate()
+                    .map_err(|_| WorldError::InvalidMapPacket)?;
+                self.maps
+                    .entry(packet.map_id)
+                    .or_default()
+                    .receive(packet)
+                    .map_err(|_| WorldError::InvalidMapPacket)?;
+                None
+            }
             PlayClientboundPacket::ChangeGameState(packet) => {
                 self.weather.receive(packet.reason, packet.value);
                 None

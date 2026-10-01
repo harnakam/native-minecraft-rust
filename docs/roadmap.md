@@ -240,3 +240,12 @@ MCP、Minecraftのソース・JAR・画像・フォント・音声・ワール�
 - 通常テストは空/占有hotbar、storage満杯、材料slot再計算、player/workbenchの全snapshot拒否復元とaliasを検証。
 - 公式サーバーで空/占有hotbarへの棒4個取得、材料消費、元itemの収納、Inventory NBTを確認。全workspaceテスト成功。
 - 未達: 金床/取引結果の番号キー副作用、地図拡張、統計/実績、残余item細部、手動GUI、後続マイルストーン。
+
+## 地図同期・拡張の実装記録（2026-10-01）
+
+S34 Mapsをdecode/session/world/inventoryに接続した。128×128画素の部分更新、
+scaleとアイコンの置換を保持し、受信済みscaleを使って地図拡張を判定する。
+Javaとのパケット60ケース、レシピ90ケースを比較し、公式サーバーで材料配置・
+結果取得・材料消費・閉じた後の新しい地図IDとscaleの同期を確認した。
+ItemMap.onCreatedによる即時ローカルID割当、地図描画、統計・実績の副作用は未達。
+M1/M2全体の完了には数えない。次は結果取得の副作用と特殊containerの監査・実装を進める。

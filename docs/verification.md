@@ -1398,3 +1398,14 @@ result quantity and slot. All earlier inventory and special-recipe scenarios
 also pass. Full workspace tests and format/diff checks pass. The owned server
 stopped and saved. Manual GUI parity and other result-slot side effects are
 still unverified; full compatibility remains incomplete.
+
+## Maps packet and map extension (2026-10-01)
+
+S34 encoding matches 60 local Java fixtures, including signed scale, icon
+coordinates, no-patch updates and full-map rectangles. Invalid rectangles
+and lengths are rejected. World tests verify unchanged pixels survive updates.
+Map extension matches 90 local Java fixtures across scale, NBT and invalid
+inputs. The official offline server confirms map 0 scale 3 becomes map 1
+scale 4 after eight papers are consumed and the workbench is closed.
+Immediate client-side ItemMap.onCreated allocation and map rendering remain
+unimplemented; this verifies authoritative reconciliation, not full parity.
