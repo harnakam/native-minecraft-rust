@@ -1168,6 +1168,7 @@ pub const PACKETS: &[PacketSpec] = &[
     MAP_CHUNK_BULK,
     MAPS,
     STATISTICS,
+    SPAWN_POSITION,
     SOUND_EFFECT,
     OPEN_WINDOW,
     CLOSE_WINDOW,
@@ -1357,5 +1358,20 @@ pub const STATISTICS: PacketSpec = PacketSpec {
         name: "entries",
         encoding: "VarInt count, String(32767) id, VarInt value",
         notes: "Absolute updates; unknown registry IDs ignored, duplicate IDs use the last value.",
+    }],
+};
+
+pub const SPAWN_POSITION: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x05,
+    name: "Spawn Position",
+    java_class: "net.minecraft.network.play.server.S05PacketSpawnPosition",
+    java_handler: "INetHandlerPlayClient.handleSpawnPosition",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "position",
+        encoding: "Position (Long)",
+        notes: "Forced player spawn point and world spawn coordinates.",
     }],
 };

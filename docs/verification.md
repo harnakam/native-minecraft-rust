@@ -1512,3 +1512,11 @@ liquid escape candidate offset and inclusive floor(max) liquid scan match
 the source. Regression tests cover air, solid, both water/lava variants and
 exact/near integer maximum faces. Entity collision exclusion is not yet
 implemented, so complete escape compatibility remains open.
+
+## Spawn Position state delivery (2026-10-01)
+
+S05 Position long is decoded and routed to both WorldSnapshot spawn
+coordinates and UsabilityState forced player spawn point, following
+NetHandlerPlayClient.handleSpawnPosition. Tests cover repeated updates,
+negative coordinates, packed extremes, exact bytes for all-minus-one and
+truncated/trailing data rejection. Compass rendering remains incomplete.

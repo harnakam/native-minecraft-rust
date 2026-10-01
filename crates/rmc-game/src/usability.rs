@@ -173,6 +173,7 @@ struct TeamState {
 }
 
 pub struct UsabilityState {
+    forced_spawn_position: Option<rmc_net::codec::play::BlockPosition>,
     statistics: crate::statistics::StatisticsState,
     experience: Experience,
     inventory: InventoryState,
@@ -231,6 +232,7 @@ impl UsabilityState {
     }
     pub fn new() -> Self {
         Self {
+            forced_spawn_position: None,
             statistics: Default::default(),
             experience: Experience::default(),
             inventory: InventoryState::new(),
@@ -250,6 +252,9 @@ impl UsabilityState {
         }
     }
 
+    pub fn forced_spawn_position(&self) -> Option<rmc_net::codec::play::BlockPosition> {
+        self.forced_spawn_position
+    }
     pub fn statistics(&self) -> &crate::statistics::StatisticsState {
         &self.statistics
     }
@@ -295,6 +300,9 @@ impl UsabilityState {
         };
 
         match packet {
+            PlayClientboundPacket::SpawnPosition(position) => {
+                self.forced_spawn_position = Some(*position)
+            }
             PlayClientboundPacket::Statistics(packet) => {
                 update.statistics = Some(self.statistics.receive(packet));
             }

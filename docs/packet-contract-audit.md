@@ -4,7 +4,7 @@ MCP919 EnumConnectionState.PLAYの登録順（内部クラスを含み、Javaの
 契約登録はdecode・状態反映・描画・タイミング互換の完了を意味しない。
 未登録は実装対象として残し、登録済みも効果を個別監査する。
 
-全74パケット中、IDとJavaクラス名が一致する契約は49件。
+全74パケット中、IDとJavaクラス名が一致する契約は50件。
 
 | ID | Javaクラス | 状態 |
 | --- | --- | --- |
@@ -13,7 +13,7 @@ MCP919 EnumConnectionState.PLAYの登録順（内部クラスを含み、Javaの
 | 0x02 | S02PacketChat | 登録あり・効果は要監査 |
 | 0x03 | S03PacketTimeUpdate | 登録あり・効果は要監査 |
 | 0x04 | S04PacketEntityEquipment | 登録あり・効果は要監査 |
-| 0x05 | S05PacketSpawnPosition | 未登録 |
+| 0x05 | S05PacketSpawnPosition | 登録あり・両スポーン状態のテストあり |
 | 0x06 | S06PacketUpdateHealth | 登録あり・効果は要監査 |
 | 0x07 | S07PacketRespawn | 登録あり・効果は要監査 |
 | 0x08 | S08PacketPlayerPosLook | 登録あり・効果は要監査 |

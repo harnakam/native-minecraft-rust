@@ -263,6 +263,9 @@ impl HeadlessSession {
             PlayClientboundPacket::Statistics(packet) => Some(SessionAction::UsabilityPacket(
                 PlayClientboundPacket::Statistics(packet.clone()),
             )),
+            PlayClientboundPacket::SpawnPosition(position) => Some(SessionAction::UsabilityPacket(
+                PlayClientboundPacket::SpawnPosition(*position),
+            )),
             PlayClientboundPacket::Maps(packet) => Some(SessionAction::UsabilityPacket(
                 PlayClientboundPacket::Maps(packet.clone()),
             )),

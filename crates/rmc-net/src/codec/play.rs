@@ -755,6 +755,7 @@ pub enum PlayClientboundPacket {
     BlockChange(BlockChangePacket),
     MapChunkBulk(MapChunkBulkPacket),
     Maps(MapsPacket),
+    SpawnPosition(BlockPosition),
     Statistics(StatisticsPacket),
     SoundEffect(SoundEffectPacket),
     OpenWindow(OpenWindowPacket),
@@ -790,6 +791,7 @@ impl PlayClientboundPacket {
         let mut reader = PacketReader::new(body);
 
         let packet = match packet_id {
+            0x05 => Self::SpawnPosition(BlockPosition::decode(reader.read_i64()?)),
             0x37 => Self::Statistics(StatisticsPacket::read(&mut reader)?),
             0x34 => Self::Maps(MapsPacket::read(&mut reader)?),
             0x00 => Self::KeepAlive(KeepAlivePacket {
@@ -1416,6 +1418,10 @@ impl PlayClientboundPacket {
         let mut writer = PacketWriter::new();
 
         let packet_id = match self {
+            Self::SpawnPosition(position) => {
+                writer.write_i64(position.encode());
+                0x05
+            }
             Self::Statistics(packet) => {
                 packet.write(&mut writer)?;
                 0x37

@@ -401,6 +401,7 @@ impl WorldChangeSummary {
 
 #[derive(Clone, Debug, Default)]
 pub struct WorldSnapshot {
+    spawn_position: Option<rmc_net::codec::play::BlockPosition>,
     maps: HashMap<i32, maps::MapData>,
     border: border::WorldBorder,
     difficulty: Option<u8>,
@@ -419,6 +420,7 @@ impl WorldSnapshot {
 
     pub fn new(config: WorldConfig) -> Self {
         Self {
+            spawn_position: None,
             maps: HashMap::new(),
             border: border::WorldBorder::default(),
             difficulty: None,
@@ -429,6 +431,9 @@ impl WorldSnapshot {
         }
     }
 
+    pub fn spawn_position(&self) -> Option<rmc_net::codec::play::BlockPosition> {
+        self.spawn_position
+    }
     pub fn map(&self, id: i32) -> Option<&maps::MapData> {
         self.maps.get(&id)
     }
@@ -658,6 +663,10 @@ impl WorldSnapshot {
         packet: &PlayClientboundPacket,
     ) -> Result<Option<WorldChangeSummary>, WorldError> {
         let summary = match packet {
+            PlayClientboundPacket::SpawnPosition(position) => {
+                self.spawn_position = Some(*position);
+                None
+            }
             PlayClientboundPacket::Maps(packet) => {
                 packet
                     .validate()
