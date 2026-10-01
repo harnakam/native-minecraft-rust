@@ -491,6 +491,7 @@ impl LocalSimulationLayer {
             self.velocity.z *= 0.25;
             self.velocity.y *= f64::from(0.05_f32);
         }
+        let statistics_start = self.player.position;
         let motion_before_collision = self.velocity;
         let previous_y = self.player.position.y;
         if self.game_mode == 3 {
@@ -501,6 +502,35 @@ impl LocalSimulationLayer {
         } else {
             self.resolve_collisions();
         }
+        let position = self.player.position;
+        let after_environment = world
+            .map(|w| w.movement_environment(player_bounds(position)))
+            .unwrap_or_default();
+        let context = crate::movement_statistics::MovementStatisticsContext {
+            submerged: world.is_some_and(|w| {
+                w.eye_in_water([
+                    position.x,
+                    position.y
+                        + f64::from(1.62_f32 - if self.player.sneaking { 0.08_f32 } else { 0.0 }),
+                    position.z,
+                ])
+            }),
+            in_water: environment.water,
+            ladder: after_environment.ladder,
+            on_ground: self.player.on_ground,
+            sprinting: self.player.sprinting,
+            sneaking: self.player.sneaking,
+            riding: false,
+        };
+        self.pending_statistic_increments
+            .extend(crate::movement_statistics::movement_increments(
+                Vec3::new(
+                    position.x - statistics_start.x,
+                    position.y - statistics_start.y,
+                    position.z - statistics_start.z,
+                ),
+                context,
+            ));
         if web_slowed {
             self.velocity = Vec3::ZERO;
         }
@@ -917,6 +947,35 @@ mod tests {
     use crate::camera::CameraState;
     use crate::input::MovementInput;
     use crate::player::Vec3;
+
+    #[test]
+    fn movement_statistics_use_local_displacement_and_exclude_server_teleports() {
+        let mut simulation = LocalSimulationLayer::new(SimulationConfig::vanilla());
+        let mut walking = 0;
+        for _ in 0..5 {
+            simulation.tick(
+                MovementInput {
+                    forward: 1.0,
+                    ..Default::default()
+                },
+                CameraState::default(),
+                0,
+            );
+            for (id, amount) in simulation.take_statistic_increments() {
+                if id == "stat.walkOneCm" {
+                    walking += amount;
+                }
+            }
+        }
+        assert!(walking > 0);
+        simulation.apply_authoritative_state(AuthoritativePlayerState {
+            position: Vec3::new(100.0, 0.0, 100.0),
+            velocity: Vec3::ZERO,
+            on_ground: true,
+        });
+        simulation.tick(MovementInput::default(), CameraState::default(), 0);
+        assert!(simulation.take_statistic_increments().is_empty());
+    }
 
     #[test]
     fn held_jump_waits_ten_ticks_after_forced_early_landing() {

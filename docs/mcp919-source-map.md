@@ -70,3 +70,9 @@ EntityPlayer.jump -> triggerAchievement(StatList.jumpStat) now maps to
 LocalSimulationLayer.apply_jump -> ClientShell.statistic_increments ->
 LiveRuntime StatisticsState.increase with the remote-player gate. Water/flight
 vertical input follows separate simulation branches and does not emit jump.
+
+EntityPlayer.moveEntityWithHeading/addMovementStat maps to simulation
+post-collision displacement and movement_statistics.rs. Submersion uses
+post-move eye position with Java float eye height; ladder is queried after
+movement, while cached in-water context comes from the tick environment.
+Mounted movement and fall accumulation remain open.

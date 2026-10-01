@@ -1443,3 +1443,13 @@ LiveRuntime applies remote-player independent-stat increments. Tests cover
 zero-tick frames, first actual tick under frame pacing, airborne key holding,
 event draining, forced early landing cooldown and a later successful jump.
 Other gameplay increments and full movement-statistics parity remain open.
+
+## Movement statistics (2026-10-01)
+
+A local Java EntityPlayer subclass executes the original addMovementStat
+with 64 context flag combinations and 100 displacement pairs. All 6,400
+fixtures match, including branch precedence, float sqrt narrowing, zero
+climb increments and the airborne >25cm gate. Simulation uses displacement
+after collision resolution and excludes server correction displacement.
+Mounted/fall statistics and exhaustion remain open; this does not prove
+complete movement timing or physics parity.
