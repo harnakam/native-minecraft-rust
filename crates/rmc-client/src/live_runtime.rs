@@ -1968,6 +1968,15 @@ mod tests {
             ),
             ("map", "filled_map 1 0", "map 1 0", 358, 2, 0, false),
             (
+                "armor dye",
+                "leather_chestplate 1 17",
+                "dye 1 1",
+                299,
+                1,
+                17,
+                false,
+            ),
+            (
                 "book",
                 "written_book 1 0 {generation:0}",
                 "writable_book 1 0",
@@ -2073,8 +2082,20 @@ mod tests {
                     Some(&rmc_net::nbt::Tag::Int(1))
                 );
             }
+            if name == "armor dye" {
+                assert_eq!(
+                    rmc_net::nbt::parse(actual.nbt.as_ref().unwrap())
+                        .unwrap()
+                        .get("display")
+                        .unwrap()
+                        .get("color"),
+                    Some(&rmc_net::nbt::Tag::Int(0x993333))
+                );
+            }
             let chat_count = runtime.usability.snapshot().chat_lines.len();
-            let extra = if keep_original {
+            let extra = if name == "armor dye" {
+                ",tag:{display:{color:10040115}}".to_string()
+            } else if keep_original {
                 ",tag:{generation:1}".to_string()
             } else {
                 format!(",Damage:{damage}s")

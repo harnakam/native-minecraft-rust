@@ -219,6 +219,95 @@ pub(super) fn grid_width(window: &ContainerSnapshot) -> Option<usize> {
         None
     }
 }
+fn armor_dye_result(cells: &[Slot]) -> Slot {
+    // Sheep dye RGB in dye-damage order, with Java float precision.
+    const RGB: [[f32; 3]; 16] = [
+        [0.1, 0.1, 0.1],
+        [0.6, 0.2, 0.2],
+        [0.4, 0.5, 0.2],
+        [0.4, 0.3, 0.2],
+        [0.2, 0.3, 0.7],
+        [0.5, 0.25, 0.7],
+        [0.3, 0.5, 0.6],
+        [0.6, 0.6, 0.6],
+        [0.3, 0.3, 0.3],
+        [0.95, 0.5, 0.65],
+        [0.5, 0.8, 0.1],
+        [0.9, 0.9, 0.2],
+        [0.4, 0.6, 0.85],
+        [0.7, 0.3, 0.85],
+        [0.85, 0.5, 0.2],
+        [1.0, 1.0, 1.0],
+    ];
+    let mut armor = None;
+    let mut dyes = 0;
+    let mut samples = 0;
+    let mut channels = [0i32; 3];
+    let mut brightness = 0i32;
+    for stack in cells.iter().flatten() {
+        if (298..=301).contains(&stack.item_id) {
+            if armor.is_some() {
+                return None;
+            }
+            armor = Some(stack.clone());
+            if let Some(Tag::Int(color)) = stack
+                .nbt
+                .as_deref()
+                .and_then(|b| nbt::parse(b).ok())
+                .and_then(|t| t.get("display").and_then(|d| d.get("color")).cloned())
+            {
+                let rgb = [(color >> 16) & 255, (color >> 8) & 255, color & 255]
+                    .map(|v| v as f32 / 255.0);
+                brightness = (brightness as f32 + rgb[0].max(rgb[1].max(rgb[2])) * 255.0) as i32;
+                for c in 0..3 {
+                    channels[c] = (channels[c] as f32 + rgb[c] * 255.0) as i32;
+                }
+                samples += 1;
+            }
+        } else if stack.item_id == 351 {
+            let index = if (0..16).contains(&stack.damage) {
+                stack.damage as usize
+            } else {
+                0
+            };
+            let rgb = RGB[index].map(|v| (v * 255.0) as i32);
+            brightness += rgb[0].max(rgb[1].max(rgb[2]));
+            for c in 0..3 {
+                channels[c] += rgb[c];
+            }
+            samples += 1;
+            dyes += 1;
+        } else {
+            return None;
+        }
+    }
+    if dyes == 0 {
+        return None;
+    }
+    let mut output = armor?;
+    let mean = channels.map(|v| v / samples);
+    let intensity = brightness as f32 / samples as f32;
+    let peak = mean[0].max(mean[1].max(mean[2])) as f32;
+    let normalized = mean.map(|v| (v as f32 * intensity / peak) as i32);
+    let color = ((normalized[0] << 8) + normalized[1]) << 8 | normalized[2];
+    let mut tags = match output.nbt.as_deref() {
+        Some(bytes) => match nbt::parse(bytes).ok()? {
+            Tag::Compound(v) => v,
+            _ => return None,
+        },
+        None => Default::default(),
+    };
+    let display_key: Vec<u16> = "display".encode_utf16().collect();
+    let mut display = match tags.remove(&display_key) {
+        Some(Tag::Compound(v)) => v,
+        _ => Default::default(),
+    };
+    display.insert("color".encode_utf16().collect(), Tag::Int(color));
+    tags.insert(display_key, Tag::Compound(display));
+    output.count = 1;
+    output.nbt = Some(nbt::encode(&Tag::Compound(tags)).ok()?);
+    Some(output)
+}
 fn clone_result(cells: &[Slot]) -> Slot {
     let original = cells
         .iter()
@@ -314,6 +403,9 @@ pub(super) fn result(window: &ContainerSnapshot) -> Slot {
     let width = grid_width(window)?;
     if window.slots.len() < 1 + width * width {
         return None;
+    }
+    if let Some(dyed) = armor_dye_result(&window.slots[1..=width * width]) {
+        return Some(dyed);
     }
     if let Some(cloned) = clone_result(&window.slots[1..=width * width]) {
         return Some(cloned);
@@ -496,6 +588,34 @@ mod tests {
         ConfirmTransactionClientboundPacket, PlayServerboundPacket, SetSlotPacket,
     };
     #[test]
+    fn armor_dye_preserves_tags_damage_and_consumes_ingredients() {
+        let mut state = InventoryState::new();
+        let mut armor = ItemStack::simple(299, 1, 17);
+        let tag = Tag::Compound([("custom".encode_utf16().collect(), Tag::Int(42))].into());
+        armor.nbt = Some(nbt::encode(&tag).unwrap());
+        state.inventory_window.slots[1] = Some(armor);
+        state.inventory_window.slots[4] = Some(ItemStack::simple(351, 3, 1));
+        refresh(&mut state.inventory_window);
+        let output = state.inventory_window.slots[0].as_ref().unwrap();
+        assert_eq!((output.item_id, output.count, output.damage), (299, 1, 17));
+        let tags = nbt::parse(output.nbt.as_ref().unwrap()).unwrap();
+        assert_eq!(tags.get("custom"), Some(&Tag::Int(42)));
+        assert_eq!(
+            tags.get("display").unwrap().get("color"),
+            Some(&Tag::Int(0x993333))
+        );
+        consume(&mut state.inventory_window);
+        assert!(state.inventory_window.slots[1].is_none());
+        assert_eq!(state.inventory_window.slots[4].as_ref().unwrap().count, 2);
+        assert!(state.inventory_window.slots[0].is_none());
+        assert!(armor_dye_result(&[
+            Some(ItemStack::simple(307, 1, 0)),
+            Some(ItemStack::simple(351, 1, 1))
+        ])
+        .is_none());
+        assert!(armor_dye_result(&[Some(ItemStack::simple(299, 1, 0))]).is_none());
+    }
+    #[test]
     fn cloning_preserves_book_tags_and_original_but_only_map_name() {
         let tags = Tag::Compound(
             [
@@ -564,9 +684,7 @@ mod tests {
         ])
         .is_none());
     }
-    #[test]
-    #[ignore = "requires locally executed MCP919 CloningProbe fixtures"]
-    fn local_java_cloning_fixtures_match() {
+    fn compare_java_nbt_recipe_fixtures(file: &str, expected_count: usize) {
         fn stack(text: &str) -> Slot {
             if text == "~" {
                 return None;
@@ -588,8 +706,7 @@ mod tests {
             Some(s)
         }
         let text = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../tmp/cloning-java-oracle.log"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tmp/{file}")),
         )
         .unwrap();
         let mut count = 0;
@@ -622,8 +739,18 @@ mod tests {
             }
             count += 1;
         }
-        assert_eq!(count, 480);
-        println!("{count} MCP919 book/map cloning cases match including NBT");
+        assert_eq!(count, expected_count);
+        println!("{count} MCP919 NBT recipe cases match: {file}");
+    }
+    #[test]
+    #[ignore = "requires locally executed MCP919 ArmorDyeProbe fixtures"]
+    fn local_java_armor_dye_fixtures_match() {
+        compare_java_nbt_recipe_fixtures("armor-dye-java-oracle.log", 8550);
+    }
+    #[test]
+    #[ignore = "requires locally executed MCP919 CloningProbe fixtures"]
+    fn local_java_cloning_fixtures_match() {
+        compare_java_nbt_recipe_fixtures("cloning-java-oracle.log", 480);
     }
     #[test]
     #[ignore = "requires locally executed MCP919 CraftingProbe fixtures"]

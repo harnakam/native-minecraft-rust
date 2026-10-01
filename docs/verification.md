@@ -1243,3 +1243,21 @@ uses an existing map id. Both earlier drag/collection/special-slot and basic
 crafting scenarios also pass. Full workspace tests and format/diff checks
 pass after the final code changes. The owned server stopped and saved.
 Manual GUI operation remains unverified.
+
+### Leather armor dye crafting
+
+RecipesArmorDyes, ItemArmor color accessors, EnumDyeColor metadata mapping and
+EntitySheep RGB values were inspected locally. Crafting now copies one leather
+armor stack, includes an existing int-typed display.color in the average,
+combines each occupied dye slot using Java float truncation and brightness
+normalization, preserves damage and other NBT, and replaces display.color.
+Invalid dye metadata maps to black; non-leather armor and duplicate armor
+are rejected. Normal consumption handles the armor and one dye per slot.
+An executed MCP919 probe compares 8,550 output/NBT cases: four leather armor
+types and an iron armor rejection, five existing-color states, 18 first-dye
+metadata values and 19 second-dye states. All match. The official server
+confirms a red dyed chestplate with color 10040115, damage 17, exhausted
+matrix ingredients and an acknowledged result pickup/storage placement.
+Earlier inventory, repair and cloning scenarios also pass in this run.
+Full workspace tests and format/diff checks pass. Rendering dyed armor and
+manual GUI parity are not yet verified; this is not full M1 completion.
