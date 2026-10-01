@@ -911,3 +911,24 @@ pub const REGISTERED_STATISTICS: &[(&str, bool)] = &[
     ("stat.useItem.minecraft.yellow_flower", false),
     ("stat.walkOneCm", false),
 ];
+
+pub const INDEPENDENT_STATISTICS: &[&str] = &[
+    "achievement.openInventory",
+    "stat.boatOneCm",
+    "stat.climbOneCm",
+    "stat.crouchOneCm",
+    "stat.diveOneCm",
+    "stat.drop",
+    "stat.fallOneCm",
+    "stat.flyOneCm",
+    "stat.horseOneCm",
+    "stat.jump",
+    "stat.leaveGame",
+    "stat.minecartOneCm",
+    "stat.pigOneCm",
+    "stat.playOneMinute",
+    "stat.sprintOneCm",
+    "stat.swimOneCm",
+    "stat.timeSinceDeath",
+    "stat.walkOneCm",
+];

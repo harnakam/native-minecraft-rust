@@ -3,7 +3,7 @@
 mod maps;
 mod statistics;
 mod statistics_registry;
-pub use statistics::{statistic_is_achievement, StatisticsPacket};
+pub use statistics::{statistic_is_achievement, statistic_is_independent, StatisticsPacket};
 pub mod metadata;
 mod title;
 pub use maps::{MapIcon, MapPatch, MapsPacket};

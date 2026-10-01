@@ -55,3 +55,13 @@ ClientStatus(1) requests. First-response achievement suppression and the
 exact previous-value == 0 notification condition follow the handler.
 Native toast rendering, statistics screens, option persistence, independent
 local increments and parent-achievement logic remain open.
+
+## Achievement dependencies and local increments
+
+AchievementList registry facts map to rmc-game/achievement_catalog.rs.
+StatFileWriter.hasAchievementUnlocked/canUnlockAchievement/func_150874_c
+map to StatisticsState achievement queries. StatFileWriter.increaseStat
+maps to StatisticsState.increase with wrapping Java int addition and parent
+gating. EntityPlayerSP.addStat additionally accepts only independent IDs;
+18 such IDs are registered in statistics_registry.rs. Gameplay action
+callers, rendering and persistence remain open.

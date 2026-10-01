@@ -46,6 +46,54 @@ impl StatisticsState {
         PlayServerboundPacket::ClientStatus(1)
     }
 
+    pub fn achievement_unlocked(&self, id: &str) -> bool {
+        crate::achievement_catalog::achievement(id).is_some() && self.value(id) > 0
+    }
+
+    pub fn can_unlock_achievement(&self, id: &str) -> bool {
+        crate::achievement_catalog::achievement(id).is_some_and(|definition| {
+            definition
+                .parent
+                .is_none_or(|parent| self.achievement_unlocked(parent))
+        })
+    }
+
+    /// Number of still-locked ancestors before the first unlocked ancestor.
+    pub fn achievement_unlock_distance(&self, id: &str) -> Option<usize> {
+        let definition = crate::achievement_catalog::achievement(id)?;
+        if self.achievement_unlocked(id) {
+            return Some(0);
+        }
+        let mut distance = 0;
+        let mut parent = definition.parent;
+        while let Some(id) = parent {
+            if self.achievement_unlocked(id) {
+                break;
+            }
+            distance += 1;
+            parent = crate::achievement_catalog::achievement(id)?.parent;
+        }
+        Some(distance)
+    }
+
+    /// StatFileWriter.increaseStat, with EntityPlayerSP's remote-world gate.
+    /// Accepted increments use Java int overflow; server absolute updates can
+    /// subsequently replace these local values.
+    pub fn increase(&mut self, id: &str, amount: i32, remote_player: bool) -> bool {
+        let Some(achievement) = statistic_is_achievement(id) else {
+            return false;
+        };
+        if remote_player && rmc_net::codec::play::statistic_is_independent(id) != Some(true) {
+            return false;
+        }
+        if achievement && !self.can_unlock_achievement(id) {
+            return false;
+        }
+        self.values
+            .insert(id.into(), self.value(id).wrapping_add(amount));
+        true
+    }
+
     pub fn receive(&mut self, packet: &StatisticsPacket) -> StatisticsUpdate {
         let mut update = StatisticsUpdate::default();
         let mut positive_achievement = false;
@@ -82,6 +130,117 @@ mod tests {
                 .map(|(id, value)| ((*id).into(), *value))
                 .collect(),
         }
+    }
+    #[test]
+    fn parent_gates_remote_independence_and_java_overflow() {
+        let mut state = StatisticsState::default();
+        assert_eq!(
+            state.achievement_unlock_distance("achievement.buildPickaxe"),
+            Some(3)
+        );
+        assert!(!state.can_unlock_achievement("achievement.mineWood"));
+        assert!(!state.increase("achievement.mineWood", 1, false));
+        assert!(state.increase("achievement.openInventory", 1, true));
+        assert!(state.can_unlock_achievement("achievement.mineWood"));
+        assert!(!state.increase("achievement.mineWood", 1, true));
+        assert!(state.increase("achievement.mineWood", 1, false));
+        assert_eq!(
+            state.achievement_unlock_distance("achievement.buildPickaxe"),
+            Some(1)
+        );
+        assert_eq!(
+            state.achievement_unlock_distance("achievement.mineWood"),
+            Some(0)
+        );
+        assert_eq!(state.achievement_unlock_distance("unknown"), None);
+        state.receive(&packet(&[("stat.jump", i32::MAX)]));
+        assert!(state.increase("stat.jump", 1, true));
+        assert_eq!(state.value("stat.jump"), i32::MIN);
+        state.receive(&packet(&[("stat.jump", 2)]));
+        assert_eq!(state.value("stat.jump"), 2);
+        assert!(!state.increase("stat.craftItem.minecraft.stick", 1, true));
+        assert!(!state.increase("unknown", 1, false));
+    }
+
+    #[test]
+    #[ignore = "requires local MCP919 achievement rules Java oracle"]
+    fn local_java_achievement_rules_match() {
+        use crate::achievement_catalog::ACHIEVEMENTS;
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp/achievement-rules-java-oracle.log");
+        let oracle = std::fs::read_to_string(path).unwrap();
+        let mut rules = 0;
+        let mut increments = 0;
+        let mut definitions = 0;
+        let mut independent = 0;
+        for line in oracle.lines() {
+            let fields: Vec<_> = line.split('|').collect();
+            match fields[0] {
+                "INDEPENDENT" => {
+                    assert_eq!(
+                        rmc_net::codec::play::statistic_is_independent(fields[1]),
+                        Some(fields[2] == "true")
+                    );
+                    independent += 1;
+                }
+                "META" => {
+                    let definition = &ACHIEVEMENTS[definitions];
+                    assert_eq!(definition.id, fields[1]);
+                    assert_eq!(definition.parent.unwrap_or("-"), fields[2]);
+                    assert_eq!(definition.column, fields[3].parse::<i32>().unwrap());
+                    assert_eq!(definition.row, fields[4].parse::<i32>().unwrap());
+                    assert_eq!(definition.item_id, fields[5].parse::<i16>().unwrap());
+                    assert_eq!(definition.damage, fields[6].parse::<i16>().unwrap());
+                    assert_eq!(definition.special, fields[7] == "true");
+                    definitions += 1;
+                }
+                "RULE" => {
+                    let mask: usize = fields[1].parse().unwrap();
+                    let mut state = StatisticsState::default();
+                    for (index, definition) in ACHIEVEMENTS.iter().enumerate() {
+                        state
+                            .values
+                            .insert(definition.id.into(), ((mask >> (index % 8)) & 1) as i32);
+                    }
+                    let id = fields[2];
+                    assert_eq!(
+                        state.achievement_unlocked(id),
+                        fields[3] == "true",
+                        "{line}"
+                    );
+                    assert_eq!(
+                        state.can_unlock_achievement(id),
+                        fields[4] == "true",
+                        "{line}"
+                    );
+                    assert_eq!(
+                        state.achievement_unlock_distance(id),
+                        Some(fields[5].parse().unwrap()),
+                        "{line}"
+                    );
+                    rules += 1;
+                }
+                "ADD" => {
+                    let mut state = StatisticsState::default();
+                    state
+                        .values
+                        .insert(fields[1].into(), fields[2].parse().unwrap());
+                    state.increase(fields[1], fields[3].parse().unwrap(), fields[4] == "1");
+                    assert_eq!(
+                        state.value(fields[1]),
+                        fields[5].parse::<i32>().unwrap(),
+                        "{line}"
+                    );
+                    increments += 1;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(definitions, 34);
+        assert_eq!(independent, 891);
+        assert_eq!(rules, 8704);
+        assert_eq!(increments, 16038);
+        println!("{rules} achievement dependency cases and {increments} statistic increment cases match MCP919");
     }
     #[test]
     fn initial_response_hint_absolute_updates_and_achievement_edges() {

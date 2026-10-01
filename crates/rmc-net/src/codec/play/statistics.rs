@@ -12,6 +12,15 @@ pub fn statistic_is_achievement(id: &str) -> Option<bool> {
         .map(|index| REGISTERED_STATISTICS[index].1)
 }
 
+/// EntityPlayerSP only forwards local increments for independent statistics.
+pub fn statistic_is_independent(id: &str) -> Option<bool> {
+    statistic_is_achievement(id).map(|_| {
+        super::statistics_registry::INDEPENDENT_STATISTICS
+            .binary_search(&id)
+            .is_ok()
+    })
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StatisticsPacket {
     pub values: BTreeMap<String, i32>,

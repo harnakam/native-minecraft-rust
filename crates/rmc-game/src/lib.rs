@@ -17,3 +17,5 @@ mod mining_properties;
 pub mod title;
 
 pub mod statistics;
+
+pub mod achievement_catalog;

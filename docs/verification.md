@@ -1422,3 +1422,15 @@ The official offline server verifies login statistics, ClientStatus(1),
 achievement grant and revocation through LiveRuntime and UsabilityState.
 Notification events are exposed but native toasts/screens and hint-option
 persistence are not implemented. No full statistics UI parity is claimed.
+
+## Achievement prerequisites and statistic increments (2026-10-01)
+
+The MCP919 StatList probe identifies 18 independent statistics and all 34
+achievement definitions, including parents, coordinates, icon item/metadata
+and special-frame flags. A Java StatFileWriter probe verifies 8,704 dependency
+cases across 256 unlocked-state patterns and 16,038 increment cases across
+all 891 IDs, negative/zero/max-int initial values, negative/positive/max-int
+amounts, and remote/integrated-player gates. Normal tests cover dependency
+progress, remote rejection, Java overflow and authoritative replacement.
+This verifies the state API; simulation action callers, GUI and storage are
+still unconnected. The complete-compatibility goal remains open.
