@@ -447,7 +447,10 @@ impl LocalSimulationLayer {
         if environment.lava {
             self.fall_distance.halve_in_lava();
         }
-        if environment.ladder && (!(environment.water || environment.lava) || self.flying) {
+        if self.game_mode != 3
+            && environment.ladder
+            && (!(environment.water || environment.lava) || self.flying)
+        {
             self.fall_distance.reset();
         }
         self.fluid_in_water = environment.water;
@@ -537,7 +540,7 @@ impl LocalSimulationLayer {
                 ])
             }),
             in_water: environment.water,
-            ladder: after_environment.ladder,
+            ladder: after_environment.ladder && self.game_mode != 3,
             on_ground: self.player.on_ground,
             sprinting: self.player.sprinting,
             sneaking: self.player.sneaking,
@@ -968,6 +971,41 @@ mod tests {
     use crate::camera::CameraState;
     use crate::input::MovementInput;
     use crate::player::Vec3;
+
+    #[test]
+    fn environmental_fall_resets_and_spectator_ladder_exclusion_use_real_blocks() {
+        use rmc_net::codec::play::{BlockChangePacket, BlockPosition};
+        for (id, mode, expected) in [(8, 0, 0.0), (10, 0, 8.0), (65, 0, 0.0), (65, 3, 16.0)] {
+            let mut world = rmc_world::WorldSnapshot::new(rmc_world::WorldConfig::overworld());
+            world
+                .apply_block_change(&BlockChangePacket {
+                    position: BlockPosition::new(0, 0, 0),
+                    block_state_id: id << 4,
+                })
+                .unwrap();
+            let mut simulation = LocalSimulationLayer::new(SimulationConfig::vanilla());
+            simulation.set_game_mode(mode);
+            simulation.apply_authoritative_state(AuthoritativePlayerState {
+                position: Vec3::new(0.5, 0.1, 0.5),
+                velocity: if mode == 3 {
+                    Vec3::new(0.0, 0.2, 0.0)
+                } else {
+                    Vec3::ZERO
+                },
+                on_ground: false,
+            });
+            simulation.fall_distance.0 = 16.0;
+            simulation.tick_with_world(MovementInput::default(), CameraState::default(), 0, &world);
+            assert_eq!(
+                simulation.fall_distance.0, expected,
+                "block {id}, mode {mode}"
+            );
+            assert!(!simulation
+                .take_statistic_increments()
+                .iter()
+                .any(|(id, _)| *id == "stat.climbOneCm"));
+        }
+    }
 
     #[test]
     fn fall_statistic_emits_once_on_landing_and_creative_permission_suppresses_it() {

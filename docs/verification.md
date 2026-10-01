@@ -1463,3 +1463,11 @@ fallOneCm amounts. Normal simulation tests verify one landing increment and
 creative-permission suppression. Environment reset/halving follows inspected
 water, ladder and lava call sites. Full environmental timing, fall damage
 and audio remain unverified and incomplete.
+
+## Spectator ladder and environment regressions (2026-10-01)
+
+Inspected EntityLivingBase.isOnLadder: ladder/vine membership excludes
+spectator players. Both statistic selection and fall reset now honor it.
+A simulation regression uses received water, lava and ladder blocks to
+verify water/ladder reset, lava halving, and retained spectator fall distance
+while moving upward through a ladder without climb statistics.

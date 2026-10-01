@@ -290,3 +290,9 @@ MCP919 EntityPlayer.addMovementStatの64条件×100距離、6,400ケースが一
 Java Entity.updateFallState/EntityPlayer.fallの252ケースがbit単位で一致した。
 実シミュレーションで着地一回だけ加算・creative抑止を確認した。
 落下ダメージ・音声・疲労・騎乗と環境更新全体のタイミングは未達。
+
+## 環境条件の追加監査（2026-10-01）
+
+EntityLivingBase.isOnLadderのspectator除外を登攀統計・落下リセットへ反映した。
+実ブロック（水・溶岩・梯子）でリセット・半減・spectator除外を検証した。
+環境更新全体の順序と全ゲームモードの物理互換は依然未達。

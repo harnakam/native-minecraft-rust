@@ -82,3 +82,6 @@ the post-collision simulation path. Ground contact consumes prior distance;
 airborne downward movement narrows accumulated double back to float.
 Entity.handleWaterMovement clears distance, lava halves it, and the normal
 ladder travel branch clears it before movement. Damage and sounds remain open.
+
+EntityLivingBase.isOnLadder excludes EntityPlayer.isSpectator. Simulation
+now uses that gate for fall resets and post-movement statistic context.
