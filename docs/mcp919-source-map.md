@@ -44,3 +44,14 @@ rectangle. RecipesMapExtending requires ItemMap.getMapData and scale < 4;
 InventoryState keeps received scales across open windows and rejected clicks.
 ItemMap.onCreated / SlotCrafting.onCrafting immediate local map allocation
 and statistics remain open; server-assigned IDs reconcile after closing.
+
+## Statistics and achievement synchronization
+
+S37PacketStatistics and StatList.getOneShotStat map to rmc-net/codec/play/
+statistics.rs and statistics_registry.rs (identifier/flag facts only).
+NetHandlerPlayClient.handleStatistics and StatFileWriter absolute values
+map to rmc-game/statistics.rs through UsabilityState. LiveRuntime exposes
+ClientStatus(1) requests. First-response achievement suppression and the
+exact previous-value == 0 notification condition follow the handler.
+Native toast rendering, statistics screens, option persistence, independent
+local increments and parent-achievement logic remain open.

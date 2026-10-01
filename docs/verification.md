@@ -1409,3 +1409,16 @@ inputs. The official offline server confirms map 0 scale 3 becomes map 1
 scale 4 after eight papers are consumed and the workbench is closed.
 Immediate client-side ItemMap.onCreated allocation and map rendering remain
 unimplemented; this verifies authoritative reconciliation, not full parity.
+
+## Statistics synchronization (2026-10-01)
+
+The local MCP919 registry probe confirms all 891 one-shot IDs and their
+34 achievement flags. Seven Java S37 decode fixtures cover zero, VarInt
+boundaries, signed extremes, duplicate IDs and unknown IDs. Normal tests
+cover truncation, negative-count Java behavior, codec roundtrip, absolute
+replacement, retained unrelated values, initial-response hint suppression,
+zero-to-positive notification, revocation and negative previous values.
+The official offline server verifies login statistics, ClientStatus(1),
+achievement grant and revocation through LiveRuntime and UsabilityState.
+Notification events are exposed but native toasts/screens and hint-option
+persistence are not implemented. No full statistics UI parity is claimed.

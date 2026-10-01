@@ -136,6 +136,7 @@ pub struct UsabilitySnapshot {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UsabilityUpdate {
+    pub statistics: Option<crate::statistics::StatisticsUpdate>,
     pub outbound_packets: Vec<PlayServerboundPacket>,
     pub inventory: InventoryUpdate,
     pub chat_updated: bool,
@@ -172,6 +173,7 @@ struct TeamState {
 }
 
 pub struct UsabilityState {
+    statistics: crate::statistics::StatisticsState,
     experience: Experience,
     inventory: InventoryState,
     settings: ClientSettingsState,
@@ -229,6 +231,7 @@ impl UsabilityState {
     }
     pub fn new() -> Self {
         Self {
+            statistics: Default::default(),
             experience: Experience::default(),
             inventory: InventoryState::new(),
             settings: ClientSettingsState::default(),
@@ -245,6 +248,14 @@ impl UsabilityState {
             player_teams: BTreeMap::new(),
             recent_sounds: Vec::new(),
         }
+    }
+
+    pub fn statistics(&self) -> &crate::statistics::StatisticsState {
+        &self.statistics
+    }
+
+    pub fn statistics_mut(&mut self) -> &mut crate::statistics::StatisticsState {
+        &mut self.statistics
     }
 
     pub fn inventory(&self) -> &InventoryState {
@@ -284,6 +295,9 @@ impl UsabilityState {
         };
 
         match packet {
+            PlayClientboundPacket::Statistics(packet) => {
+                update.statistics = Some(self.statistics.receive(packet));
+            }
             PlayClientboundPacket::PlayerListHeaderFooter(packet) => {
                 self.tab_header_json.clone_from(&packet.header_json);
                 self.tab_footer_json.clone_from(&packet.footer_json);

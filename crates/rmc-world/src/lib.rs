@@ -741,6 +741,7 @@ impl WorldSnapshot {
             | PlayClientboundPacket::ResourcePackSend(_)
             | PlayClientboundPacket::PlayerListHeaderFooter(_)
             | PlayClientboundPacket::Title(_)
+            | PlayClientboundPacket::Statistics(_)
             | PlayClientboundPacket::Disconnect(_) => None,
         };
 

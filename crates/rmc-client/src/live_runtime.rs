@@ -526,6 +526,12 @@ impl LiveRuntime {
         self.combat.snapshot()
     }
 
+    pub fn request_statistics(&mut self) -> Result<(), String> {
+        let packet = self.usability.statistics().request_packet();
+        self.queue_play_packet(&packet)?;
+        self.flush_if_pending()
+    }
+
     pub fn request_respawn(&mut self) -> Result<bool, String> {
         let Some(packet) = self.combat.request_respawn() else {
             return Ok(false);
@@ -1386,6 +1392,74 @@ mod tests {
         assert_eq!(runtime.world.metrics().loaded_chunks, 0);
         assert!(!runtime.world.config().has_sky_light);
         assert_eq!(runtime.dimension, Some(-1));
+    }
+
+    #[test]
+    #[ignore = "requires user-authorized official offline server with VanillaProbe operator"]
+    fn official_server_statistics_sync() {
+        let mut config = LiveRuntimeConfig::offline("VanillaProbe");
+        config.server_host = "127.0.0.1".into();
+        config.server_port = std::env::var("RMC_VANILLA_PORT").unwrap().parse().unwrap();
+        let mut runtime = LiveRuntime::connect(config).unwrap();
+        fn advance(r: &mut LiveRuntime) {
+            r.step(
+                Duration::from_millis(50),
+                &InputFrame::default(),
+                &RuntimeActionInput::default(),
+            )
+            .unwrap();
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        for _ in 0..300 {
+            advance(&mut runtime);
+            if runtime.position_initialized && runtime.usability.statistics().loaded() {
+                break;
+            }
+        }
+        assert!(
+            runtime.usability.statistics().loaded(),
+            "login achievement response did not reach state"
+        );
+        runtime.request_statistics().unwrap();
+        for _ in 0..30 {
+            advance(&mut runtime);
+        }
+        assert!(
+            runtime
+                .usability
+                .statistics()
+                .values()
+                .contains_key("stat.playOneMinute"),
+            "statistics request did not return general statistics"
+        );
+        for (command, expected) in [
+            ("/achievement take achievement.mineWood VanillaProbe", 0),
+            ("/achievement give achievement.mineWood VanillaProbe", 1),
+            ("/achievement take achievement.mineWood VanillaProbe", 0),
+        ] {
+            runtime.send_chat_message(command).unwrap();
+            // Achievement changes send dirty statistics on the server tick;
+            // require enough ticks even when the previous value already equals expected.
+            for _ in 0..30 {
+                advance(&mut runtime);
+            }
+            for _ in 0..150 {
+                if runtime.usability.statistics().value("achievement.mineWood") == expected {
+                    break;
+                }
+                advance(&mut runtime);
+            }
+            assert_eq!(
+                runtime.usability.statistics().value("achievement.mineWood"),
+                expected,
+                "{command}"
+            );
+        }
+        println!("official server confirms initial statistics, request, achievement grant and revocation");
+        if std::env::var_os("RMC_STOP_TEST_SERVER").is_some() {
+            runtime.send_chat_message("/stop").unwrap();
+            std::thread::sleep(Duration::from_millis(300));
+        }
     }
 
     #[test]

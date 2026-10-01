@@ -15,3 +15,5 @@ pub mod mining;
 mod mining_properties;
 
 pub mod title;
+
+pub mod statistics;

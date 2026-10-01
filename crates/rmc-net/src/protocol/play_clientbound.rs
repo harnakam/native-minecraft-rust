@@ -1167,6 +1167,7 @@ pub const PACKETS: &[PacketSpec] = &[
     BLOCK_CHANGE,
     MAP_CHUNK_BULK,
     MAPS,
+    STATISTICS,
     SOUND_EFFECT,
     OPEN_WINDOW,
     CLOSE_WINDOW,
@@ -1342,4 +1343,19 @@ pub const MAPS: PacketSpec = PacketSpec {
             notes: "Zero columns omits colors; row-major rectangle in the 128x128 map.",
         },
     ],
+};
+
+pub const STATISTICS: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x37,
+    name: "Statistics",
+    java_class: "net.minecraft.network.play.server.S37PacketStatistics",
+    java_handler: "INetHandlerPlayClient.handleStatistics",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "entries",
+        encoding: "VarInt count, String(32767) id, VarInt value",
+        notes: "Absolute updates; unknown registry IDs ignored, duplicate IDs use the last value.",
+    }],
 };
