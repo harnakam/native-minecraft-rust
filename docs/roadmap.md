@@ -296,3 +296,10 @@ Java Entity.updateFallState/EntityPlayer.fallの252ケースがbit単位で一�
 EntityLivingBase.isOnLadderのspectator除外を登攀統計・落下リセットへ反映した。
 実ブロック（水・溶岩・梯子）でリセット・半減・spectator除外を検証した。
 環境更新全体の順序と全ゲームモードの物理互換は依然未達。
+
+## 液体境界と読み込み領域（2026-10-01）
+
+水・溶岩の探索範囲をWorld.handleMaterialAcceleration/isMaterialInBBの
+floor(max+1)へ変更し、水では高さ範囲と必要チャンクの読み込みを確認する。
+Java比較600ケース（液体4種・level・整数境界・読み込み条件）が一致した。
+極小水流の正規化はVec3.normalize同様0とする。全水流配置・環境更新順は未達。

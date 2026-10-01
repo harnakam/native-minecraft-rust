@@ -1471,3 +1471,13 @@ spectator players. Both statistic selection and fall reset now honor it.
 A simulation regression uses received water, lava and ladder blocks to
 verify water/ladder reset, lava halving, and retained spectator fall distance
 while moving upward through a ladder without climb statistics.
+
+## Fluid bounding ranges and loaded areas (2026-10-01)
+
+A local WorldClient subclass supplies block states and chunk availability
+while the original World.handleMaterialAcceleration/isMaterialInBB execute.
+All 600 fixtures match for water/still-water/lava/still-lava, levels 0/7/8,
+integer-boundary boxes and full/partial loaded areas. Regression tests check
+exact integer maximum inclusion and missing neighboring chunk suppression.
+Water-flow normalization now honors Vec3.normalize's 1e-4 cutoff. All flow
+configurations and the complete environmental update order remain open.

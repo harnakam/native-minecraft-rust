@@ -85,3 +85,9 @@ ladder travel branch clears it before movement. Damage and sounds remain open.
 
 EntityLivingBase.isOnLadder excludes EntityPlayer.isSpectator. Simulation
 now uses that gate for fall resets and post-movement statistic context.
+
+World.handleMaterialAcceleration and isMaterialInBB use floor(max+1) with
+exclusive loop ends, rather than strict cube intersection. environment.rs
+now scans each transformed fluid box separately and checks water loaded
+areas (inclusive chunk end, world height gate). Vec3.normalize zeros lengths
+below 1e-4; water acceleration retains that cutoff.

@@ -73,38 +73,77 @@ impl WorldSnapshot {
                 bounds.max[2] - f64::from(0.1_f32),
             ],
         );
+        // World.handleMaterialAcceleration / isMaterialInBB use floor(max + 1),
+        // including a block exactly at an integer maximum coordinate.
+        let scan = |b: Aabb| {
+            let min = b.min.map(|v| v.floor() as i32);
+            let end = b.max.map(|v| (v + 1.0).floor() as i32);
+            (min, end)
+        };
+        let (min, end) = scan(water_bounds);
+        let water_loaded = end[1] >= 0
+            && min[1] < 256
+            && (min[0] >> 4..=end[0] >> 4).all(|x| {
+                (min[2] >> 4..=end[2] >> 4)
+                    .all(|z| self.chunk(crate::ChunkPos::new(x, z)).is_some())
+            });
+        if water_loaded {
+            for x in min[0]..end[0] {
+                for y in min[1]..end[1] {
+                    for z in min[2]..end[2] {
+                        let pos = BlockPos::new(x, y, z);
+                        let state = self.block_state_or_air(pos);
+                        if matches!(state >> 4, 8 | 9) {
+                            let level = if state & 15 >= 8 { 0 } else { state & 15 };
+                            let surface = f64::from((y + 1) as f32 - (level as f32 + 1.0) / 9.0);
+                            if f64::from(end[1]) >= surface {
+                                result.water = true;
+                                let flow = self.liquid_flow(pos, 8);
+                                for axis in 0..3 {
+                                    result.water_flow[axis] += flow[axis];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let (min, end) = scan(lava_bounds);
+        for x in min[0]..end[0] {
+            for y in min[1]..end[1] {
+                for z in min[2]..end[2] {
+                    if matches!(
+                        self.block_state_or_air(BlockPos::new(x, y, z)) >> 4,
+                        10 | 11
+                    ) {
+                        result.lava = true;
+                    }
+                }
+            }
+        }
         for x in bounds.min[0].floor() as i32..=(bounds.max[0] - 0.001).floor() as i32 {
             for y in bounds.min[1].floor() as i32..=(bounds.max[1] - 0.001).floor() as i32 {
                 for z in bounds.min[2].floor() as i32..=(bounds.max[2] - 0.001).floor() as i32 {
                     let pos = BlockPos::new(x, y, z);
                     let state = self.block_state_or_air(pos);
-                    let cube = Aabb::new(
-                        [x as f64, y as f64, z as f64],
-                        [x as f64 + 1.0, y as f64 + 1.0, z as f64 + 1.0],
-                    );
                     match state >> 4 {
                         88 => {
                             result.soul_sand_contacts = result.soul_sand_contacts.saturating_add(1)
                         }
                         30 => result.web = true,
-                        8 | 9 if cube.intersects(water_bounds) => {
-                            result.water = true;
-                            let flow = self.liquid_flow(pos, 8);
-                            for axis in 0..3 {
-                                result.water_flow[axis] += flow[axis];
-                            }
-                        }
-                        10 | 11 if cube.intersects(lava_bounds) => result.lava = true,
                         _ => {}
                     }
                 }
             }
         }
         let length = result.water_flow.iter().map(|v| v * v).sum::<f64>().sqrt();
-        if length > 0.0 {
+        if length >= 1.0e-4 {
             for v in &mut result.water_flow {
                 *v = *v / length * 0.014;
             }
+        }
+        if length < 1.0e-4 {
+            result.water_flow = [0.0; 3];
         }
         result
     }
@@ -165,5 +204,65 @@ impl WorldSnapshot {
             flow[1] -= 6.0;
         }
         normalize(flow)
+    }
+}
+
+#[cfg(test)]
+mod fluid_bounds_tests {
+    use super::*;
+    use rmc_net::codec::play::{BlockChangePacket, BlockPosition};
+    fn world(id: u16, meta: u16, all: bool) -> WorldSnapshot {
+        let mut world = WorldSnapshot::new(crate::WorldConfig::overworld());
+        if all {
+            for x in -1..=1 {
+                for z in -1..=1 {
+                    world
+                        .apply_block_change(&BlockChangePacket {
+                            position: BlockPosition::new(x * 16 + 8, 200, z * 16 + 8),
+                            block_state_id: 16,
+                        })
+                        .unwrap();
+                }
+            }
+        }
+        world
+            .apply_block_change(&BlockChangePacket {
+                position: BlockPosition::new(0, 0, 0),
+                block_state_id: i32::from(id << 4 | meta),
+            })
+            .unwrap();
+        world
+    }
+    #[test]
+    fn integer_maximum_includes_fluid_and_missing_neighbor_suppresses_water() {
+        let bounds = Aabb::new([-0.999, 0.0, 0.2], [0.001, 1.8, 0.8]);
+        assert!(world(8, 0, true).movement_environment(bounds).water);
+        assert!(!world(8, 0, false).movement_environment(bounds).water);
+        let lava = Aabb::new(
+            [-0.8999999985098839, 0.0, 0.2],
+            [0.10000000149011612, 1.8, 0.8],
+        );
+        assert!(world(10, 0, false).movement_environment(lava).lava);
+    }
+    #[test]
+    #[ignore = "requires local MCP919 fluid bounds Java oracle"]
+    fn local_java_fluid_bounds_match() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp/fluid-bounds-java-oracle.log");
+        let oracle = std::fs::read_to_string(path).unwrap();
+        let mut cases = 0;
+        for line in oracle.lines().filter(|line| line.starts_with("FLUID|")) {
+            let f: Vec<_> = line.split('|').collect();
+            let x: f64 = f[3].parse().unwrap();
+            let y: f64 = f[4].parse().unwrap();
+            let world = world(f[1].parse().unwrap(), f[2].parse().unwrap(), f[5] == "1");
+            let actual =
+                world.movement_environment(Aabb::new([x, y, 0.2], [x + 1.0, y + 1.8, 0.8]));
+            assert_eq!(actual.water, f[6] == "true", "{line}");
+            assert_eq!(actual.lava, f[7] == "true", "{line}");
+            cases += 1;
+        }
+        assert_eq!(cases, 600);
+        println!("{cases} MCP919 fluid boundary and loaded-area cases match");
     }
 }
