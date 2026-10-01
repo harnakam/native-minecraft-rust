@@ -97,3 +97,7 @@ flow obstruction) from Material.isSolid (falling wall), with ice excluded.
 material_properties.rs stores observed predicate facts for block IDs 0..197.
 Vec3.normalize/lengthVector narrow MathHelper.sqrt_double to float; both
 per-block and combined flow normalization now preserve that step.
+
+EntityPlayer.isPushedByWater gates World.handleMaterialAcceleration on
+active isFlying. The simulation velocity-add path now uses the same gate;
+allowFlying alone does not suppress water current.

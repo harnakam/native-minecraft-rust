@@ -1497,3 +1497,10 @@ Material.blocksMovement/isSolid/ice facts replace collision-box guesses.
 Vec3 normalize and length checks narrow sqrt to float before converting
 back to double. Normal regressions distinguish web, ice, plant and stone.
 All metadata and arbitrary neighboring configurations remain unverified.
+
+## Water pushing and active flight (2026-10-01)
+
+Inspected EntityPlayer.isPushedByWater: it returns !capabilities.isFlying.
+Simulation now gates water acceleration on active flight while retaining
+water detection. A received-block flow and PlayerAbilities packet regression
+covers flags 0/4/6/2, distinguishing permission from active flight.

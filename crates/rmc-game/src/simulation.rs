@@ -436,11 +436,13 @@ impl LocalSimulationLayer {
         let environment = world
             .map(|w| w.movement_environment(player_bounds(self.player.position)))
             .unwrap_or_default();
-        self.velocity = self.velocity.add(Vec3::new(
-            environment.water_flow[0],
-            environment.water_flow[1],
-            environment.water_flow[2],
-        ));
+        if !self.flying {
+            self.velocity = self.velocity.add(Vec3::new(
+                environment.water_flow[0],
+                environment.water_flow[1],
+                environment.water_flow[2],
+            ));
+        }
         if environment.water {
             self.fall_distance.reset();
         }
@@ -971,6 +973,45 @@ mod tests {
     use crate::camera::CameraState;
     use crate::input::MovementInput;
     use crate::player::Vec3;
+
+    #[test]
+    fn water_push_is_blocked_by_active_flight_but_not_flight_permission() {
+        use rmc_net::codec::play::{
+            BlockChangePacket, BlockPosition, PlayClientboundPacket, PlayerAbilitiesPacket,
+        };
+        let mut world = rmc_world::WorldSnapshot::new(rmc_world::WorldConfig::overworld());
+        for (x, level) in [(0, 0), (1, 7)] {
+            world
+                .apply_block_change(&BlockChangePacket {
+                    position: BlockPosition::new(x, 0, 0),
+                    block_state_id: 8 << 4 | level,
+                })
+                .unwrap();
+        }
+        for flags in [0, 4, 6, 2] {
+            let mut simulation = LocalSimulationLayer::new(SimulationConfig::vanilla());
+            simulation.apply_authoritative_state(AuthoritativePlayerState {
+                position: Vec3::new(0.5, 0.1, 0.5),
+                velocity: Vec3::ZERO,
+                on_ground: false,
+            });
+            simulation.apply_player_packet(
+                &PlayClientboundPacket::PlayerAbilities(PlayerAbilitiesPacket {
+                    flags,
+                    flying_speed: 0.05,
+                    walking_speed: 0.1,
+                }),
+                None,
+            );
+            simulation.tick_with_world(MovementInput::default(), CameraState::default(), 0, &world);
+            if flags & 2 != 0 {
+                assert_eq!(simulation.player().position.x, 0.5, "flags {flags}");
+            } else {
+                assert!(simulation.player().position.x > 0.5, "flags {flags}");
+            }
+            assert!(simulation.fluid_in_water);
+        }
+    }
 
     #[test]
     fn environmental_fall_resets_and_spectator_ladder_exclusion_use_real_blocks() {
