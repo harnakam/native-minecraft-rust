@@ -185,3 +185,186 @@ fn payload(
         other => return Err(BufferError::InvalidNbtTag(other).into()),
     })
 }
+
+/// Encode an unnamed root tag for protocol item NBT. Existing untouched wire bytes need not be reencoded.
+pub fn encode(tag: &Tag) -> Result<Vec<u8>, NbtError> {
+    let mut output = vec![tag_kind(tag), 0, 0];
+    let mut budget = 131_072;
+    encode_payload(tag, &mut output, 0, &mut budget)?;
+    Ok(output)
+}
+fn tag_kind(tag: &Tag) -> u8 {
+    match tag {
+        Tag::Byte(_) => 1,
+        Tag::Short(_) => 2,
+        Tag::Int(_) => 3,
+        Tag::Long(_) => 4,
+        Tag::Float(_) => 5,
+        Tag::Double(_) => 6,
+        Tag::Bytes(_) => 7,
+        Tag::String(_) => 8,
+        Tag::List { .. } => 9,
+        Tag::Compound(_) => 10,
+        Tag::Ints(_) => 11,
+        Tag::Longs(_) => 12,
+    }
+}
+fn encode_string(units: &[u16], output: &mut Vec<u8>) -> Result<(), NbtError> {
+    if units.len() > 65535 {
+        return Err(NbtError::Limit);
+    }
+    let mut bytes = Vec::new();
+    for &unit in units {
+        if (1..=127).contains(&unit) {
+            bytes.push(unit as u8);
+        } else if unit < 2048 {
+            bytes.extend_from_slice(&[(0xc0 | unit >> 6) as u8, (0x80 | unit & 63) as u8]);
+        } else {
+            bytes.extend_from_slice(&[
+                (0xe0 | unit >> 12) as u8,
+                (0x80 | (unit >> 6) & 63) as u8,
+                (0x80 | unit & 63) as u8,
+            ]);
+        }
+        if bytes.len() > 65535 {
+            return Err(NbtError::Limit);
+        }
+    }
+    output.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
+    output.extend_from_slice(&bytes);
+    Ok(())
+}
+fn encode_payload(
+    tag: &Tag,
+    output: &mut Vec<u8>,
+    depth: usize,
+    budget: &mut usize,
+) -> Result<(), NbtError> {
+    if depth > 512 || *budget == 0 || output.len() > 2_097_152 {
+        return Err(NbtError::Limit);
+    }
+    *budget -= 1;
+    match tag {
+        Tag::Byte(v) => output.push(*v as u8),
+        Tag::Short(v) => output.extend_from_slice(&v.to_be_bytes()),
+        Tag::Int(v) => output.extend_from_slice(&v.to_be_bytes()),
+        Tag::Long(v) => output.extend_from_slice(&v.to_be_bytes()),
+        Tag::Float(v) => output.extend_from_slice(&v.to_be_bytes()),
+        Tag::Double(v) => output.extend_from_slice(&v.to_be_bytes()),
+        Tag::Bytes(v) => {
+            if v.len() > 2_097_152 {
+                return Err(NbtError::Limit);
+            }
+            output.extend_from_slice(&(v.len() as i32).to_be_bytes());
+            output.extend_from_slice(v);
+        }
+        Tag::String(v) => encode_string(v, output)?,
+        Tag::List { kind, values } => {
+            if values.len() > *budget {
+                return Err(NbtError::Limit);
+            }
+            if *kind > 12
+                || (!values.is_empty()
+                    && (*kind == 0 || values.iter().any(|v| tag_kind(v) != *kind)))
+            {
+                return Err(BufferError::InvalidNbtTag(*kind).into());
+            }
+            output.push(*kind);
+            output.extend_from_slice(&(values.len() as i32).to_be_bytes());
+            for v in values {
+                encode_payload(v, output, depth + 1, budget)?;
+            }
+        }
+        Tag::Compound(v) => {
+            if v.len() > *budget {
+                return Err(NbtError::Limit);
+            }
+            for (name, value) in v {
+                output.push(tag_kind(value));
+                encode_string(name, output)?;
+                encode_payload(value, output, depth + 1, budget)?;
+            }
+            output.push(0);
+        }
+        Tag::Ints(v) => {
+            if v.len() > *budget {
+                return Err(NbtError::Limit);
+            }
+            *budget -= v.len();
+            output.extend_from_slice(&(v.len() as i32).to_be_bytes());
+            for item in v {
+                output.extend_from_slice(&item.to_be_bytes());
+            }
+        }
+        Tag::Longs(v) => {
+            if v.len() > *budget {
+                return Err(NbtError::Limit);
+            }
+            *budget -= v.len();
+            output.extend_from_slice(&(v.len() as i32).to_be_bytes());
+            for item in v {
+                output.extend_from_slice(&item.to_be_bytes());
+            }
+        }
+    }
+    if output.len() > 2_097_152 {
+        return Err(NbtError::Limit);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod encoding_tests {
+    use super::*;
+    #[test]
+    fn modified_utf8_preserves_null_surrogates_and_japanese() {
+        let tag = Tag::String(vec![0, 0x41, 0xd83d, 0xde00, 0x65e5]);
+        let bytes = encode(&tag).unwrap();
+        assert_eq!(
+            &bytes[3..],
+            &[0, 12, 0xc0, 0x80, 0x41, 0xed, 0xa0, 0xbd, 0xed, 0xb8, 0x80, 0xe6, 0x97, 0xa5]
+        );
+        assert_eq!(parse(&bytes).unwrap(), tag);
+    }
+    #[test]
+    fn compound_roundtrip_retains_numeric_arrays_and_lists() {
+        let values = vec![
+            Tag::Byte(-1),
+            Tag::Short(-200),
+            Tag::Int(300000),
+            Tag::Long(i64::MIN),
+            Tag::Float(1.25),
+            Tag::Double(-3.5),
+            Tag::Bytes(vec![0, 255]),
+            Tag::Ints(vec![-1, 2]),
+            Tag::Longs(vec![i64::MAX]),
+            Tag::List {
+                kind: 8,
+                values: vec![Tag::String(vec![0xd800])],
+            },
+            Tag::List {
+                kind: 0,
+                values: vec![],
+            },
+        ];
+        let tag = Tag::Compound(
+            values
+                .into_iter()
+                .enumerate()
+                .map(|(i, v)| (i.to_string().encode_utf16().collect(), v))
+                .collect(),
+        );
+        assert_eq!(parse(&encode(&tag).unwrap()).unwrap(), tag);
+    }
+    #[test]
+    fn invalid_lists_and_oversized_values_are_rejected() {
+        assert!(encode(&Tag::List {
+            kind: 1,
+            values: vec![Tag::Int(1)]
+        })
+        .is_err());
+        assert!(encode(&Tag::String(vec![0x800; 21846])).is_err());
+        assert!(encode(&Tag::Bytes(vec![0; 2097152])).is_err());
+        assert!(encode(&Tag::Ints(vec![0; 131072])).is_err());
+    }
+}

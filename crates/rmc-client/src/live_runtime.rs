@@ -1956,6 +1956,152 @@ mod tests {
             runtime.close_open_window().unwrap();
             println!("official server confirms crafting shift={shift}: {initial} planks => {expected} sticks, ingredients exhausted");
         }
+        for (name, first, second, id, count, damage, keep_original) in [
+            (
+                "repair",
+                "diamond_pickaxe 1 1500",
+                "diamond_pickaxe 1 1400",
+                278,
+                1,
+                1261,
+                false,
+            ),
+            ("map", "filled_map 1 0", "map 1 0", 358, 2, 0, false),
+            (
+                "book",
+                "written_book 1 0 {generation:0}",
+                "writable_book 1 0",
+                387,
+                1,
+                0,
+                true,
+            ),
+        ] {
+            runtime.send_chat_message("/clear VanillaProbe").unwrap();
+            runtime
+                .send_chat_message(&format!(
+                    "/replaceitem entity VanillaProbe slot.inventory.0 {first}"
+                ))
+                .unwrap();
+            runtime
+                .send_chat_message(&format!(
+                    "/replaceitem entity VanillaProbe slot.inventory.1 {second}"
+                ))
+                .unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                let window = runtime.usability.inventory().inventory_window();
+                if window
+                    .slot(9)
+                    .and_then(|s| s.as_ref())
+                    .is_some_and(|s| s.item_id == id)
+                    && window.slot(10).and_then(|s| s.as_ref()).is_some()
+                {
+                    break;
+                }
+            }
+            runtime.open_player_inventory().unwrap();
+            for slot in [9, 1, 10, 4] {
+                runtime.click_window_slot(0, slot, 0).unwrap();
+                for _ in 0..100 {
+                    advance(&mut runtime);
+                    if runtime
+                        .usability
+                        .inventory()
+                        .pending_transactions()
+                        .is_empty()
+                    {
+                        break;
+                    }
+                }
+            }
+            let predicted = runtime
+                .usability
+                .inventory()
+                .inventory_window()
+                .slot(0)
+                .cloned()
+                .flatten()
+                .unwrap();
+            assert_eq!(
+                (predicted.item_id, predicted.count, predicted.damage),
+                (id, count, damage),
+                "{name}"
+            );
+            runtime.click_window_slot(0, 0, 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            runtime.click_window_slot(0, 11, 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            let window = runtime.usability.inventory().inventory_window();
+            assert_eq!(
+                window.slot(1).and_then(|s| s.as_ref()).is_some(),
+                keep_original,
+                "{name}"
+            );
+            assert!(window.slot(4).unwrap().is_none(), "{name}");
+            let actual = window.slot(11).and_then(|s| s.as_ref()).unwrap();
+            assert_eq!(
+                (actual.item_id, actual.count, actual.damage),
+                (id, count, damage),
+                "{name}"
+            );
+            if keep_original {
+                assert_eq!(
+                    rmc_net::nbt::parse(actual.nbt.as_ref().unwrap())
+                        .unwrap()
+                        .get("generation"),
+                    Some(&rmc_net::nbt::Tag::Int(1))
+                );
+            }
+            let chat_count = runtime.usability.snapshot().chat_lines.len();
+            let extra = if keep_original {
+                ",tag:{generation:1}".to_string()
+            } else {
+                format!(",Damage:{damage}s")
+            };
+            runtime
+                .send_chat_message(&format!(
+                    "/testfor VanillaProbe {{Inventory:[{{Slot:11b,Count:{count}b{extra}}}]}}"
+                ))
+                .unwrap();
+            let mut confirmed = false;
+            for _ in 0..100 {
+                advance(&mut runtime);
+                confirmed = runtime
+                    .usability
+                    .snapshot()
+                    .chat_lines
+                    .iter()
+                    .skip(chat_count)
+                    .any(|l| l.message_json.contains("commands.testfor.success"));
+                if confirmed {
+                    break;
+                }
+            }
+            assert!(confirmed, "official server did not confirm {name}");
+            runtime.close_open_window().unwrap();
+            println!("official server confirms {name} output count={count}, damage={damage}, original retained={keep_original}");
+        }
         if std::env::var_os("RMC_STOP_TEST_SERVER").is_some() {
             runtime.send_chat_message("/stop").unwrap();
             // Let the owned server process the queued command before dropping transport.

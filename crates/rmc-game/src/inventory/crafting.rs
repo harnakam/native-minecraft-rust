@@ -1,6 +1,7 @@
 //! Local crafting matching and result-slot effects, reconstructed from MCP919.
 use super::{item_has_subtypes, item_stack_limit, ContainerSnapshot};
 use rmc_net::codec::play::{ItemStack, Slot};
+use rmc_net::nbt::{self, Tag};
 #[derive(Clone, Copy)]
 struct Ingredient {
     id: i16,
@@ -218,10 +219,107 @@ pub(super) fn grid_width(window: &ContainerSnapshot) -> Option<usize> {
         None
     }
 }
+fn clone_result(cells: &[Slot]) -> Slot {
+    let original = cells
+        .iter()
+        .flatten()
+        .find(|s| matches!(s.item_id, 358 | 387))?;
+    let blank_id = if original.item_id == 358 { 395 } else { 386 };
+    let mut originals = 0;
+    let mut blanks = 0;
+    for stack in cells.iter().flatten() {
+        if stack.item_id == original.item_id {
+            originals += 1;
+        } else if stack.item_id == blank_id {
+            blanks += 1;
+        } else {
+            return None;
+        }
+    }
+    if originals != 1 || blanks == 0 {
+        return None;
+    }
+    if original.item_id == 358 {
+        let mut output = ItemStack::simple(358, blanks + 1, original.damage);
+        if let Some(Tag::String(name)) = original
+            .nbt
+            .as_deref()
+            .and_then(|b| nbt::parse(b).ok())
+            .and_then(|t| t.get("display").and_then(|d| d.get("Name")).cloned())
+        {
+            let display =
+                Tag::Compound([("Name".encode_utf16().collect(), Tag::String(name))].into());
+            output.nbt = Some(
+                nbt::encode(&Tag::Compound(
+                    [("display".encode_utf16().collect(), display)].into(),
+                ))
+                .ok()?,
+            );
+        }
+        Some(output)
+    } else {
+        let Tag::Compound(mut tags) = nbt::parse(original.nbt.as_deref()?).ok()? else {
+            return None;
+        };
+        let key: Vec<u16> = "generation".encode_utf16().collect();
+        let generation = match tags.get(&key) {
+            Some(Tag::Byte(v)) => i32::from(*v),
+            Some(Tag::Short(v)) => i32::from(*v),
+            Some(Tag::Int(v)) => *v,
+            Some(Tag::Long(v)) => *v as i32,
+            Some(Tag::Float(v)) => java_floor(f64::from(*v)),
+            Some(Tag::Double(v)) => java_floor(*v),
+            _ => 0,
+        };
+        if generation >= 2 {
+            return None;
+        }
+        tags.insert(key, Tag::Int(generation.wrapping_add(1)));
+        let mut output = ItemStack::simple(387, blanks, 0);
+        output.nbt = Some(nbt::encode(&Tag::Compound(tags)).ok()?);
+        Some(output)
+    }
+}
+// NBT numeric getters use MathHelper.floor rather than a truncating cast.
+fn java_floor(value: f64) -> i32 {
+    let truncated = value as i32;
+    if value < f64::from(truncated) {
+        truncated.wrapping_sub(1)
+    } else {
+        truncated
+    }
+}
+fn repair_result(cells: &[Slot]) -> Slot {
+    let mut items = cells.iter().flatten();
+    let first = items.next()?;
+    let second = items.next()?;
+    if items.next().is_some()
+        || first.item_id != second.item_id
+        || first.count != 1
+        || second.count != 1
+    {
+        return None;
+    }
+    let (_, subtypes, max_damage) = super::item_properties::properties(first.item_id)?;
+    if subtypes || max_damage == 0 {
+        return None;
+    }
+    let max = i32::from(max_damage);
+    let damage = (i32::from(first.damage) + i32::from(second.damage) - max - max * 5 / 100).max(0);
+    // Crafting creates a fresh item and intentionally removes ingredient NBT/enchantments.
+    Some(ItemStack::simple(first.item_id, 1, damage as i16))
+}
+
 pub(super) fn result(window: &ContainerSnapshot) -> Slot {
     let width = grid_width(window)?;
     if window.slots.len() < 1 + width * width {
         return None;
+    }
+    if let Some(cloned) = clone_result(&window.slots[1..=width * width]) {
+        return Some(cloned);
+    }
+    if let Some(repaired) = repair_result(&window.slots[1..=width * width]) {
+        return Some(repaired);
     }
     for recipe in recipes() {
         if recipe.width == 0 {
@@ -295,7 +393,16 @@ pub(super) fn consume(window: &mut ContainerSnapshot) {
     let Some(width) = grid_width(window) else {
         return;
     };
+    let cloning_book =
+        clone_result(&window.slots[1..=width * width]).is_some_and(|s| s.item_id == 387);
     for slot in 1..=width * width {
+        if cloning_book
+            && window.slots[slot]
+                .as_ref()
+                .is_some_and(|s| s.item_id == 387)
+        {
+            continue;
+        }
         let Some(mut stack) = window.slots[slot].take() else {
             continue;
         };
@@ -389,6 +496,136 @@ mod tests {
         ConfirmTransactionClientboundPacket, PlayServerboundPacket, SetSlotPacket,
     };
     #[test]
+    fn cloning_preserves_book_tags_and_original_but_only_map_name() {
+        let tags = Tag::Compound(
+            [
+                ("generation".encode_utf16().collect(), Tag::Int(0)),
+                (
+                    "title".encode_utf16().collect(),
+                    Tag::String("原本\0😀".encode_utf16().collect()),
+                ),
+                (
+                    "display".encode_utf16().collect(),
+                    Tag::Compound(
+                        [(
+                            "Name".encode_utf16().collect(),
+                            Tag::String("地図".encode_utf16().collect()),
+                        )]
+                        .into(),
+                    ),
+                ),
+            ]
+            .into(),
+        );
+        let mut book = ItemStack::simple(387, 1, 0);
+        book.nbt = Some(nbt::encode(&tags).unwrap());
+        let mut window = InventoryState::new().inventory_window;
+        window.slots = vec![None; 45];
+        window.slots[1] = Some(book.clone());
+        window.slots[2] = Some(ItemStack::simple(386, 2, 0));
+        window.slots[4] = Some(ItemStack::simple(386, 1, 0));
+        let output = result(&window).unwrap();
+        assert_eq!(output.count, 2);
+        let output_tags = nbt::parse(output.nbt.as_ref().unwrap()).unwrap();
+        assert_eq!(output_tags.get("generation"), Some(&Tag::Int(1)));
+        assert_eq!(output_tags.get("title"), tags.get("title"));
+        consume(&mut window);
+        assert_eq!(window.slots[1], Some(book));
+        assert_eq!(window.slots[2].as_ref().unwrap().count, 1);
+        assert!(window.slots[4].is_none());
+        let mut map = ItemStack::simple(358, 1, 7);
+        map.nbt = Some(nbt::encode(&tags).unwrap());
+        window.slots[1] = Some(map);
+        window.slots[2] = Some(ItemStack::simple(395, 8, 0));
+        let output = result(&window).unwrap();
+        assert_eq!((output.item_id, output.count, output.damage), (358, 2, 7));
+        let output_tags = nbt::parse(output.nbt.as_ref().unwrap()).unwrap();
+        assert!(output_tags.get("title").is_none());
+        assert_eq!(output_tags.get("display"), tags.get("display"));
+        consume(&mut window);
+        assert!(window.slots[1].is_none());
+        assert_eq!(window.slots[2].as_ref().unwrap().count, 7);
+    }
+    #[test]
+    fn second_generation_book_and_mixed_clone_inputs_are_rejected() {
+        let mut book = ItemStack::simple(387, 1, 0);
+        book.nbt = Some(
+            nbt::encode(&Tag::Compound(
+                [("generation".encode_utf16().collect(), Tag::Int(2))].into(),
+            ))
+            .unwrap(),
+        );
+        assert!(clone_result(&[Some(book.clone()), Some(ItemStack::simple(386, 1, 0))]).is_none());
+        assert!(clone_result(&[Some(book), Some(ItemStack::simple(395, 1, 0))]).is_none());
+        assert!(clone_result(&[
+            Some(ItemStack::simple(358, 1, 0)),
+            Some(ItemStack::simple(358, 1, 0)),
+            Some(ItemStack::simple(395, 1, 0))
+        ])
+        .is_none());
+    }
+    #[test]
+    #[ignore = "requires locally executed MCP919 CloningProbe fixtures"]
+    fn local_java_cloning_fixtures_match() {
+        fn stack(text: &str) -> Slot {
+            if text == "~" {
+                return None;
+            }
+            let v: Vec<_> = text.split(':').collect();
+            let mut s = ItemStack::simple(
+                v[0].parse().unwrap(),
+                v[1].parse().unwrap(),
+                v[2].parse().unwrap(),
+            );
+            if v[3] != "-" {
+                s.nbt = Some(
+                    (0..v[3].len())
+                        .step_by(2)
+                        .map(|i| u8::from_str_radix(&v[3][i..i + 2], 16).unwrap())
+                        .collect(),
+                );
+            }
+            Some(s)
+        }
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tmp/cloning-java-oracle.log"),
+        )
+        .unwrap();
+        let mut count = 0;
+        for line in text.lines().filter(|l| l.starts_with("CLONE|")) {
+            let parts: Vec<_> = line.split('|').collect();
+            let mut window = InventoryState::new().inventory_window;
+            window.window_id = 1;
+            window.slots = vec![None; 46];
+            window.metadata = Some(super::super::ContainerMetadata {
+                inventory_type: "minecraft:crafting_table".into(),
+                window_title_json: "{}".into(),
+                slot_count: 10,
+                entity_id: None,
+            });
+            for (i, cell) in parts[1].split(';').enumerate() {
+                window.slots[i + 1] = stack(cell);
+            }
+            let actual = result(&window);
+            let expected = stack(parts[2]);
+            match (actual, expected) {
+                (Some(a), Some(e)) => {
+                    assert_eq!(
+                        (a.item_id, a.count, a.damage),
+                        (e.item_id, e.count, e.damage),
+                        "{line}"
+                    );
+                    assert!(a.tags_equal(&e), "{line}");
+                }
+                (a, e) => assert_eq!(a, e, "{line}"),
+            }
+            count += 1;
+        }
+        assert_eq!(count, 480);
+        println!("{count} MCP919 book/map cloning cases match including NBT");
+    }
+    #[test]
     #[ignore = "requires locally executed MCP919 CraftingProbe fixtures"]
     fn local_java_crafting_fixtures_match() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -427,6 +664,28 @@ mod tests {
             "{count} local Java crafting cases match; {} authored recipes registered",
             recipes().len()
         );
+    }
+    #[test]
+    fn repair_combines_durability_with_bonus_and_discards_nbt() {
+        let mut state = InventoryState::new();
+        let mut a = ItemStack::simple(278, 1, 1500);
+        a.nbt = Some(vec![10, 0, 0, 0]);
+        state.inventory_window.slots[1] = Some(a);
+        state.inventory_window.slots[4] = Some(ItemStack::simple(278, 1, 1400));
+        assert_eq!(
+            result(&state.inventory_window),
+            Some(ItemStack::simple(278, 1, 1261))
+        );
+        state.inventory_window.slots[1].as_mut().unwrap().damage = 10;
+        assert_eq!(
+            result(&state.inventory_window),
+            Some(ItemStack::simple(278, 1, 0))
+        );
+        state.inventory_window.slots[4].as_mut().unwrap().count = 2;
+        assert_eq!(result(&state.inventory_window), None);
+        state.inventory_window.slots[4].as_mut().unwrap().count = 1;
+        state.inventory_window.slots[2] = Some(ItemStack::simple(280, 1, 0));
+        assert_eq!(result(&state.inventory_window), None);
     }
     #[test]
     fn shaped_offsets_metadata_and_extra_items() {

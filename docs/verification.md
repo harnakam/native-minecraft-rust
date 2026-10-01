@@ -1214,3 +1214,32 @@ priority/drop prediction, throw/swap result handling and statistics are open.
 Unsupported recipes require authoritative server result updates; local
 prediction does not yet match them. Manual GUI parity remains unverified.
 No reference Java sources or game resources are published.
+
+### Repair and book/map cloning
+
+Repair prediction reconstructs RecipesRepairItem: two single damageable items,
+matching item type, combined remaining durability plus the integer 5% bonus,
+zero-clamped damage and fresh output without enchantment/NBT. The local Java
+CraftingManager comparison now passes 2,036 cases, including 1,800 repair cases
+across all 50 registered damageable items and six damage values per input.
+Book cloning copies compound NBT, updates generation, rejects generation >=2,
+counts occupied blank-book slots and retains a single original. Map cloning
+retains metadata and display.Name only; other original tags are discarded.
+A separate executed MCP919 probe passes 480 book/map cases including NBT,
+multiple blank slots/counts, generation limits, duplicate originals and wrong
+materials. NBT encoding preserves Java modified UTF-8 including null and
+surrogates, with depth/element/byte limits and list-type validation. Normal
+unit tests cover NBT encoding and recipe consumption. Stacked original-book
+reference sharing/remainder behavior is still open; these cases are not
+included in the consumption claim. Remaining special recipes and the full
+static catalog are still incomplete.
+
+The isolated official 1.8.9 server confirms repair output damage 1261, two
+cloned maps, and a generation-1 cloned book with the original retained.
+Each scenario uses actual matrix pickup and output placement, acknowledged
+transactions and server-side /testfor Inventory NBT. The first map fixture
+used an absent map id which the server normalized; the corrected fixture
+uses an existing map id. Both earlier drag/collection/special-slot and basic
+crafting scenarios also pass. Full workspace tests and format/diff checks
+pass after the final code changes. The owned server stopped and saved.
+Manual GUI operation remains unverified.
