@@ -65,3 +65,8 @@ maps to StatisticsState.increase with wrapping Java int addition and parent
 gating. EntityPlayerSP.addStat additionally accepts only independent IDs;
 18 such IDs are registered in statistics_registry.rs. Gameplay action
 callers, rendering and persistence remain open.
+
+EntityPlayer.jump -> triggerAchievement(StatList.jumpStat) now maps to
+LocalSimulationLayer.apply_jump -> ClientShell.statistic_increments ->
+LiveRuntime StatisticsState.increase with the remote-player gate. Water/flight
+vertical input follows separate simulation branches and does not emit jump.

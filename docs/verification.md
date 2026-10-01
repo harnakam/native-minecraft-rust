@@ -1434,3 +1434,12 @@ amounts, and remote/integrated-player gates. Normal tests cover dependency
 progress, remote rejection, Java overflow and authoritative replacement.
 This verifies the state API; simulation action callers, GUI and storage are
 still unconnected. The complete-compatibility goal remains open.
+
+## Jump statistic production path (2026-10-01)
+
+LocalSimulationLayer emits stat.jump only at apply_jump success, matching
+EntityPlayer.jump. ClientShell drains events once per simulation tick and
+LiveRuntime applies remote-player independent-stat increments. Tests cover
+zero-tick frames, first actual tick under frame pacing, airborne key holding,
+event draining, forced early landing cooldown and a later successful jump.
+Other gameplay increments and full movement-statistics parity remain open.

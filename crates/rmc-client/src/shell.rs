@@ -39,6 +39,7 @@ pub struct ShellPerformanceSnapshot {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShellAdvanceOutput {
+    pub statistic_increments: Vec<(&'static str, i32)>,
     pub ticks_run: usize,
     pub total_ticks: u64,
     pub packets: Vec<PlayServerboundPacket>,
@@ -62,6 +63,33 @@ pub struct ClientShell {
 mod tests {
     use super::*;
     use rmc_net::codec::play::{HeldItemChangeClientboundPacket, PlayClientboundPacket};
+
+    #[test]
+    fn jump_statistics_follow_simulation_ticks_and_drain_once_per_frame() {
+        use rmc_game::input::PhysicalInput;
+        let mut shell = ClientShell::new(ClientShellConfig::vanilla());
+        shell.set_mouse_captured(true);
+        let press = InputFrame {
+            pressed_inputs: vec![PhysicalInput::Space],
+            ..InputFrame::default()
+        };
+        let zero = shell.advance(Duration::ZERO, &press);
+        assert!(zero.statistic_increments.is_empty());
+        let mut jump = shell.advance(Duration::from_millis(50), &InputFrame::default());
+        for _ in 0..10 {
+            if jump.ticks_run > 0 {
+                break;
+            }
+            assert!(jump.statistic_increments.is_empty());
+            jump = shell.advance(Duration::from_millis(50), &InputFrame::default());
+        }
+        assert!(jump.ticks_run > 0);
+        assert_eq!(jump.statistic_increments, [("stat.jump", 1)]);
+        let airborne = shell.advance(Duration::from_millis(50), &InputFrame::default());
+        assert!(airborne.statistic_increments.is_empty());
+        let no_tick = shell.advance(Duration::ZERO, &InputFrame::default());
+        assert!(no_tick.statistic_increments.is_empty());
+    }
 
     #[test]
     fn server_hotbar_change_survives_subsequent_input_frames() {
@@ -245,6 +273,7 @@ impl ClientShell {
         let pacing = self.frame_pacer.pace(frame_delta);
         let schedule = self.timer.advance(pacing.paced_frame_time);
         let mut packets = Vec::with_capacity(schedule.ticks_to_run);
+        let mut statistic_increments = Vec::new();
 
         for _ in 0..schedule.ticks_to_run {
             if let Some(world) = world {
@@ -258,6 +287,7 @@ impl ClientShell {
                 self.simulation
                     .tick(update.movement, self.camera, update.selected_hotbar_slot);
             }
+            statistic_increments.extend(self.simulation.take_statistic_increments());
             packets.extend(
                 self.simulation
                     .take_ability_changes()
@@ -281,6 +311,7 @@ impl ClientShell {
         );
 
         ShellAdvanceOutput {
+            statistic_increments,
             ticks_run: schedule.ticks_to_run,
             total_ticks: schedule.total_ticks,
             performance: ShellPerformanceSnapshot {

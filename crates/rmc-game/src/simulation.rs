@@ -143,6 +143,7 @@ impl SimulationSnapshot {
 }
 
 pub struct LocalSimulationLayer {
+    pending_statistic_increments: Vec<(&'static str, i32)>,
     config: SimulationConfig,
     network: AuthoritativePlayerState,
     player: LocalPlayerState,
@@ -194,6 +195,7 @@ impl LocalSimulationLayer {
             pending_knockback: None,
             pending_server_state: None,
             sprint_reset_ticks: 0,
+            pending_statistic_increments: Vec::new(),
             jump_ticks: 0,
             in_web: false,
             fluid_acceleration: None,
@@ -594,6 +596,10 @@ impl LocalSimulationLayer {
                 walking_speed: self.walking_speed,
             });
     }
+    pub fn take_statistic_increments(&mut self) -> Vec<(&'static str, i32)> {
+        std::mem::take(&mut self.pending_statistic_increments)
+    }
+
     pub fn take_ability_changes(&mut self) -> Vec<rmc_net::codec::play::PlayerAbilitiesPacket> {
         std::mem::take(&mut self.ability_changes)
     }
@@ -692,6 +698,7 @@ impl LocalSimulationLayer {
             self.jump_ticks = 0;
         }
         if movement.jump && self.player.on_ground && self.jump_ticks == 0 {
+            self.pending_statistic_increments.push(("stat.jump", 1));
             self.jump_ticks = 10;
             self.velocity.y = self.config.jump_velocity;
             if let Some((amplifier, _)) = self.effects.get(&8) {
@@ -919,6 +926,8 @@ mod tests {
             ..MovementInput::default()
         };
         simulation.tick(jumping, CameraState::default(), 0);
+        assert_eq!(simulation.take_statistic_increments(), [("stat.jump", 1)]);
+        assert!(simulation.take_statistic_increments().is_empty());
         simulation.apply_authoritative_state(AuthoritativePlayerState {
             position: Vec3::ZERO,
             velocity: Vec3::ZERO,
@@ -926,9 +935,11 @@ mod tests {
         });
         simulation.tick(jumping, CameraState::default(), 0);
         assert_eq!(simulation.player().position.y, 0.0);
+        assert!(simulation.take_statistic_increments().is_empty());
         simulation.tick(MovementInput::default(), CameraState::default(), 0);
         simulation.tick(jumping, CameraState::default(), 0);
         assert!((simulation.player().position.y - f64::from(0.42_f32)).abs() < 1e-9);
+        assert_eq!(simulation.take_statistic_increments(), [("stat.jump", 1)]);
     }
 
     #[test]

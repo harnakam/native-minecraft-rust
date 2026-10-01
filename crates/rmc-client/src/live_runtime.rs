@@ -304,6 +304,10 @@ impl LiveRuntime {
             }
         }
 
+        for (id, amount) in &output.statistic_increments {
+            self.usability.statistics_mut().increase(id, *amount, true);
+        }
+
         for packet in &output.packets {
             self.queue_play_packet(packet)?;
         }
