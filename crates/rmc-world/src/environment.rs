@@ -260,6 +260,24 @@ mod fluid_bounds_tests {
         world
     }
     #[test]
+    fn liquid_escape_requires_no_solid_or_liquid_in_inclusive_bounds() {
+        let empty = world(0, 0, true);
+        let bounds = Aabb::new([0.2, 0.1, 0.2], [0.8, 1.9, 0.8]);
+        assert!(empty.liquid_escape_clear(bounds));
+        for id in [1, 8, 9, 10, 11] {
+            assert!(
+                !world(id, 0, true).liquid_escape_clear(bounds),
+                "block {id}"
+            );
+        }
+        // World.isAnyLiquid includes a block at floor(max), even on the face.
+        let touching = Aabb::new([-0.6, 0.1, 0.2], [0.0, 1.9, 0.8]);
+        assert!(!world(8, 0, true).liquid_escape_clear(touching));
+        let clear = Aabb::new([-0.6001, 0.1, 0.2], [-0.0001, 1.9, 0.8]);
+        assert!(world(8, 0, true).liquid_escape_clear(clear));
+    }
+
+    #[test]
     fn falling_flow_distinguishes_web_ice_plant_and_stone_materials() {
         for (id, expected) in [
             (30, [0.1643989822269125, -0.9863938933614749, 0.0]),

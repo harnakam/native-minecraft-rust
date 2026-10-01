@@ -1504,3 +1504,11 @@ Inspected EntityPlayer.isPushedByWater: it returns !capabilities.isFlying.
 Simulation now gates water acceleration on active flight while retaining
 water detection. A received-block flow and PlayerAbilities packet regression
 covers flags 0/4/6/2, distinguishing permission from active flight.
+
+## Liquid escape predicate audit (2026-10-01)
+
+Inspected Entity.isOffsetPositionInLiquid and World.isAnyLiquid. Current
+liquid escape candidate offset and inclusive floor(max) liquid scan match
+the source. Regression tests cover air, solid, both water/lava variants and
+exact/near integer maximum faces. Entity collision exclusion is not yet
+implemented, so complete escape compatibility remains open.
