@@ -231,3 +231,12 @@ MCP、Minecraftのソース・JAR・画像・フォント・音声・ワール�
 - 通常テストで両ボタン、材料再計算、cursor条件、player/workbenchの拒否復元を検証。
 - 公式サーバーで両ボタンとも棒4個のItem entityと材料消費を確認。全workspaceテストも成功。
 - 未達: resultのnumber-key交換、金床/取引/精錬結果の投棄副作用、統計/実績、その他M1項目。
+
+### M1 クラフト結果の番号キー取得 実行記録
+
+- mode2でplayer/workbenchの完成品をホットバーへ移し、材料消費・残余返却・結果再計算を接続。
+- 移動先の既存itemをstorageへ戻す。元のitemがありstorageに空きがない場合は取得しない。
+- playerのcrafting入力slotは独立inventoryであることを反映し、番号キー操作の変化と結果再計算を保持。
+- 通常テストは空/占有hotbar、storage満杯、材料slot再計算、player/workbenchの全snapshot拒否復元とaliasを検証。
+- 公式サーバーで空/占有hotbarへの棒4個取得、材料消費、元itemの収納、Inventory NBTを確認。全workspaceテスト成功。
+- 未達: 金床/取引結果の番号キー副作用、地図拡張、統計/実績、残余item細部、手動GUI、後続マイルストーン。

@@ -559,6 +559,115 @@ mod tests {
         ConfirmTransactionClientboundPacket, PlayServerboundPacket, SetSlotPacket,
     };
     #[test]
+    fn workbench_number_key_result_updates_hotbar_alias_and_rolls_back() {
+        let mut state = InventoryState::new();
+        let mut window = ContainerSnapshot {
+            window_id: 1,
+            slots: vec![None; 46],
+            properties: Default::default(),
+            metadata: Some(super::super::ContainerMetadata {
+                inventory_type: "minecraft:crafting_table".into(),
+                window_title_json: "{}".into(),
+                slot_count: 10,
+                entity_id: None,
+            }),
+        };
+        window.slots[1] = Some(ItemStack::simple(5, 1, 0));
+        window.slots[4] = Some(ItemStack::simple(5, 1, 0));
+        refresh(&mut window);
+        let before = window.clone();
+        let player_before = state.inventory_window.clone();
+        state.open_window = Some(window);
+        let PlayServerboundPacket::ClickWindow(click) = state.queue_hotbar_swap(1, 0, 0).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(
+            state.inventory_window.slots[36],
+            Some(ItemStack::simple(280, 4, 0))
+        );
+        assert_eq!(
+            state.open_window.as_ref().unwrap().slots[37],
+            state.inventory_window.slots[36]
+        );
+        for slot in [0, 1, 4] {
+            assert!(state.open_window.as_ref().unwrap().slots[slot].is_none());
+        }
+        state.apply_confirm_transaction(
+            &rmc_net::codec::play::ConfirmTransactionClientboundPacket {
+                window_id: 1,
+                action_number: click.action_number,
+                accepted: false,
+            },
+        );
+        assert_eq!(state.open_window, Some(before));
+        assert_eq!(state.inventory_window, player_before);
+    }
+    #[test]
+    fn result_number_key_moves_output_rehomes_hotbar_and_restores_rejection() {
+        for occupied in [false, true] {
+            let mut state = InventoryState::new();
+            state.inventory_window.slots[1] = Some(ItemStack::simple(5, 1, 0));
+            state.inventory_window.slots[3] = Some(ItemStack::simple(5, 1, 0));
+            if occupied {
+                state.inventory_window.slots[36] = Some(ItemStack::simple(1, 12, 0));
+            }
+            refresh(&mut state.inventory_window);
+            let before = state.inventory_window.clone();
+            let PlayServerboundPacket::ClickWindow(click) =
+                state.queue_hotbar_swap(0, 0, 0).unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!((click.mode, click.button, click.clicked_item), (2, 0, None));
+            assert_eq!(
+                state.inventory_window.slots[36],
+                Some(ItemStack::simple(280, 4, 0))
+            );
+            assert!(state.inventory_window.slots[0..4]
+                .iter()
+                .all(Option::is_none));
+            if occupied {
+                assert_eq!(
+                    state.inventory_window.slots[37],
+                    Some(ItemStack::simple(1, 12, 0))
+                );
+            }
+            state.apply_confirm_transaction(
+                &rmc_net::codec::play::ConfirmTransactionClientboundPacket {
+                    window_id: 0,
+                    action_number: click.action_number,
+                    accepted: false,
+                },
+            );
+            assert_eq!(state.inventory_window, before);
+        }
+    }
+    #[test]
+    fn full_storage_blocks_occupied_hotbar_result_and_input_swap_recalculates() {
+        let mut state = InventoryState::new();
+        state.inventory_window.slots[1] = Some(ItemStack::simple(5, 1, 0));
+        state.inventory_window.slots[3] = Some(ItemStack::simple(5, 1, 0));
+        for slot in 9..45 {
+            state.inventory_window.slots[slot] = Some(ItemStack::simple(1, 64, 0));
+        }
+        refresh(&mut state.inventory_window);
+        let before = state.inventory_window.clone();
+        state.queue_hotbar_swap(0, 0, 0).unwrap();
+        assert_eq!(state.inventory_window, before);
+        state.inventory_window.slots[36] = None;
+        state.queue_hotbar_swap(0, 1, 0).unwrap();
+        assert_eq!(
+            state.inventory_window.slots[36],
+            Some(ItemStack::simple(5, 1, 0))
+        );
+        assert!(state.inventory_window.slots[1].is_none());
+        assert_eq!(
+            state.inventory_window.slots[0],
+            Some(ItemStack::simple(143, 1, 0))
+        );
+    }
+    #[test]
     fn workbench_result_throw_consumes_and_rejection_restores_both_views() {
         let mut state = InventoryState::new();
         let mut window = ContainerSnapshot {

@@ -2049,6 +2049,113 @@ mod tests {
             runtime.close_open_window().unwrap();
             println!("official server confirms result throw whole={whole}: four sticks dropped, matrix consumed");
         }
+        for occupied in [false, true] {
+            runtime.send_chat_message("/kill @e[type=Item]").unwrap();
+            runtime.send_chat_message("/clear VanillaProbe").unwrap();
+            runtime
+                .send_chat_message("/replaceitem entity @p slot.inventory.0 planks 2 0")
+                .unwrap();
+            if occupied {
+                runtime
+                    .send_chat_message("/replaceitem entity @p slot.hotbar.0 stone 12")
+                    .unwrap();
+            }
+            for _ in 0..100 {
+                advance(&mut runtime);
+                let w = runtime.usability.inventory().inventory_window();
+                if w.slot(9)
+                    .and_then(|s| s.as_ref())
+                    .is_some_and(|s| s.item_id == 5 && s.count == 2)
+                    && (!occupied
+                        || w.slot(36)
+                            .and_then(|s| s.as_ref())
+                            .is_some_and(|s| s.item_id == 1 && s.count == 12))
+                {
+                    break;
+                }
+            }
+            runtime.open_player_inventory().unwrap();
+            runtime.click_window_slot(0, 9, 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            runtime.drag_window_slots(0, &[1, 3], 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            runtime.swap_window_slot_with_hotbar(0, 0, 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            let w = runtime.usability.inventory().inventory_window();
+            for slot in [0, 1, 3] {
+                assert!(w.slot(slot).unwrap().is_none());
+            }
+            assert_eq!(
+                w.slot(36).cloned().flatten(),
+                Some(rmc_net::codec::play::ItemStack::simple(280, 4, 0))
+            );
+            if occupied {
+                assert_eq!(
+                    w.slot(37).cloned().flatten(),
+                    Some(rmc_net::codec::play::ItemStack::simple(1, 12, 0))
+                );
+            }
+            let marker = format!("swap-check:{occupied}");
+            runtime
+                .send_chat_message(&format!(r#"/tellraw @p {{"text":"{marker}"}}"#))
+                .unwrap();
+            runtime
+                .send_chat_message(
+                    "/testfor @p {Inventory:[{Slot:0b,id:\"minecraft:stick\",Count:4b}]}",
+                )
+                .unwrap();
+            let mut confirmed = false;
+            for _ in 0..100 {
+                advance(&mut runtime);
+                confirmed = runtime
+                    .usability
+                    .snapshot()
+                    .chat_lines
+                    .iter()
+                    .skip_while(|l| !l.message_json.contains(&marker))
+                    .skip(1)
+                    .any(|l| l.message_json.contains("commands.testfor.success"));
+                if confirmed {
+                    break;
+                }
+            }
+            assert!(
+                confirmed,
+                "server did not confirm number-key craft occupied={occupied}"
+            );
+            runtime.close_open_window().unwrap();
+            println!("official server confirms number-key craft occupied={occupied}: four sticks in hotbar, matrix consumed");
+        }
         for (name, first, second, id, count, damage, keep_original) in [
             (
                 "repair",

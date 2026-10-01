@@ -473,7 +473,9 @@ impl InventoryState {
                 _ => false,
             }
         };
-        if output {
+        let craft_width = super::crafting::grid_width(&before);
+        let crafting_result = slot_id == 0 && craft_width.is_some();
+        if output && !crafting_result {
             return Err("Number-key swaps on recipe result slots are not implemented");
         }
         let source = before.slot(slot_id).unwrap().clone();
@@ -490,6 +492,7 @@ impl InventoryState {
             .chain(9..36)
             .find(|slot| player.slot(*slot).is_some_and(Option::is_none));
         let can_swap = displaced.is_none() || (player_slot.is_some() && valid) || empty.is_some();
+        let took_source = source.is_some() && can_swap;
         let mut replacement = source.clone();
         if source.is_some() && can_swap {
             player.set_slot(hotbar_slot, source);
@@ -525,7 +528,9 @@ impl InventoryState {
             player.set_slot(hotbar_slot, None);
             replacement = displaced;
         }
-        if let Some(slot) = player_slot {
+        if window_id == 0 {
+            player.set_slot(slot_id, replacement);
+        } else if let Some(slot) = player_slot {
             player.set_slot(slot, replacement);
         } else {
             container.set_slot(slot_id, replacement);
@@ -543,6 +548,23 @@ impl InventoryState {
             self.open_window = Some(container);
         }
         self.sync_player_inventory_to_open();
+        if craft_width.is_some() {
+            let window = if window_id == 0 {
+                &mut self.inventory_window
+            } else {
+                self.open_window.as_mut().unwrap()
+            };
+            if crafting_result && took_source {
+                super::crafting::consume(window);
+            } else if craft_width.is_some_and(|w| slot_id >= 1 && slot_id as usize <= w * w) {
+                super::crafting::refresh(window);
+            }
+            if window_id != 0 {
+                self.sync_open_player_inventory();
+            } else {
+                self.sync_player_inventory_to_open();
+            }
+        }
         Ok(packet)
     }
 

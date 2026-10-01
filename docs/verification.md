@@ -1374,3 +1374,27 @@ markers now delimit new confirmations across history rotation; the corrected
 full run passes. Full workspace tests and format/diff checks pass. The owned
 server stopped and saved. Manual GUI parity and other result-slot side
 effects remain unverified; this is not full inventory compatibility.
+
+### Crafting result number-key pickup
+
+Container mode 2 was inspected. Player/workbench results now move their full
+stack into the selected hotbar slot and execute crafting pickup side effects.
+An occupied hotbar stack is rehomed through existing inventory insertion;
+a full inventory with no empty slot prevents the transfer, matching the
+reference precondition. Matrix/result/storage snapshots restore rejected
+transactions. Player crafting input swaps now retain the changed matrix,
+rather than discarding the independently updated container snapshot, and
+refresh the output. Workbench/player hotbar aliases synchronize before and
+after recipe consumption so remainder storage is retained. Normal tests
+cover empty/occupied hotbar pickup, full-storage suppression, input result
+refresh, player/workbench rejection restoration and mirrored hotbar slots.
+Anvil/merchant result swaps and other pending M1 requirements remain open.
+
+The isolated official server confirms four crafted sticks in hotbar slot 0
+with both empty and occupied destinations. Both matrix inputs are consumed;
+in the occupied case the original twelve stone move to hotbar slot 1.
+Transactions are acknowledged and server Inventory NBT checks confirm the
+result quantity and slot. All earlier inventory and special-recipe scenarios
+also pass. Full workspace tests and format/diff checks pass. The owned server
+stopped and saved. Manual GUI parity and other result-slot side effects are
+still unverified; full compatibility remains incomplete.
