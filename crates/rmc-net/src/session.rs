@@ -266,6 +266,11 @@ impl HeadlessSession {
             PlayClientboundPacket::SpawnPosition(position) => Some(SessionAction::UsabilityPacket(
                 PlayClientboundPacket::SpawnPosition(*position),
             )),
+            PlayClientboundPacket::BlockBreakAnimation(packet) => {
+                Some(SessionAction::UsabilityPacket(
+                    PlayClientboundPacket::BlockBreakAnimation(packet.clone()),
+                ))
+            }
             PlayClientboundPacket::Maps(packet) => Some(SessionAction::UsabilityPacket(
                 PlayClientboundPacket::Maps(packet.clone()),
             )),

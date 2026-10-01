@@ -1169,6 +1169,7 @@ pub const PACKETS: &[PacketSpec] = &[
     MAPS,
     STATISTICS,
     SPAWN_POSITION,
+    BLOCK_BREAK_ANIMATION,
     SOUND_EFFECT,
     OPEN_WINDOW,
     CLOSE_WINDOW,
@@ -1373,5 +1374,20 @@ pub const SPAWN_POSITION: PacketSpec = PacketSpec {
         name: "position",
         encoding: "Position (Long)",
         notes: "Forced player spawn point and world spawn coordinates.",
+    }],
+};
+
+pub const BLOCK_BREAK_ANIMATION: PacketSpec = PacketSpec {
+    state: ProtocolState::Play,
+    direction: PacketDirection::Clientbound,
+    id: 0x25,
+    name: "Block Break Animation",
+    java_class: "net.minecraft.network.play.server.S25PacketBlockBreakAnim",
+    java_handler: "INetHandlerPlayClient.handleBlockBreakAnim",
+    compression: PLAY_COMPRESSION,
+    fields: &[FieldSpec {
+        name: "breaker, position, stage",
+        encoding: "VarInt, Position, UnsignedByte",
+        notes: "Stages 0..9 update; all other byte values remove the breaker entry.",
     }],
 };

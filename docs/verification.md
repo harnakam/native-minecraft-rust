@@ -1520,3 +1520,11 @@ coordinates and UsabilityState forced player spawn point, following
 NetHandlerPlayClient.handleSpawnPosition. Tests cover repeated updates,
 negative coordinates, packed extremes, exact bytes for all-minus-one and
 truncated/trailing data rejection. Compass rendering remains incomplete.
+
+## Block break animation state (2026-10-01)
+
+S25 follows the VarInt/packed-position/unsigned-stage source codec.
+World state follows RenderGlobal.sendBlockBreakProgress and updateClouds
+cleanup: per-breaker replacement, invalid-stage removal, 20-tick sweep and
+strict age >400 expiry. Tests verify wire bytes, truncation, position change,
+multiple breakers, refresh and expiry boundary. Rendering remains open.

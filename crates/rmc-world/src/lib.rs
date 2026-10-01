@@ -401,6 +401,7 @@ impl WorldChangeSummary {
 
 #[derive(Clone, Debug, Default)]
 pub struct WorldSnapshot {
+    block_damage: block_damage::BlockDamage,
     spawn_position: Option<rmc_net::codec::play::BlockPosition>,
     maps: HashMap<i32, maps::MapData>,
     border: border::WorldBorder,
@@ -420,6 +421,7 @@ impl WorldSnapshot {
 
     pub fn new(config: WorldConfig) -> Self {
         Self {
+            block_damage: Default::default(),
             spawn_position: None,
             maps: HashMap::new(),
             border: border::WorldBorder::default(),
@@ -431,6 +433,9 @@ impl WorldSnapshot {
         }
     }
 
+    pub fn block_damage(&self) -> &block_damage::BlockDamage {
+        &self.block_damage
+    }
     pub fn spawn_position(&self) -> Option<rmc_net::codec::play::BlockPosition> {
         self.spawn_position
     }
@@ -465,6 +470,7 @@ impl WorldSnapshot {
 
     pub fn advance_time(&mut self, ticks: usize) {
         self.time.advance(ticks);
+        self.block_damage.advance(ticks);
     }
 
     pub fn chunk(&self, pos: ChunkPos) -> Option<&ChunkColumn> {
@@ -665,6 +671,10 @@ impl WorldSnapshot {
         let summary = match packet {
             PlayClientboundPacket::SpawnPosition(position) => {
                 self.spawn_position = Some(*position);
+                None
+            }
+            PlayClientboundPacket::BlockBreakAnimation(packet) => {
+                self.block_damage.receive(packet);
                 None
             }
             PlayClientboundPacket::Maps(packet) => {
@@ -994,3 +1004,5 @@ pub mod environment;
 mod selection_properties;
 
 mod material_properties;
+
+pub mod block_damage;

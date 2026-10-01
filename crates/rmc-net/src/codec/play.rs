@@ -12,6 +12,13 @@ pub use title::TitlePacket;
 pub use world_border::WorldBorderPacket;
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct BlockBreakAnimationPacket {
+    pub breaker_id: i32,
+    pub position: BlockPosition,
+    pub progress: u8,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlayerListHeaderFooterPacket {
     pub header_json: String,
     pub footer_json: String,
@@ -756,6 +763,7 @@ pub enum PlayClientboundPacket {
     MapChunkBulk(MapChunkBulkPacket),
     Maps(MapsPacket),
     SpawnPosition(BlockPosition),
+    BlockBreakAnimation(BlockBreakAnimationPacket),
     Statistics(StatisticsPacket),
     SoundEffect(SoundEffectPacket),
     OpenWindow(OpenWindowPacket),
@@ -791,6 +799,11 @@ impl PlayClientboundPacket {
         let mut reader = PacketReader::new(body);
 
         let packet = match packet_id {
+            0x25 => Self::BlockBreakAnimation(BlockBreakAnimationPacket {
+                breaker_id: reader.read_var_i32()?,
+                position: BlockPosition::decode(reader.read_i64()?),
+                progress: reader.read_u8()?,
+            }),
             0x05 => Self::SpawnPosition(BlockPosition::decode(reader.read_i64()?)),
             0x37 => Self::Statistics(StatisticsPacket::read(&mut reader)?),
             0x34 => Self::Maps(MapsPacket::read(&mut reader)?),
@@ -1418,6 +1431,12 @@ impl PlayClientboundPacket {
         let mut writer = PacketWriter::new();
 
         let packet_id = match self {
+            Self::BlockBreakAnimation(packet) => {
+                writer.write_var_i32(packet.breaker_id);
+                writer.write_i64(packet.position.encode());
+                writer.write_u8(packet.progress);
+                0x25
+            }
             Self::SpawnPosition(position) => {
                 writer.write_i64(position.encode());
                 0x05
