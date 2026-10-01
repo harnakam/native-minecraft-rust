@@ -1287,3 +1287,35 @@ Type. Both input slots are exhausted. Earlier inventory/repair/dye/cloning
 scenarios also pass. Full workspace tests, all four local Java recipe probes
 and format/diff checks pass. The owned server stopped and saved; manual GUI
 parity and fireworks use/rendering remain unverified.
+
+### Banner recipes and pattern duplication
+
+RecipesBanners, TileEntityBanner, ItemStack.getSubCompound and NBT list
+access/append behavior were inspected. Sixteen plain banner recipes increase
+the static catalog to 115. A dedicated inventory/banner.rs implements all
+38 craftable patterns in reference order: exact 3x3 dye masks with a shared
+metadata value, or a single metadata-matched token and at most one dye slot.
+Token recipes without a dye use color zero. Addition copies one banner and
+preserves its other NBT, rejects six existing compound patterns, and handles
+mistyped Patterns lists without attaching a detached Java getTagList result.
+Duplication requires exactly one patterned and one blank banner with matching
+base colors, copies one patterned output and returns one patterned original
+through the existing remainder/storage path. Existing bucket matching in
+that path now compares the actual remainder item/metadata/limit.
+The executed MCP919 probe passes 12,832 output/NBT cases: all 38 patterns,
+18 dye metadata values, 0/5/6 existing layers, four valid/invalid input variants,
+all paired base colors/pattern states/input orders, and 16 plain-banner recipes.
+Normal tests cover original return, six-layer rejection, dye-free token
+recipes and wrong empty/nonempty list types. Full banner rendering/placement,
+manual GUI parity and the remaining M1 requirements remain incomplete.
+
+The isolated official server confirms a dye-free curly-border pattern and
+pattern duplication through real matrix clicks, result pickup and inventory
+placement. Transactions are acknowledged, the original patterned banner is
+retained, the blank/token input is consumed, and /testfor confirms the result
+pattern NBT. The initial check exceeded protocol 47's 100-character chat
+limit; the corrected isolated-test selector keeps the command within that
+limit. All earlier inventory and special recipe scenarios also pass. Full
+workspace tests, the five local Java recipe probes (33,714 cases) and
+format/diff checks pass. The owned server stopped and saved. No MCP sources
+or Minecraft assets are published.

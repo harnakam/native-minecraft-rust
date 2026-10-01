@@ -2,6 +2,8 @@
 use super::{item_has_subtypes, item_stack_limit, ContainerSnapshot};
 use rmc_net::codec::play::{ItemStack, Slot};
 use rmc_net::nbt::{self, Tag};
+#[path = "banner.rs"]
+mod banner;
 #[derive(Clone, Copy)]
 struct Ingredient {
     id: i16,
@@ -200,6 +202,16 @@ fn recipes() -> &'static [Recipe] {
                 0,
             );
             add(&mut r, &["#"], &[('#', block, None)], material, 9, damage);
+        }
+        for color in 0..16 {
+            add(
+                &mut r,
+                &["###", "###", " | "],
+                &[('#', 35, Some(color)), ('|', 280, None)],
+                425,
+                1,
+                15 - color,
+            );
         }
         // Shaped recipes precede shapeless recipes, with larger recipe sizes first.
         r.sort_by_key(|recipe| (recipe.width == 0, std::cmp::Reverse(recipe.inputs.len())));
@@ -511,6 +523,10 @@ pub(super) fn result(window: &ContainerSnapshot) -> Slot {
     if window.slots.len() < 1 + width * width {
         return None;
     }
+    let cells = &window.slots[1..=width * width];
+    if let Some(out) = banner::duplicate(cells).or_else(|| banner::add_pattern(cells)) {
+        return Some(out);
+    }
     if let Some(fireworks) = fireworks_result(&window.slots[1..=width * width]) {
         return Some(fireworks);
     }
@@ -595,6 +611,7 @@ pub(super) fn consume(window: &mut ContainerSnapshot) {
     let Some(width) = grid_width(window) else {
         return;
     };
+    let cloning_banner = banner::duplicate(&window.slots[1..=width * width]).is_some();
     let cloning_book =
         clone_result(&window.slots[1..=width * width]).is_some_and(|s| s.item_id == 387);
     for slot in 1..=width * width {
@@ -608,8 +625,13 @@ pub(super) fn consume(window: &mut ContainerSnapshot) {
         let Some(mut stack) = window.slots[slot].take() else {
             continue;
         };
-        let remainder =
-            matches!(stack.item_id, 326 | 327 | 335).then(|| ItemStack::simple(325, 1, 0));
+        let remainder = if cloning_banner && banner::pattern_count(&stack) > 0 {
+            let mut original = stack.clone();
+            original.count = 1;
+            Some(original)
+        } else {
+            matches!(stack.item_id, 326 | 327 | 335).then(|| ItemStack::simple(325, 1, 0))
+        };
         stack.count = stack.count.saturating_sub(1);
         window.slots[slot] = (stack.count > 0).then_some(stack);
         if let Some(remainder) = remainder {
@@ -624,10 +646,10 @@ pub(super) fn consume(window: &mut ContainerSnapshot) {
                     .collect();
                 if let Some(&index) = indices.iter().find(|&&i| {
                     window.slots[i].as_ref().is_some_and(|s| {
-                        s.item_id == 325
+                        s.item_id == remainder.item_id
                             && s.tags_equal(&remainder)
-                            && s.damage == 0
-                            && s.count < item_stack_limit(325)
+                            && s.damage == remainder.damage
+                            && s.count < item_stack_limit(remainder.item_id)
                     })
                 }) {
                     window.slots[index].as_mut().unwrap().count += 1;
@@ -842,6 +864,48 @@ mod tests {
     #[ignore = "requires locally executed MCP919 FireworksProbe fixtures"]
     fn local_java_fireworks_fixtures_match() {
         compare_java_nbt_recipe_fixtures("fireworks-java-oracle.log", 9816);
+    }
+    #[test]
+    #[ignore = "requires locally executed MCP919 BannerProbe fixtures"]
+    fn local_java_banner_fixtures_match() {
+        compare_java_nbt_recipe_fixtures("banner-java-oracle.log", 12832);
+    }
+    #[test]
+    fn banner_duplication_returns_patterned_original_and_consumes_blank() {
+        let mut state = InventoryState::new();
+        let mut original = ItemStack::simple(425, 1, 2);
+        original.nbt = Some(
+            nbt::encode(&Tag::Compound(
+                [(
+                    "BlockEntityTag".encode_utf16().collect(),
+                    Tag::Compound(
+                        [(
+                            "Patterns".encode_utf16().collect(),
+                            Tag::List {
+                                kind: 10,
+                                values: vec![Tag::Compound(
+                                    [(
+                                        "Pattern".encode_utf16().collect(),
+                                        Tag::String("cre".encode_utf16().collect()),
+                                    )]
+                                    .into(),
+                                )],
+                            },
+                        )]
+                        .into(),
+                    ),
+                )]
+                .into(),
+            ))
+            .unwrap(),
+        );
+        state.inventory_window.slots[1] = Some(original.clone());
+        state.inventory_window.slots[4] = Some(ItemStack::simple(425, 2, 2));
+        refresh(&mut state.inventory_window);
+        assert_eq!(state.inventory_window.slots[0], Some(original.clone()));
+        consume(&mut state.inventory_window);
+        assert_eq!(state.inventory_window.slots[1], Some(original));
+        assert_eq!(state.inventory_window.slots[4].as_ref().unwrap().count, 1);
     }
     fn compare_java_nbt_recipe_fixtures(file: &str, expected_count: usize) {
         fn stack(text: &str) -> Slot {

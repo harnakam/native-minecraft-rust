@@ -1993,6 +1993,16 @@ mod tests {
                 0,
                 false,
             ),
+            ("banner pattern", "banner 1 4", "vine 1 0", 425, 1, 4, false),
+            (
+                "banner copy",
+                "banner 1 4 {BlockEntityTag:{Patterns:[{Pattern:cbo}]}}",
+                "banner 1 4",
+                425,
+                1,
+                4,
+                true,
+            ),
             ("map", "filled_map 1 0", "map 1 0", 358, 2, 0, false),
             (
                 "armor dye",
@@ -2015,14 +2025,10 @@ mod tests {
         ] {
             runtime.send_chat_message("/clear VanillaProbe").unwrap();
             runtime
-                .send_chat_message(&format!(
-                    "/replaceitem entity VanillaProbe slot.inventory.0 {first}"
-                ))
+                .send_chat_message(&format!("/replaceitem entity @p slot.inventory.0 {first}"))
                 .unwrap();
             runtime
-                .send_chat_message(&format!(
-                    "/replaceitem entity VanillaProbe slot.inventory.1 {second}"
-                ))
+                .send_chat_message(&format!("/replaceitem entity @p slot.inventory.1 {second}"))
                 .unwrap();
             let seed_id = match name {
                 "firework star" => 289,
@@ -2106,7 +2112,7 @@ mod tests {
                 (id, count, damage),
                 "{name}"
             );
-            if keep_original {
+            if name == "book" {
                 assert_eq!(
                     rmc_net::nbt::parse(actual.nbt.as_ref().unwrap())
                         .unwrap()
@@ -2145,19 +2151,36 @@ mod tests {
             if name == "firework rocket" {
                 assert!(actual.nbt.is_none());
             }
+            if name == "banner pattern" || name == "banner copy" {
+                let tag = rmc_net::nbt::parse(actual.nbt.as_ref().unwrap()).unwrap();
+                let patterns = tag
+                    .get("BlockEntityTag")
+                    .unwrap()
+                    .get("Patterns")
+                    .unwrap()
+                    .list()
+                    .unwrap();
+                assert_eq!(patterns.len(), 1);
+                assert!(patterns[0].get("Pattern").unwrap().string_equals("cbo"));
+                if name == "banner pattern" {
+                    assert_eq!(patterns[0].get("Color"), Some(&rmc_net::nbt::Tag::Int(0)));
+                }
+            }
             let chat_count = runtime.usability.snapshot().chat_lines.len();
             let extra = if name == "armor dye" {
                 ",tag:{display:{color:10040115}}".to_string()
             } else if name == "firework star" || name == "firework fade" {
                 ",tag:{Explosion:{Type:0b}}".to_string()
-            } else if keep_original {
+            } else if name == "banner pattern" || name == "banner copy" {
+                ",tag:{BlockEntityTag:{Patterns:[{Pattern:cbo}]}}".to_string()
+            } else if name == "book" {
                 ",tag:{generation:1}".to_string()
             } else {
                 format!(",Damage:{damage}s")
             };
             runtime
                 .send_chat_message(&format!(
-                    "/testfor VanillaProbe {{Inventory:[{{Slot:11b,Count:{count}b{extra}}}]}}"
+                    "/testfor @p {{Inventory:[{{Slot:11b,Count:{count}b{extra}}}]}}"
                 ))
                 .unwrap();
             let mut confirmed = false;
