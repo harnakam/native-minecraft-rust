@@ -559,6 +559,95 @@ mod tests {
         ConfirmTransactionClientboundPacket, PlayServerboundPacket, SetSlotPacket,
     };
     #[test]
+    fn workbench_result_throw_consumes_and_rejection_restores_both_views() {
+        let mut state = InventoryState::new();
+        let mut window = ContainerSnapshot {
+            window_id: 1,
+            slots: vec![None; 46],
+            properties: Default::default(),
+            metadata: Some(super::super::ContainerMetadata {
+                inventory_type: "minecraft:crafting_table".into(),
+                window_title_json: "{}".into(),
+                slot_count: 10,
+                entity_id: None,
+            }),
+        };
+        window.slots[1] = Some(ItemStack::simple(5, 1, 0));
+        window.slots[4] = Some(ItemStack::simple(5, 1, 0));
+        refresh(&mut window);
+        let before = window.clone();
+        let player_before = state.inventory_window.clone();
+        state.open_window = Some(window);
+        let PlayServerboundPacket::ClickWindow(click) =
+            state.queue_throw_click(1, 0, false).unwrap()
+        else {
+            panic!()
+        };
+        for slot in [0, 1, 4] {
+            assert!(state.open_window.as_ref().unwrap().slots[slot].is_none());
+        }
+        state.apply_confirm_transaction(
+            &rmc_net::codec::play::ConfirmTransactionClientboundPacket {
+                window_id: 1,
+                action_number: click.action_number,
+                accepted: false,
+            },
+        );
+        assert_eq!(state.open_window, Some(before));
+        assert_eq!(state.inventory_window, player_before);
+    }
+    #[test]
+    fn throwing_result_takes_whole_output_consumes_once_and_reject_restores() {
+        for whole in [false, true] {
+            let mut state = InventoryState::new();
+            state.inventory_window.slots[1] = Some(ItemStack::simple(5, 2, 0));
+            state.inventory_window.slots[3] = Some(ItemStack::simple(5, 2, 0));
+            refresh(&mut state.inventory_window);
+            let before = state.inventory_window.clone();
+            let PlayServerboundPacket::ClickWindow(click) =
+                state.queue_throw_click(0, 0, whole).unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(
+                (click.mode, click.button, click.clicked_item),
+                (4, i8::from(whole), None)
+            );
+            assert_eq!(state.inventory_window.slots[1].as_ref().unwrap().count, 1);
+            assert_eq!(state.inventory_window.slots[3].as_ref().unwrap().count, 1);
+            assert_eq!(
+                state.inventory_window.slots[0],
+                Some(ItemStack::simple(280, 4, 0))
+            );
+            assert!(state.carried_item.is_none());
+            state.apply_confirm_transaction(
+                &rmc_net::codec::play::ConfirmTransactionClientboundPacket {
+                    window_id: 0,
+                    action_number: click.action_number,
+                    accepted: false,
+                },
+            );
+            assert_eq!(state.inventory_window, before);
+        }
+    }
+    #[test]
+    fn throwing_crafting_input_refreshes_result_and_carried_stack_blocks_it() {
+        let mut state = InventoryState::new();
+        state.inventory_window.slots[1] = Some(ItemStack::simple(5, 1, 0));
+        state.inventory_window.slots[3] = Some(ItemStack::simple(5, 1, 0));
+        refresh(&mut state.inventory_window);
+        state.carried_item = Some(ItemStack::simple(1, 1, 0));
+        let before = state.inventory_window.clone();
+        state.queue_throw_click(0, 1, false).unwrap();
+        assert_eq!(state.inventory_window, before);
+        state.carried_item = None;
+        state.queue_throw_click(0, 1, false).unwrap();
+        assert_eq!(
+            state.inventory_window.slots[0],
+            Some(ItemStack::simple(143, 1, 0))
+        );
+    }
+    #[test]
     fn armor_dye_preserves_tags_damage_and_consumes_ingredients() {
         let mut state = InventoryState::new();
         let mut armor = ItemStack::simple(299, 1, 17);

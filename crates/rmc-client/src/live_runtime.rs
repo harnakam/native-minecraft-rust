@@ -1956,6 +1956,99 @@ mod tests {
             runtime.close_open_window().unwrap();
             println!("official server confirms crafting shift={shift}: {initial} planks => {expected} sticks, ingredients exhausted");
         }
+        for whole in [false, true] {
+            runtime.send_chat_message("/kill @e[type=Item]").unwrap();
+            runtime.send_chat_message("/clear VanillaProbe").unwrap();
+            runtime
+                .send_chat_message("/replaceitem entity @p slot.inventory.0 planks 2 0")
+                .unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .inventory_window()
+                    .slot(9)
+                    .and_then(|s| s.as_ref())
+                    .is_some_and(|s| s.item_id == 5 && s.count == 2)
+                {
+                    break;
+                }
+            }
+            runtime.open_player_inventory().unwrap();
+            runtime.click_window_slot(0, 9, 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            runtime.drag_window_slots(0, &[1, 3], 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            runtime.throw_window_slot(0, 0, whole).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            for slot in [0, 1, 3] {
+                assert!(runtime
+                    .usability
+                    .inventory()
+                    .inventory_window()
+                    .slot(slot)
+                    .unwrap()
+                    .is_none());
+            }
+            assert!(runtime.usability.inventory().carried_item().is_none());
+            let chat_count = runtime.usability.snapshot().chat_lines.len();
+            runtime
+                .send_chat_message(
+                    "/testfor @e[type=Item] {Item:{id:\"minecraft:stick\",Count:4b}}",
+                )
+                .unwrap();
+            let mut confirmed = false;
+            for _ in 0..100 {
+                advance(&mut runtime);
+                confirmed = runtime
+                    .usability
+                    .snapshot()
+                    .chat_lines
+                    .iter()
+                    .skip(chat_count)
+                    .any(|l| l.message_json.contains("commands.testfor.success"));
+                if confirmed {
+                    break;
+                }
+            }
+            assert!(
+                confirmed,
+                "server did not confirm four dropped sticks whole={whole}"
+            );
+            runtime.close_open_window().unwrap();
+            println!("official server confirms result throw whole={whole}: four sticks dropped, matrix consumed");
+        }
         for (name, first, second, id, count, damage, keep_original) in [
             (
                 "repair",
@@ -2168,7 +2261,11 @@ mod tests {
                     assert_eq!(patterns[0].get("Color"), Some(&rmc_net::nbt::Tag::Int(0)));
                 }
             }
-            let chat_count = runtime.usability.snapshot().chat_lines.len();
+            // A marker survives bounded chat-history rotation; a Vec length does not.
+            let marker = format!("native-check:{name}");
+            runtime
+                .send_chat_message(&format!(r#"/tellraw @p {{"text":"{marker}"}}"#))
+                .unwrap();
             let extra = if name == "armor dye" {
                 ",tag:{display:{color:10040115}}".to_string()
             } else if name == "firework star" || name == "firework fade" {
@@ -2193,7 +2290,8 @@ mod tests {
                     .snapshot()
                     .chat_lines
                     .iter()
-                    .skip(chat_count)
+                    .skip_while(|line| !line.message_json.contains(&marker))
+                    .skip(1)
                     .any(|l| l.message_json.contains("commands.testfor.success"));
                 if confirmed {
                     break;

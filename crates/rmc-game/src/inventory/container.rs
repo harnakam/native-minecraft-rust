@@ -389,13 +389,15 @@ impl InventoryState {
                 _ => false,
             }
         };
-        if result_slot && item.is_some() && self.carried_item.is_none() {
+        let craft_width = super::crafting::grid_width(&before);
+        let crafting_result = slot_id == 0 && craft_width.is_some();
+        if result_slot && !crafting_result && item.is_some() && self.carried_item.is_none() {
             return Err("Throwing recipe results requires pickup side effects");
         }
         let packet = self.queue_click(window_id, slot_id, i8::from(whole_stack), 4, None);
         if self.carried_item.is_none() {
             if let Some(mut item) = item {
-                item.count = if whole_stack {
+                item.count = if whole_stack || crafting_result {
                     0
                 } else {
                     item.count.saturating_sub(1)
@@ -407,12 +409,25 @@ impl InventoryState {
                 }
                 if window_id == 0 {
                     self.inventory_window.set_slot(slot_id, remaining);
+                    if crafting_result {
+                        super::crafting::consume(&mut self.inventory_window);
+                    } else if craft_width.is_some_and(|w| slot_id >= 1 && slot_id as usize <= w * w)
+                    {
+                        super::crafting::refresh(&mut self.inventory_window);
+                    }
                     self.sync_player_inventory_to_open();
                 } else {
                     self.open_window
                         .as_mut()
                         .unwrap()
                         .set_slot(slot_id, remaining);
+                    let window = self.open_window.as_mut().unwrap();
+                    if crafting_result {
+                        super::crafting::consume(window);
+                    } else if craft_width.is_some_and(|w| slot_id >= 1 && slot_id as usize <= w * w)
+                    {
+                        super::crafting::refresh(window);
+                    }
                     self.sync_open_player_inventory();
                 }
             }

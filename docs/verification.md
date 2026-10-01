@@ -1352,3 +1352,25 @@ After preserving combined recipe registry positions, all six Java probes
 and full workspace tests pass again. The owned server stopped and saved.
 Format/diff and publication checks pass; no assets or reference sources are
 included. This remains partial progress toward full Minecraft compatibility.
+
+### Crafting result throws
+
+Container mode 4, SlotCrafting and InventoryCraftResult.decrStackSize were
+inspected. Player/workbench result throws now take the entire result stack
+for either button, consume one recipe, apply remainders and recompute the
+result. Throwing an input slot also recomputes the result. A carried stack
+continues to block mode-4 mutation. Prediction stores the full pre-click
+snapshot for transaction rejection; workbench/player aliases synchronize.
+Normal tests cover both buttons, repeat-material result refresh, input throw,
+carried-stack suppression and player/workbench rollback. Anvil/merchant/
+furnace result side effects and result number-key swaps remain incomplete.
+
+The official server confirms both result-throw buttons drop an Item entity
+containing four sticks and exhaust both plank matrix slots, with no carried
+stack. The full earlier inventory/special-recipe run passes as well. The
+expanded command count exposed a test-only bounded-chat-history cursor bug:
+length-based skip stopped seeing responses after 100 lines. Per-query chat
+markers now delimit new confirmations across history rotation; the corrected
+full run passes. Full workspace tests and format/diff checks pass. The owned
+server stopped and saved. Manual GUI parity and other result-slot side
+effects remain unverified; this is not full inventory compatibility.

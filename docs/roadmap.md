@@ -222,3 +222,12 @@ MCP、Minecraftのソース・JAR・画像・フォント・音声・ワール�
 - 公式サーバーで花崗岩1個・安山岩2個の作成、metadata、材料消費とInventory NBTを確認。
 - 未達: 地図拡張（world mapデータ依存）、結果slotのthrow/swap、統計/実績、残余item細部、手動GUI検証。
 - 静的レシピの全登録は、M1全体や完全互換の達成を意味しない。
+
+### M1 クラフト結果の投棄 実行記録
+
+- mode4でplayer/workbenchの結果slotを投棄可能にし、材料消費・残余返却・結果再計算を接続。
+- InventoryCraftResultはdecrStackSizeの数量に関係なく全結果を返すため、両ボタンとも完成品全stackを取り出す。
+- 材料slotの投棄でも結果を再計算。cursor保持時は変化なし。transaction拒否でmatrix/result/storageを復元。
+- 通常テストで両ボタン、材料再計算、cursor条件、player/workbenchの拒否復元を検証。
+- 公式サーバーで両ボタンとも棒4個のItem entityと材料消費を確認。全workspaceテストも成功。
+- 未達: resultのnumber-key交換、金床/取引/精錬結果の投棄副作用、統計/実績、その他M1項目。
