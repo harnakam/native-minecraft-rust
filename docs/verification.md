@@ -1453,3 +1453,13 @@ climb increments and the airborne >25cm gate. Simulation uses displacement
 after collision resolution and excludes server correction displacement.
 Mounted/fall statistics and exhaustion remain open; this does not prove
 complete movement timing or physics parity.
+
+## Fall statistic accumulation (2026-10-01)
+
+The local MCP919 probe invokes inherited updateFallState and EntityPlayer.fall,
+with sounds/damage sinks isolated. All 252 initial-distance/vertical-delta/
+ground/flight-permission fixtures match accumulator float bits and emitted
+fallOneCm amounts. Normal simulation tests verify one landing increment and
+creative-permission suppression. Environment reset/halving follows inspected
+water, ladder and lava call sites. Full environmental timing, fall damage
+and audio remain unverified and incomplete.

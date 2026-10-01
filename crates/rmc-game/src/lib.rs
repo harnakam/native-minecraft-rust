@@ -21,3 +21,5 @@ pub mod statistics;
 pub mod achievement_catalog;
 
 pub mod movement_statistics;
+
+pub mod fall_statistics;

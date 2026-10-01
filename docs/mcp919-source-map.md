@@ -76,3 +76,9 @@ post-collision displacement and movement_statistics.rs. Submersion uses
 post-move eye position with Java float eye height; ladder is queried after
 movement, while cached in-water context comes from the tick environment.
 Mounted movement and fall accumulation remain open.
+
+Entity.updateFallState and EntityPlayer.fall map to fall_statistics.rs and
+the post-collision simulation path. Ground contact consumes prior distance;
+airborne downward movement narrows accumulated double back to float.
+Entity.handleWaterMovement clears distance, lava halves it, and the normal
+ladder travel branch clears it before movement. Damage and sounds remain open.

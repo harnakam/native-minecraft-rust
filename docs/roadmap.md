@@ -282,3 +282,11 @@ EntityPlayer.jumpの統計加算をLocalSimulationLayerの実際のジャンプ�
 MCP919 EntityPlayer.addMovementStatの64条件×100距離、6,400ケースが一致した。
 0cmに丸められる正の登攀もJava同様に記録する。テレポート距離は加算しない。
 騎乗、落下距離、疲労、完全な環境更新順の監査は未達。
+
+## 落下統計の接続（2026-10-01）
+
+下降距離をfloatで蓄積し、着地時に2m以上かつ飛行許可なしならfallOneCmを加算する。
+着地の最後のclipped移動は蓄積に含めず、水・梯子でリセット、溶岩で半減する。
+Java Entity.updateFallState/EntityPlayer.fallの252ケースがbit単位で一致した。
+実シミュレーションで着地一回だけ加算・creative抑止を確認した。
+落下ダメージ・音声・疲労・騎乗と環境更新全体のタイミングは未達。

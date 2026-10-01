@@ -143,6 +143,7 @@ impl SimulationSnapshot {
 }
 
 pub struct LocalSimulationLayer {
+    fall_distance: crate::fall_statistics::FallDistance,
     pending_statistic_increments: Vec<(&'static str, i32)>,
     config: SimulationConfig,
     network: AuthoritativePlayerState,
@@ -195,6 +196,7 @@ impl LocalSimulationLayer {
             pending_knockback: None,
             pending_server_state: None,
             sprint_reset_ticks: 0,
+            fall_distance: Default::default(),
             pending_statistic_increments: Vec::new(),
             jump_ticks: 0,
             in_web: false,
@@ -439,6 +441,15 @@ impl LocalSimulationLayer {
             environment.water_flow[1],
             environment.water_flow[2],
         ));
+        if environment.water {
+            self.fall_distance.reset();
+        }
+        if environment.lava {
+            self.fall_distance.halve_in_lava();
+        }
+        if environment.ladder && (!(environment.water || environment.lava) || self.flying) {
+            self.fall_distance.reset();
+        }
         self.fluid_in_water = environment.water;
         self.fluid_acceleration = if !self.flying && (environment.water || environment.lava) {
             Some(0.02)
@@ -501,6 +512,16 @@ impl LocalSimulationLayer {
             self.resolve_terrain(world);
         } else {
             self.resolve_collisions();
+        }
+        if self.game_mode != 3 {
+            if let Some(amount) = self.fall_distance.move_vertical(
+                self.player.position.y - statistics_start.y,
+                self.player.on_ground,
+                self.allow_flying,
+            ) {
+                self.pending_statistic_increments
+                    .push(("stat.fallOneCm", amount));
+            }
         }
         let position = self.player.position;
         let after_environment = world
@@ -947,6 +968,37 @@ mod tests {
     use crate::camera::CameraState;
     use crate::input::MovementInput;
     use crate::player::Vec3;
+
+    #[test]
+    fn fall_statistic_emits_once_on_landing_and_creative_permission_suppresses_it() {
+        for mode in [0, 1] {
+            let mut simulation = LocalSimulationLayer::new(SimulationConfig::vanilla());
+            simulation.set_game_mode(mode);
+            simulation.apply_authoritative_state(AuthoritativePlayerState {
+                position: Vec3::new(0.0, 5.0, 0.0),
+                velocity: Vec3::ZERO,
+                on_ground: false,
+            });
+            let mut falls = Vec::new();
+            for _ in 0..100 {
+                simulation.tick(MovementInput::default(), CameraState::default(), 0);
+                falls.extend(
+                    simulation
+                        .take_statistic_increments()
+                        .into_iter()
+                        .filter(|(id, _)| *id == "stat.fallOneCm"),
+                );
+            }
+            assert!(simulation.player().on_ground);
+            assert_eq!(simulation.fall_distance.0, 0.0);
+            if mode == 0 {
+                assert_eq!(falls.len(), 1);
+                assert!(falls[0].1 >= 200);
+            } else {
+                assert!(falls.is_empty());
+            }
+        }
+    }
 
     #[test]
     fn movement_statistics_use_local_displacement_and_exclude_server_teleports() {
