@@ -121,17 +121,33 @@ impl WorldSnapshot {
                 }
             }
         }
-        for x in bounds.min[0].floor() as i32..=(bounds.max[0] - 0.001).floor() as i32 {
-            for y in bounds.min[1].floor() as i32..=(bounds.max[1] - 0.001).floor() as i32 {
-                for z in bounds.min[2].floor() as i32..=(bounds.max[2] - 0.001).floor() as i32 {
-                    let pos = BlockPos::new(x, y, z);
-                    let state = self.block_state_or_air(pos);
-                    match state >> 4 {
-                        88 => {
-                            result.soul_sand_contacts = result.soul_sand_contacts.saturating_add(1)
+        let contact_min = bounds.min.map(|v| (v + 0.001).floor() as i32);
+        let contact_max = bounds.max.map(|v| (v - 0.001).floor() as i32);
+        let contacts_loaded = contact_max[1] >= 0
+            && contact_min[1] < 256
+            && (contact_min[0] >> 4..=contact_max[0] >> 4).all(|x| {
+                (contact_min[2] >> 4..=contact_max[2] >> 4)
+                    .all(|z| self.chunk(crate::ChunkPos::new(x, z)).is_some())
+            });
+        if contacts_loaded {
+            for x in (bounds.min[0] + 0.001).floor() as i32..=(bounds.max[0] - 0.001).floor() as i32
+            {
+                for y in
+                    (bounds.min[1] + 0.001).floor() as i32..=(bounds.max[1] - 0.001).floor() as i32
+                {
+                    for z in (bounds.min[2] + 0.001).floor() as i32
+                        ..=(bounds.max[2] - 0.001).floor() as i32
+                    {
+                        let pos = BlockPos::new(x, y, z);
+                        let state = self.block_state_or_air(pos);
+                        match state >> 4 {
+                            88 => {
+                                result.soul_sand_contacts =
+                                    result.soul_sand_contacts.saturating_add(1)
+                            }
+                            30 => result.web = true,
+                            _ => {}
                         }
-                        30 => result.web = true,
-                        _ => {}
                     }
                 }
             }
@@ -233,6 +249,21 @@ mod fluid_bounds_tests {
             .unwrap();
         world
     }
+    #[test]
+    fn block_contacts_contract_both_minimum_and_maximum_faces() {
+        for id in [30, 88] {
+            let w = world(id, 0, true);
+            for min in [0.9995, 1.0] {
+                let e = w.movement_environment(Aabb::new([min, 0.0, 0.2], [min + 0.6, 1.8, 0.8]));
+                assert!(!e.web);
+                assert_eq!(e.soul_sand_contacts, 0);
+            }
+            let e = w.movement_environment(Aabb::new([0.998, 0.0, 0.2], [1.598, 1.8, 0.8]));
+            assert_eq!(e.web, id == 30);
+            assert_eq!(e.soul_sand_contacts, u8::from(id == 88));
+        }
+    }
+
     #[test]
     fn integer_maximum_includes_fluid_and_missing_neighbor_suppresses_water() {
         let bounds = Aabb::new([-0.999, 0.0, 0.2], [0.001, 1.8, 0.8]);

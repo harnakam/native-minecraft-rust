@@ -1481,3 +1481,10 @@ integer-boundary boxes and full/partial loaded areas. Regression tests check
 exact integer maximum inclusion and missing neighboring chunk suppression.
 Water-flow normalization now honors Vec3.normalize's 1e-4 cutoff. All flow
 configurations and the complete environmental update order remain open.
+
+## Web and soul-sand contact bounds (2026-10-01)
+
+Inspected Entity.doBlockCollisions: both faces contract by 0.001 and the
+complete contact area must be loaded. Environment queries now honor these
+rules. Regression tests cover minimum-face near-touch, exact-touch and
+actual overlap for web and soul sand. Full block-effect parity remains open.
