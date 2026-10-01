@@ -15,207 +15,41 @@ impl Ingredient {
     }
 }
 struct Recipe {
+    order: usize,
     width: usize,
     height: usize,
     inputs: Vec<Option<Ingredient>>,
     output: ItemStack,
 }
-fn add(
-    recipes: &mut Vec<Recipe>,
-    rows: &[&str],
-    keys: &[(char, i16, Option<i16>)],
-    id: i16,
-    count: u8,
-    damage: i16,
-) {
-    recipes.push(Recipe {
-        width: rows[0].len(),
-        height: rows.len(),
-        inputs: rows
-            .iter()
-            .flat_map(|row| {
-                row.chars().map(|ch| {
-                    keys.iter().find(|k| k.0 == ch).map(|k| Ingredient {
-                        id: k.1,
-                        damage: k.2,
-                    })
-                })
-            })
-            .collect(),
-        output: ItemStack::simple(id, count, damage),
-    });
-}
-fn shapeless(
-    recipes: &mut Vec<Recipe>,
-    inputs: &[(i16, Option<i16>)],
-    id: i16,
-    count: u8,
-    damage: i16,
-) {
-    recipes.push(Recipe {
-        width: 0,
-        height: 0,
-        inputs: inputs
-            .iter()
-            .map(|&(id, damage)| Some(Ingredient { id, damage }))
-            .collect(),
-        output: ItemStack::simple(id, count, damage),
-    });
-}
+#[path = "recipe_catalog.rs"]
+mod recipe_catalog;
 fn recipes() -> &'static [Recipe] {
     static RECIPES: std::sync::OnceLock<Vec<Recipe>> = std::sync::OnceLock::new();
     RECIPES.get_or_init(|| {
-        let mut r = Vec::new();
-        for damage in 0..4 {
-            add(&mut r, &["#"], &[('#', 17, Some(damage))], 5, 4, damage);
-        }
-        for damage in 0..2 {
-            add(
-                &mut r,
-                &["#"],
-                &[('#', 162, Some(damage))],
-                5,
-                4,
-                damage + 4,
-            );
-        }
-        add(&mut r, &["#", "#"], &[('#', 5, None)], 280, 4, 0);
-        add(&mut r, &["##", "##"], &[('#', 5, None)], 58, 1, 0);
-        add(&mut r, &["###", "# #", "###"], &[('#', 5, None)], 54, 1, 0);
-        add(&mut r, &["###", "# #", "###"], &[('#', 4, None)], 61, 1, 0);
-        add(&mut r, &["###", "###"], &[('#', 5, None)], 96, 2, 0);
-        add(&mut r, &["##"], &[('#', 5, None)], 72, 1, 0);
-        add(&mut r, &["#"], &[('#', 5, None)], 143, 1, 0);
-        add(&mut r, &["##"], &[('#', 1, Some(0))], 70, 1, 0);
-        add(&mut r, &["#"], &[('#', 1, Some(0))], 77, 1, 0);
-        add(&mut r, &["###"], &[('#', 296, Some(0))], 297, 1, 0);
-        add(
-            &mut r,
-            &["#", "X"],
-            &[('#', 263, Some(0)), ('X', 280, Some(0))],
-            50,
-            4,
-            0,
-        );
-        add(
-            &mut r,
-            &["#", "X"],
-            &[('#', 263, Some(1)), ('X', 280, Some(0))],
-            50,
-            4,
-            0,
-        );
-        add(
-            &mut r,
-            &["#", "X"],
-            &[('#', 331, Some(0)), ('X', 280, Some(0))],
-            76,
-            1,
-            0,
-        );
-        add(
-            &mut r,
-            &["###", "XYX", "ZZZ"],
-            &[
-                ('#', 335, Some(0)),
-                ('X', 353, Some(0)),
-                ('Y', 344, Some(0)),
-                ('Z', 296, Some(0)),
-            ],
-            354,
-            1,
-            0,
-        );
-        for (material, pick, axe, shovel, hoe, sword) in [
-            (5, 270, 271, 269, 290, 268),
-            (4, 274, 275, 273, 291, 272),
-            (265, 257, 258, 256, 292, 267),
-            (264, 278, 279, 277, 293, 276),
-            (266, 285, 286, 284, 294, 283),
-        ] {
-            let keys = [
-                ('#', material, if material >= 256 { Some(0) } else { None }),
-                ('X', 280, Some(0)),
-            ];
-            add(&mut r, &["###", " X ", " X "], &keys, pick, 1, 0);
-            add(&mut r, &["##", "#X", " X"], &keys, axe, 1, 0);
-            add(&mut r, &["#", "X", "X"], &keys, shovel, 1, 0);
-            add(&mut r, &["##", " X", " X"], &keys, hoe, 1, 0);
-            add(&mut r, &["#", "#", "X"], &keys, sword, 1, 0);
-        }
-        for (material, base) in [(334, 298), (265, 306), (264, 310), (266, 314)] {
-            let keys = [('#', material, if material >= 256 { Some(0) } else { None })];
-            add(&mut r, &["###", "# #"], &keys, base, 1, 0);
-            add(&mut r, &["# #", "###", "###"], &keys, base + 1, 1, 0);
-            add(&mut r, &["###", "# #", "# #"], &keys, base + 2, 1, 0);
-            add(&mut r, &["# #", "# #"], &keys, base + 3, 1, 0);
-        }
-        shapeless(&mut r, &[(338, Some(0))], 353, 1, 0);
-        shapeless(&mut r, &[(39, None), (40, None), (281, Some(0))], 282, 1, 0);
-        shapeless(
-            &mut r,
-            &[
-                (339, Some(0)),
-                (339, Some(0)),
-                (339, Some(0)),
-                (334, Some(0)),
-            ],
-            340,
-            1,
-            0,
-        );
-        shapeless(
-            &mut r,
-            &[(375, Some(0)), (353, Some(0)), (39, None)],
-            376,
-            1,
-            0,
-        );
-        shapeless(&mut r, &[(369, Some(0))], 377, 2, 0);
-        shapeless(&mut r, &[(360, Some(0))], 362, 1, 0);
-        shapeless(&mut r, &[(86, None)], 361, 4, 0);
-        shapeless(&mut r, &[(352, Some(0))], 351, 3, 15);
-        for damage in 0..16 {
-            shapeless(
-                &mut r,
-                &[(35, Some(0)), (351, Some(damage))],
-                35,
-                1,
-                15 - damage,
-            );
-        }
-        for (material, damage, block) in [
-            (265, 0, 42),
-            (266, 0, 41),
-            (264, 0, 57),
-            (388, 0, 133),
-            (351, 4, 22),
-            (331, 0, 152),
-            (263, 0, 173),
-        ] {
-            add(
-                &mut r,
-                &["###", "###", "###"],
-                &[('#', material, Some(damage))],
-                block,
-                1,
-                0,
-            );
-            add(&mut r, &["#"], &[('#', block, None)], material, 9, damage);
-        }
-        for color in 0..16 {
-            add(
-                &mut r,
-                &["###", "###", " | "],
-                &[('#', 35, Some(color)), ('|', 280, None)],
-                425,
-                1,
-                15 - color,
-            );
-        }
-        // Shaped recipes precede shapeless recipes, with larger recipe sizes first.
-        r.sort_by_key(|recipe| (recipe.width == 0, std::cmp::Reverse(recipe.inputs.len())));
-        r
+        recipe_catalog::ENTRIES
+            .iter()
+            .map(
+                |&(order, width, height, inputs, id, count, damage)| Recipe {
+                    order,
+                    width,
+                    height,
+                    inputs: inputs
+                        .iter()
+                        .map(|&(id, damage)| {
+                            if id < 0 {
+                                None
+                            } else {
+                                Some(Ingredient {
+                                    id,
+                                    damage: (damage != 32767).then_some(damage),
+                                })
+                            }
+                        })
+                        .collect(),
+                    output: ItemStack::simple(id, count, damage),
+                },
+            )
+            .collect()
     })
 }
 pub(super) fn grid_width(window: &ContainerSnapshot) -> Option<usize> {
@@ -524,22 +358,27 @@ pub(super) fn result(window: &ContainerSnapshot) -> Slot {
         return None;
     }
     let cells = &window.slots[1..=width * width];
-    if let Some(out) = banner::duplicate(cells).or_else(|| banner::add_pattern(cells)) {
-        return Some(out);
-    }
-    if let Some(fireworks) = fireworks_result(&window.slots[1..=width * width]) {
-        return Some(fireworks);
-    }
-    if let Some(dyed) = armor_dye_result(&window.slots[1..=width * width]) {
-        return Some(dyed);
-    }
-    if let Some(cloned) = clone_result(&window.slots[1..=width * width]) {
-        return Some(cloned);
-    }
-    if let Some(repaired) = repair_result(&window.slots[1..=width * width]) {
-        return Some(repaired);
-    }
+    let cloning = clone_result(cells);
+    // Retain the reference registry positions across static and dynamic recipes.
+    // Position 72 is map extension, pending world map-data integration.
+    let dynamic = [
+        (0, armor_dye_result(cells)),
+        (1, fireworks_result(cells)),
+        (2, banner::add_pattern(cells)),
+        (70, cloning.clone().filter(|s| s.item_id == 387)),
+        (71, cloning.filter(|s| s.item_id == 358)),
+        (216, repair_result(cells)),
+        (280, banner::duplicate(cells)),
+    ]
+    .into_iter()
+    .find_map(|(order, output)| output.map(|s| (order, s)));
     for recipe in recipes() {
+        if dynamic
+            .as_ref()
+            .is_some_and(|(order, _)| *order < recipe.order)
+        {
+            return dynamic.map(|(_, s)| s);
+        }
         if recipe.width == 0 {
             let mut remaining = recipe.inputs.clone();
             let mut matches = true;
@@ -600,7 +439,7 @@ pub(super) fn result(window: &ContainerSnapshot) -> Slot {
             }
         }
     }
-    None
+    dynamic.map(|(_, s)| s)
 }
 pub(super) fn refresh(window: &mut ContainerSnapshot) {
     if grid_width(window).is_some() && !window.slots.is_empty() {
@@ -975,11 +814,9 @@ mod tests {
     fn local_java_cloning_fixtures_match() {
         compare_java_nbt_recipe_fixtures("cloning-java-oracle.log", 480);
     }
-    #[test]
-    #[ignore = "requires locally executed MCP919 CraftingProbe fixtures"]
-    fn local_java_crafting_fixtures_match() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tmp/crafting-java-oracle.log");
+    fn compare_java_static_fixtures(file: &str, expected_count: usize) {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tmp/{file}"));
         let text = std::fs::read_to_string(path).unwrap();
         fn stack(text: &str) -> Slot {
             if text == "~" {
@@ -1009,11 +846,21 @@ mod tests {
             assert_eq!(result(&window), stack(parts[3]), "{line}");
             count += 1;
         }
-        assert!(count >= 200);
+        assert_eq!(count, expected_count);
         println!(
-            "{count} local Java crafting cases match; {} authored recipes registered",
+            "{count} local Java crafting cases match; {} static recipes registered",
             recipes().len()
         );
+    }
+    #[test]
+    #[ignore = "requires locally executed MCP919 CraftingProbe fixtures"]
+    fn local_java_crafting_fixtures_match() {
+        compare_java_static_fixtures("crafting-java-oracle.log", 2036);
+    }
+    #[test]
+    #[ignore = "requires locally executed MCP919 StaticRecipeProbe fixtures"]
+    fn local_java_static_catalog_fixtures_match() {
+        compare_java_static_fixtures("static-recipes-java-oracle.log", 14336);
     }
     #[test]
     fn repair_combines_durability_with_bonus_and_discards_nbt() {

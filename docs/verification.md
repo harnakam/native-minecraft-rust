@@ -1319,3 +1319,36 @@ limit. All earlier inventory and special recipe scenarios also pass. Full
 workspace tests, the five local Java recipe probes (33,714 cases) and
 format/diff checks pass. The owned server stopped and saved. No MCP sources
 or Minecraft assets are published.
+
+### Complete static recipe registration
+
+MCP919 CraftingManager, ShapedRecipes, ShapelessRecipes and registration
+helpers were inspected. A local Java registry audit identifies 373 ordered
+registrations: 365 exact-class shaped/shapeless recipes and eight dynamic
+recipes. None of the static outputs carry NBT or enable copyIngredientNBT.
+The partial hand-maintained 115-entry catalog is replaced by typed Rust facts
+for all 365 static registrations, preserving width/height, null cells,
+ingredient IDs, exact/wildcard metadata, output quantity/damage and relative
+registry order. No runtime Java dependency or game resource is introduced.
+The catalog contains recipe facts, not reference Java source. Special recipes
+continue to execute authored Rust algorithms. Static/dynamic matching uses
+original global registry positions, with map extension at position 72 still
+unimplemented.
+An executed probe visits every static registration and supplies 14,336 cases
+across 2x2/3x3 grids, fitting offsets, horizontal mirrors, shapeless shifts and
+reversal, wildcard substitutions and changed ingredients. Expected results
+come from the whole Java CraftingManager, including competing recipes. All
+Rust results match. The six executed recipe comparisons total 48,050 cases
+and all pass. This proves the tested registration/matching scenarios, not
+all crafting side effects or M1 completion. World-dependent map extension,
+result throw/swap, statistics/achievements, exact remainder edge cases and
+manual GUI parity are still open.
+
+The official server run also confirms newly registered granite (one item,
+damage 1) and andesite (two items, damage 5) through matrix placement, result
+pickup and storage. Ingredient slots are exhausted and server-side NBT
+queries confirm quantity/damage. Earlier special-recipe scenarios also pass.
+After preserving combined recipe registry positions, all six Java probes
+and full workspace tests pass again. The owned server stopped and saved.
+Format/diff and publication checks pass; no assets or reference sources are
+included. This remains partial progress toward full Minecraft compatibility.

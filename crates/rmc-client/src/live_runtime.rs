@@ -2003,6 +2003,8 @@ mod tests {
                 4,
                 true,
             ),
+            ("granite", "stone 1 3", "quartz 1 0", 1, 1, 1, false),
+            ("andesite", "stone 1 3", "cobblestone 1 0", 1, 2, 5, false),
             ("map", "filled_map 1 0", "map 1 0", 358, 2, 0, false),
             (
                 "armor dye",
