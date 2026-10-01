@@ -1183,3 +1183,34 @@ destination chunk loaded; teleport/chunk readiness before setup fixed the
 fixture. Full workspace tests pass. Recipe side effects, enchanting actions,
 anvil/merchant costs, complete horse restrictions and manual UI parity are
 not complete. No game resources or reference sources are published.
+
+### Local crafting matching, consumption and repeat transfer
+
+MCP919 ShapedRecipes, ShapelessRecipes, SlotCrafting, InventoryCraftResult
+and Container retrySlotClick were inspected. The authored Rust crafting
+module registers 99 recipes covering basic wood, tools, armor, selected
+food/material/dye/compression recipes. Matching handles offsets, horizontal
+reflection, wildcard metadata and shapeless multisets, retaining shaped-first
+recipe priority. Local input pickup/drag refreshes the result; result pickup
+takes the complete output even with right-click, checks cursor capacity,
+consumes one item per occupied matrix slot and recomputes the result. Generic
+water/lava/milk bucket remainders are returned to the matrix or player storage;
+a full inventory leaves authoritative server drop/spawn handling in control.
+Shift result pickup repeats while material and inventory capacity allow,
+returns the first output stack, consumes each recipe and uses existing
+transaction snapshots to restore ingredients, output, storage and cursor
+after rejection. Workbench ingredient/storage Shift routes are connected.
+Eight normal tests cover matching, duplicate ingredients, whole-output right
+pickup, full cursor/storage, repeat craft, bucket returns and rollback. An
+executed local Java CraftingManager probe supplies 236 positive/negative
+fixtures across log metadata, mixed planks, tools, mirrored armor, wool,
+book and cake. The isolated Rust comparison passed all 236. Official 1.8.9
+server NBT confirms 2 planks => 4 sticks with right output pickup, and
+6 planks => 12 sticks with Shift repeat, after matrix drag placement; both
+matrices are exhausted. Earlier inventory scenarios also pass. Full workspace
+tests pass. This is a partial recipe catalog, not complete crafting parity:
+special recipes, remaining registrations, exact selected-hotbar remainder
+priority/drop prediction, throw/swap result handling and statistics are open.
+Unsupported recipes require authoritative server result updates; local
+prediction does not yet match them. Manual GUI parity remains unverified.
+No reference Java sources or game resources are published.

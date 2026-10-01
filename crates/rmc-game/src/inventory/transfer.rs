@@ -18,6 +18,15 @@ pub(super) fn destination(
         return Err("Incomplete container inventory");
     }
     match kind {
+        "minecraft:crafting_table" => {
+            if slot < 10 {
+                Ok((10, 46, false))
+            } else if slot < 37 {
+                Ok((37, 46, false))
+            } else {
+                Ok((10, 37, false))
+            }
+        }
         "minecraft:brewing_stand" => {
             if slot < 4 {
                 Ok((4, 40, true))

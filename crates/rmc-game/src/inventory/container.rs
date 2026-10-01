@@ -98,6 +98,13 @@ impl InventoryState {
                     self.pickup_predictions
                         .insert((id, click.action_number), (before, previous_cursor));
                 }
+                if super::crafting::grid_width(&after).is_some_and(|width| {
+                    slots
+                        .iter()
+                        .any(|&slot| slot >= 1 && slot as usize <= width * width)
+                }) {
+                    super::crafting::refresh(&mut after);
+                }
                 if id == 0 {
                     self.inventory_window = after;
                     self.sync_player_inventory_to_open();
@@ -206,12 +213,29 @@ impl InventoryState {
             self.open_window.as_ref().unwrap().clone()
         };
         let mut after = before.clone();
+        if slot_id == 0 && super::crafting::grid_width(&before).is_some() {
+            let returned = super::crafting::transfer_output(&mut after);
+            let packet = self.queue_click(window_id, slot_id, button, 1, returned);
+            if after != before {
+                if let PlayServerboundPacket::ClickWindow(click) = &packet {
+                    self.pickup_predictions.insert(
+                        (window_id, click.action_number),
+                        (before, self.carried_item.clone()),
+                    );
+                }
+                if window_id == 0 {
+                    self.inventory_window = after;
+                    self.sync_player_inventory_to_open();
+                } else {
+                    self.open_window = Some(after);
+                    self.sync_open_player_inventory();
+                }
+            }
+            return Ok(packet);
+        }
         let mut returned = None;
         if let Some(mut stack) = item.clone() {
             let (start, end, reverse) = if window_id == 0 {
-                if slot_id == 0 {
-                    return Err("Recipe transfer requires crafting side effects");
-                }
                 let armor = (298..=317)
                     .contains(&stack.item_id)
                     .then(|| 5 + (stack.item_id as usize - 298) % 4);
@@ -280,6 +304,12 @@ impl InventoryState {
                 returned = item;
                 after.slots[slot_id as usize] = (stack.count > 0).then_some(stack);
             }
+        }
+        if after != before
+            && super::crafting::grid_width(&after)
+                .is_some_and(|width| slot_id >= 1 && slot_id as usize <= width * width)
+        {
+            super::crafting::refresh(&mut after);
         }
         let packet = self.queue_click(window_id, slot_id, button, 1, returned);
         if after != before {
@@ -534,17 +564,55 @@ impl InventoryState {
                 return packet;
             }
             if matches!(button, 0 | 1) && slot_id >= 0 && before.slot(slot_id).is_some() {
+                let is_result = slot_id == 0 && super::crafting::grid_width(&before).is_some();
                 self.pickup_predictions
                     .insert((window_id, click.action_number), (before, previous_cursor));
                 let (valid, limit) =
                     self.slot_rules(window_id, slot_id, self.carried_item.as_ref());
-                let (slot, cursor) =
-                    predict_pickup(clicked_item, self.carried_item.take(), button, valid, limit);
+                let (slot, cursor) = if is_result {
+                    let result = clicked_item.clone();
+                    match (result.as_ref(), self.carried_item.as_ref()) {
+                        (Some(_), None) => (None, result),
+                        (Some(output), Some(cursor))
+                            if output.item_id == cursor.item_id
+                                && output.damage == cursor.damage
+                                && output.tags_equal(cursor)
+                                && u16::from(output.count) + u16::from(cursor.count)
+                                    <= u16::from(item_stack_limit(cursor.item_id)) =>
+                        {
+                            let mut cursor = cursor.clone();
+                            cursor.count += output.count;
+                            (None, Some(cursor))
+                        }
+                        _ => (result, self.carried_item.clone()),
+                    }
+                } else {
+                    predict_pickup(
+                        clicked_item.clone(),
+                        self.carried_item.take(),
+                        button,
+                        valid,
+                        limit,
+                    )
+                };
+                let crafted = is_result && clicked_item.is_some() && slot.is_none();
                 self.carried_item = cursor;
                 if window_id == 0 {
                     self.inventory_window.set_slot(slot_id, slot);
+                    if crafted {
+                        super::crafting::consume(&mut self.inventory_window);
+                    } else if (1..=4).contains(&slot_id) {
+                        super::crafting::refresh(&mut self.inventory_window);
+                    }
                 } else if let Some(window) = &mut self.open_window {
                     window.set_slot(slot_id, slot);
+                    if crafted {
+                        super::crafting::consume(window);
+                    } else if super::crafting::grid_width(window)
+                        .is_some_and(|width| slot_id >= 1 && slot_id as usize <= width * width)
+                    {
+                        super::crafting::refresh(window);
+                    }
                 }
             }
         }

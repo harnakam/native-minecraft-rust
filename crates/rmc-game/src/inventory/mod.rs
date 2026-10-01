@@ -1,6 +1,7 @@
 //! Inventory state, held-item sync, and transaction handling.
 
 mod container;
+mod crafting;
 pub mod furnace;
 pub mod item_properties;
 mod slot;

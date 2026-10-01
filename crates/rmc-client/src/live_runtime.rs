@@ -1822,6 +1822,140 @@ mod tests {
             runtime.close_open_window().unwrap();
             println!("official server confirms {block} shift -> special slot -> pickup -> inventory {expected}");
         }
+        for (initial, shift, expected, target) in [(2u8, false, 4u8, 10i16), (6, true, 12, 44)] {
+            runtime.send_chat_message("/clear VanillaProbe").unwrap();
+            runtime.send_chat_message(&format!("/replaceitem entity VanillaProbe slot.inventory.0 minecraft:planks {initial} 2")).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .inventory_window()
+                    .slot(9)
+                    .and_then(|s| s.as_ref())
+                    .is_some_and(|s| s.item_id == 5 && s.count == initial && s.damage == 2)
+                {
+                    break;
+                }
+            }
+            runtime.open_player_inventory().unwrap();
+            runtime.click_window_slot(0, 9, 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            runtime.drag_window_slots(0, &[1, 3], 0).unwrap();
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            assert_eq!(
+                runtime
+                    .usability
+                    .inventory()
+                    .inventory_window()
+                    .slot(0)
+                    .cloned()
+                    .flatten(),
+                Some(rmc_net::codec::play::ItemStack::simple(280, 4, 0))
+            );
+            if shift {
+                runtime.transfer_window_slot(0, 0, 0).unwrap();
+            } else {
+                runtime.click_window_slot(0, 0, 1).unwrap();
+            }
+            for _ in 0..100 {
+                advance(&mut runtime);
+                if runtime
+                    .usability
+                    .inventory()
+                    .pending_transactions()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            if !shift {
+                assert_eq!(
+                    runtime
+                        .usability
+                        .inventory()
+                        .carried_item()
+                        .as_ref()
+                        .unwrap()
+                        .count,
+                    4
+                );
+                runtime.click_window_slot(0, target, 0).unwrap();
+                for _ in 0..100 {
+                    advance(&mut runtime);
+                    if runtime
+                        .usability
+                        .inventory()
+                        .pending_transactions()
+                        .is_empty()
+                    {
+                        break;
+                    }
+                }
+            }
+            assert_eq!(
+                runtime
+                    .usability
+                    .inventory()
+                    .inventory_window()
+                    .slot(target)
+                    .and_then(|s| s.as_ref())
+                    .map(|s| s.count),
+                Some(expected)
+            );
+            for slot in [0, 1, 3] {
+                assert!(runtime
+                    .usability
+                    .inventory()
+                    .inventory_window()
+                    .slot(slot)
+                    .unwrap()
+                    .is_none());
+            }
+            let chat_count = runtime.usability.snapshot().chat_lines.len();
+            let nbt_slot = if target >= 36 { target - 36 } else { target };
+            runtime.send_chat_message(&format!(r#"/testfor VanillaProbe {{Inventory:[{{Slot:{nbt_slot}b,id:"minecraft:stick",Count:{expected}b}}]}}"#)).unwrap();
+            let mut confirmed = false;
+            for _ in 0..100 {
+                advance(&mut runtime);
+                confirmed = runtime
+                    .usability
+                    .snapshot()
+                    .chat_lines
+                    .iter()
+                    .skip(chat_count)
+                    .any(|l| l.message_json.contains("commands.testfor.success"));
+                if confirmed {
+                    break;
+                }
+            }
+            assert!(
+                confirmed,
+                "official server did not confirm crafting shift={shift} quantity {expected}"
+            );
+            runtime.close_open_window().unwrap();
+            println!("official server confirms crafting shift={shift}: {initial} planks => {expected} sticks, ingredients exhausted");
+        }
         if std::env::var_os("RMC_STOP_TEST_SERVER").is_some() {
             runtime.send_chat_message("/stop").unwrap();
             // Let the owned server process the queued command before dropping transport.
